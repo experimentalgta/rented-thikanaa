@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SavedProvider } from './context/SavedContext';
 import { ChatProvider } from './context/ChatContext';
+import { LocationProvider } from './context/LocationContext';
 import { Header } from './components/layout/Header';
 import { MobileNav } from './components/layout/MobileNav';
 import { Footer } from './components/layout/Footer';
@@ -11,8 +12,7 @@ import { HomePage } from './pages/HomePage';
 import { SearchPage } from './pages/SearchPage';
 import { PropertyDetailPage } from './pages/PropertyDetailPage';
 import { RoommatePage } from './pages/RoommatePage';
-import { StudentDashboard } from './pages/StudentDashboard';
-import { OwnerDashboard } from './pages/OwnerDashboard';
+import { UserDashboard } from './pages/UserDashboard';
 import { AddPropertyPage } from './pages/AddPropertyPage';
 import { AdminDashboard } from './pages/AdminDashboard';
 
@@ -24,7 +24,7 @@ const MainApp: React.FC = () => {
   const { currentUser } = useAuth();
 
   const [currentView, setCurrentView] = useState<string>('home');
-  const [selectedLocality, setSelectedLocality] = useState<string>('Katra');
+  const [selectedLocality, setSelectedLocality] = useState<string>('');
   const [selectedPropertyType, setSelectedPropertyType] = useState<string | undefined>(undefined);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [subTab, setSubTab] = useState<string | undefined>(undefined);
@@ -33,8 +33,8 @@ const MainApp: React.FC = () => {
   const [sampleRoommates, setSampleRoommates] = useState<StudentProfile[]>([]);
 
   useEffect(() => {
-    // Initial fetch for featured accommodations and roommates
-    propertyRepository.searchProperties({ locality: 'Katra' }).then((res) => {
+    // Initial fetch for featured accommodations and roommates across India
+    propertyRepository.searchProperties({}).then((res) => {
       setFeaturedProperties(res.properties);
     });
     roommateRepository.getRoommates().then((rms) => {
@@ -49,8 +49,26 @@ const MainApp: React.FC = () => {
       setCurrentView('property-detail');
       return;
     }
-    if (param && (view === 'student-dashboard' || view === 'owner-dashboard')) {
+    if (
+      param &&
+      (view === 'student-dashboard' ||
+        view === 'owner-dashboard' ||
+        view === 'member-dashboard' ||
+        view === 'user-dashboard')
+    ) {
       setSubTab(param);
+    }
+    if (
+      view === 'student-dashboard' ||
+      view === 'owner-dashboard' ||
+      view === 'user-dashboard'
+    ) {
+      setCurrentView('member-dashboard');
+      return;
+    }
+    if (view === 'owner-add') {
+      setCurrentView('add-property');
+      return;
     }
     if (view === 'home' && param === 'areas') {
       setCurrentView('home');
@@ -98,6 +116,7 @@ const MainApp: React.FC = () => {
             initialLocality={selectedLocality}
             initialPropertyType={selectedPropertyType}
             onSelectProperty={handleSelectProperty}
+            onNavigate={handleNavigate}
           />
         )}
 
@@ -110,29 +129,25 @@ const MainApp: React.FC = () => {
 
         {currentView === 'roommates' && <RoommatePage />}
 
-        {currentView === 'student-dashboard' && (
-          <StudentDashboard
-            initialTab={subTab || 'saved'}
+        {(currentView === 'member-dashboard' ||
+          currentView === 'student-dashboard' ||
+          currentView === 'owner-dashboard' ||
+          currentView === 'user-dashboard') && (
+          <UserDashboard
+            initialTab={subTab || 'overview'}
+            onAddProperty={() => setCurrentView('add-property')}
             onSelectProperty={handleSelectProperty}
             onNavigate={handleNavigate}
           />
         )}
 
-        {currentView === 'owner-dashboard' && (
-          <OwnerDashboard
-            onAddProperty={() => setCurrentView('owner-add')}
-            onSelectProperty={handleSelectProperty}
-            onNavigate={handleNavigate}
-          />
-        )}
-
-        {currentView === 'owner-add' && (
+        {(currentView === 'add-property' || currentView === 'owner-add') && (
           <AddPropertyPage
             onSuccess={(newProp) => {
               setSelectedProperty(newProp);
               setCurrentView('property-detail');
             }}
-            onCancel={() => setCurrentView('owner-dashboard')}
+            onCancel={() => setCurrentView('member-dashboard')}
           />
         )}
 
@@ -161,7 +176,9 @@ export default function App() {
     <AuthProvider>
       <SavedProvider>
         <ChatProvider>
-          <MainApp />
+          <LocationProvider>
+            <MainApp />
+          </LocationProvider>
         </ChatProvider>
       </SavedProvider>
     </AuthProvider>

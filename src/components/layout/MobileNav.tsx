@@ -5,12 +5,7 @@ import {
   Heart,
   MessageSquare,
   User,
-  LayoutDashboard,
-  Building2,
-  PlusCircle,
-  ShieldCheck
 } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
 import { useSaved } from '../../context/SavedContext';
 import { useChat } from '../../context/ChatContext';
 
@@ -20,80 +15,18 @@ interface MobileNavProps {
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate }) => {
-  const { currentUser } = useAuth();
   const { savedCount } = useSaved();
   const { unreadCount, setIsChatModalOpen } = useChat();
 
-  if (currentUser.role === 'owner') {
-    return (
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E5E7EB] lg:hidden safe-area-pb">
-        <div className="flex items-center justify-around h-16 max-w-md mx-auto px-2">
-          {/* Dashboard */}
-          <button
-            onClick={() => onNavigate('owner-dashboard')}
-            className={`flex flex-col items-center justify-center w-14 h-full transition-colors ${
-              currentView === 'owner-dashboard' ? 'text-[#F59E0B]' : 'text-[#667085]'
-            }`}
-          >
-            <LayoutDashboard className="w-5 h-5" />
-            <span className="text-[10px] font-medium mt-1">Dashboard</span>
-          </button>
+  const isDashboard = currentView === 'member-dashboard' || currentView === 'student-dashboard' || currentView === 'owner-dashboard';
 
-          {/* Listings */}
-          <button
-            onClick={() => onNavigate('search')}
-            className={`flex flex-col items-center justify-center w-14 h-full transition-colors ${
-              currentView === 'search' ? 'text-[#F59E0B]' : 'text-[#667085]'
-            }`}
-          >
-            <Building2 className="w-5 h-5" />
-            <span className="text-[10px] font-medium mt-1">Listings</span>
-          </button>
-
-          {/* Add Property (Prominent Center Button) */}
-          <button
-            onClick={() => onNavigate('owner-add')}
-            className="flex flex-col items-center justify-center -mt-5"
-          >
-            <div className="w-12 h-12 rounded-full bg-[#101828] text-[#F59E0B] flex items-center justify-center shadow-lg border-2 border-white hover:scale-105 transition-transform">
-              <PlusCircle className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-semibold text-[#101828] mt-1">Add</span>
-          </button>
-
-          {/* Messages */}
-          <button
-            onClick={() => setIsChatModalOpen(true)}
-            className="relative flex flex-col items-center justify-center w-14 h-full text-[#667085]"
-          >
-            <MessageSquare className="w-5 h-5" />
-            {unreadCount > 0 && (
-              <span className="absolute top-2 right-3 w-2 h-2 bg-[#F97316] rounded-full" />
-            )}
-            <span className="text-[10px] font-medium mt-1">Messages</span>
-          </button>
-
-          {/* Profile */}
-          <button
-            onClick={() => onNavigate('owner-dashboard')}
-            className="flex flex-col items-center justify-center w-14 h-full text-[#667085]"
-          >
-            <User className="w-5 h-5" />
-            <span className="text-[10px] font-medium mt-1">Profile</span>
-          </button>
-        </div>
-      </nav>
-    );
-  }
-
-  // Student / Default Bottom Nav
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E5E7EB] lg:hidden safe-area-pb">
       <div className="flex items-center justify-around h-16 max-w-md mx-auto px-2">
-        {/* Home */}
+        {/* 1. Home */}
         <button
           onClick={() => onNavigate('home')}
-          className={`flex flex-col items-center justify-center w-14 h-full transition-colors ${
+          className={`flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
             currentView === 'home' ? 'text-[#101828] font-bold' : 'text-[#667085]'
           }`}
         >
@@ -101,10 +34,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
           <span className="text-[10px] mt-1">Home</span>
         </button>
 
-        {/* Search */}
+        {/* 2. Search */}
         <button
           onClick={() => onNavigate('search')}
-          className={`flex flex-col items-center justify-center w-14 h-full transition-colors ${
+          className={`flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
             currentView === 'search' ? 'text-[#101828] font-bold' : 'text-[#667085]'
           }`}
         >
@@ -112,11 +45,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
           <span className="text-[10px] mt-1">Search</span>
         </button>
 
-        {/* Saved */}
+        {/* 3. Saved */}
         <button
-          onClick={() => onNavigate('student-dashboard', 'saved')}
-          className={`relative flex flex-col items-center justify-center w-14 h-full transition-colors ${
-            currentView === 'student-dashboard' ? 'text-[#101828] font-bold' : 'text-[#667085]'
+          onClick={() => onNavigate('member-dashboard', 'saved')}
+          className={`relative flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
+            isDashboard ? 'text-[#101828] font-bold' : 'text-[#667085]'
           }`}
         >
           <Heart className="w-5 h-5" />
@@ -128,25 +61,27 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
           <span className="text-[10px] mt-1">Saved</span>
         </button>
 
-        {/* Messages */}
+        {/* 4. Messages */}
         <button
           onClick={() => setIsChatModalOpen(true)}
-          className="relative flex flex-col items-center justify-center w-14 h-full text-[#667085]"
+          className="relative flex flex-col items-center justify-center w-14 h-full text-[#667085] cursor-pointer"
         >
           <MessageSquare className="w-5 h-5" />
           {unreadCount > 0 && (
-            <span className="absolute top-2 right-3 w-2 h-2 bg-[#F97316] rounded-full" />
+            <span className="absolute top-2 right-3 w-2 h-2 bg-[#F97316] rounded-full ring-2 ring-white" />
           )}
           <span className="text-[10px] mt-1">Messages</span>
         </button>
 
-        {/* Profile */}
+        {/* 5. Profile / Dashboard */}
         <button
-          onClick={() => onNavigate('student-dashboard')}
-          className="flex flex-col items-center justify-center w-14 h-full text-[#667085]"
+          onClick={() => onNavigate('member-dashboard')}
+          className={`flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
+            isDashboard ? 'text-[#101828] font-bold' : 'text-[#667085]'
+          }`}
         >
-          <User className="w-5 h-5" />
-          <span className="text-[10px] mt-1">Profile</span>
+          <User className={`w-5 h-5 ${isDashboard ? 'text-[#F59E0B]' : ''}`} />
+          <span className="text-[10px] mt-1">Dashboard</span>
         </button>
       </div>
     </nav>

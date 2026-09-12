@@ -14,6 +14,7 @@ interface ChatContextType {
   sendMessage: (text: string) => Promise<void>;
   sendContactRequest: (property: { id: string; title: string; owner_id: string; owner_name: string }) => Promise<ContactRequest>;
   updateContactRequest: (requestId: string, status: ContactRequestStatus) => Promise<void>;
+  shareExactLocation: (locationShare: import('../types').ExactLocationShare) => Promise<void>;
   isChatModalOpen: boolean;
   setIsChatModalOpen: (open: boolean) => void;
   refreshChatData: () => Promise<void>;
@@ -145,11 +146,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       propertyTitle: property.title,
       requesterId: currentUser.id,
       requesterName: currentUser.full_name,
-      requesterRole: currentUser.role === 'owner' ? 'owner' : 'student',
+      requesterRole: 'member',
       requesterPhone: currentUser.phone_number,
       receiverId: property.owner_id,
       receiverName: property.owner_name,
-      receiverRole: 'owner',
+      receiverRole: 'lister',
     });
 
     await loadData();
@@ -158,6 +159,33 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateContactRequest = async (requestId: string, status: ContactRequestStatus) => {
     await chatAndSafetyRepository.updateContactRequestStatus(requestId, status);
+    await loadData();
+  };
+
+  const shareExactLocation = async (locationShare: import('../types').ExactLocationShare) => {
+    if (!activeConversation) return;
+
+    const otherParticipantId =
+      activeConversation.participant_ids.find((id) => id !== currentUser.id) || 'user-stud-1';
+
+    const sent = await chatAndSafetyRepository.sendMessage({
+      conversationId: activeConversation.id,
+      senderId: currentUser.id,
+      senderName: currentUser.full_name,
+      receiverId: otherParticipantId,
+      text: `📍 Exact Location Shared: ${locationShare.exact_address}`,
+      propertyContext: activeConversation.property_id
+        ? {
+            id: activeConversation.property_id,
+            title: activeConversation.property_title || '',
+            locality: 'Prayagraj',
+            rent: 0,
+          }
+        : undefined,
+      locationShare,
+    });
+
+    setMessages((prev) => [...prev, sent]);
     await loadData();
   };
 
@@ -176,6 +204,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendMessage,
         sendContactRequest,
         updateContactRequest,
+        shareExactLocation,
         isChatModalOpen,
         setIsChatModalOpen,
         refreshChatData: loadData,

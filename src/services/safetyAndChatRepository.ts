@@ -6,6 +6,7 @@ import {
   ContactRequestStatus,
   Report
 } from '../types';
+import { serverAuth } from './serverAuth';
 
 const CHAT_STORAGE_KEY = 'prayag_living_messages_v1';
 const CONV_STORAGE_KEY = 'prayag_living_conversations_v1';
@@ -58,7 +59,7 @@ const INITIAL_MESSAGES: Message[] = [
     sender_id: 'user-stud-1',
     sender_name: 'Ankit Tiwari',
     receiver_id: 'owner-101',
-    text: 'Namaste Pandey ji, I saw your Sunrise Boys PG in Katra on PrayagLiving. Is double sharing available for immediate move-in?',
+    text: 'Namaste Pandey ji, I saw your Sunrise Boys PG in Katra on Rented Thikan. Is double sharing available for immediate move-in?',
     timestamp: '10:30 AM',
     is_read: true,
     property_context: {
@@ -166,6 +167,7 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     receiverId: string;
     text: string;
     propertyContext?: Message['property_context'];
+    locationShare?: Message['location_share'];
   }): Promise<Message> {
     const conversations = this.getStoredConversations();
     const messages = this.getStoredMessages();
@@ -197,6 +199,7 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
           unread_count: 0,
           property_id: data.propertyContext?.id,
           property_title: data.propertyContext?.title,
+          exact_location_share: data.locationShare,
         };
         conversations.unshift(newConv);
       }
@@ -212,6 +215,7 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
       timestamp: 'Just now',
       is_read: false,
       property_context: data.propertyContext,
+      location_share: data.locationShare,
     };
 
     messages.push(newMessage);
@@ -221,6 +225,9 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     if (convIndex !== -1) {
       conversations[convIndex].last_message = data.text;
       conversations[convIndex].last_message_time = 'Just now';
+      if (data.locationShare) {
+        conversations[convIndex].exact_location_share = data.locationShare;
+      }
     }
 
     localStorage.setItem(CONV_STORAGE_KEY, JSON.stringify(conversations));
@@ -249,11 +256,11 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     propertyTitle?: string;
     requesterId: string;
     requesterName: string;
-    requesterRole: 'student' | 'owner';
+    requesterRole?: string;
     requesterPhone?: string;
     receiverId: string;
     receiverName: string;
-    receiverRole: 'student' | 'owner';
+    receiverRole?: string;
   }): Promise<ContactRequest> {
     const all = this.getStoredContactRequests();
 
@@ -362,11 +369,17 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     return newReport;
   }
 
-  async getReports(): Promise<Report[]> {
+  async getReports(requestingUserId?: string): Promise<Report[]> {
+    await serverAuth.assertSuperAdmin(requestingUserId);
     return this.getStoredReports();
   }
 
-  async updateReportStatus(reportId: string, status: Report['status']): Promise<Report> {
+  async updateReportStatus(
+    reportId: string,
+    status: Report['status'],
+    requestingUserId?: string
+  ): Promise<Report> {
+    await serverAuth.assertSuperAdmin(requestingUserId);
     const reports = this.getStoredReports();
     const index = reports.findIndex((r) => r.id === reportId);
     if (index === -1) throw new Error(`Report ${reportId} not found`);

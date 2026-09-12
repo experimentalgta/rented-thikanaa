@@ -1,4 +1,5 @@
-export type UserRole = 'student' | 'owner' | 'admin';
+export type AccountType = 'user' | 'super_admin';
+export type UserRole = 'member' | 'student' | 'owner' | 'admin';
 
 export type PhonePrivacy = 'private' | 'on_request' | 'public';
 export type ContactRequestStatus = 'none' | 'pending' | 'accepted' | 'rejected';
@@ -7,12 +8,19 @@ export interface User {
   id: string;
   email: string;
   full_name: string;
-  role: UserRole;
+  account_type: AccountType;
+  role?: UserRole | string; // Backwards compatibility
   avatar_url?: string;
   phone_number?: string;
   is_verified: boolean;
   is_blocked?: boolean;
   created_at: string;
+  // Optional profile attributes
+  college?: string;
+  occupation?: string;
+  bio?: string;
+  preferred_areas?: string[];
+  budget?: number;
 }
 
 export interface StudentLifestyle {
@@ -77,10 +85,15 @@ export interface PropertyImage {
 
 export interface Property {
   id: string;
-  owner_id: string;
+  owner_id: string; // Deprecated alias, backwards compatibility
+  created_by?: string; // Authenticated user ID who created listing
   owner_name: string;
+  lister_name?: string;
   owner_phone?: string | null; // Masked/omitted by repository if private
+  lister_phone?: string | null;
   owner_avatar?: string;
+  lister_avatar?: string;
+  lister_type?: 'student' | 'owner' | 'individual'; // Informational metadata
   title: string;
   slug: string;
   description: string;
@@ -107,17 +120,24 @@ export interface Property {
   is_demo: boolean; // Flag identifying fictional seed records
 
   // Geographic coordinates (canonical server-side coordinates)
-  locality: string;
+  // Geographic coordinates & Privacy controls
+  country?: string; // Default: 'India'
+  state: string; // e.g. 'Uttar Pradesh', 'Delhi', 'Maharashtra'
+  state_code?: string; // e.g. 'UP', 'DL', 'MH', 'KA'
+  city: string; // e.g. 'Prayagraj', 'Lucknow', 'New Delhi', 'Mumbai'
+  city_slug?: string; // e.g. 'prayagraj', 'lucknow', 'new-delhi', 'mumbai'
+  locality: string; // e.g. 'Katra', 'Gomti Nagar', 'Laxmi Nagar', 'Andheri'
+  locality_slug?: string;
   sub_locality?: string;
   landmark?: string;
-  city: string;
-  state: string;
   pincode: string;
-  address: string;
-  latitude: number; // Exact canonical latitude
-  longitude: number; // Exact canonical longitude
+  address: string; // Sanitized to locality level for public; exact address revealed only on authorized share
+  
+  // Exact canonical coordinates (retained on backend; omitted/stripped in public responses)
+  latitude?: number;
+  longitude?: number;
 
-  // Presentation layer coordinates for public map (jittered)
+  // Approximate presentation coordinates for public map (always fuzzed to neighborhood)
   display_latitude?: number;
   display_longitude?: number;
 
@@ -127,6 +147,8 @@ export interface Property {
 
   phone_privacy: PhonePrivacy;
   contact_request_status?: ContactRequestStatus;
+  is_exact_location_shared?: boolean;
+  exact_address_shared?: string | null;
 
   created_at: string;
   updated_at: string;
@@ -139,30 +161,105 @@ export interface Property {
 
 export type ProximityBucket = 'very_near' | 'nearby' | 'nearby_areas' | 'more_options';
 
-export interface LocalityInfo {
-  id: string;
-  name: string;
-  hindi_name: string;
+export type LocationSource = 'gps' | 'search' | 'map' | 'manual' | 'none';
+
+export interface LocationData {
+  country: string;
+  countryCode?: string;
+  state?: string;
+  stateCode?: string;
+  district?: string;
+  city?: string;
+  citySlug?: string;
+  locality?: string;
+  localitySlug?: string;
+  subLocality?: string;
+  landmark?: string;
+  formattedAddress?: string;
+
   latitude: number;
   longitude: number;
-  description: string;
-  popular_for: string;
-  active_listings_count: number;
-  average_rent: number;
-  landmark_highlight: string;
-  image_url: string;
+
+  accuracy?: number; // In meters
+  isLowAccuracy?: boolean;
+  accuracyLabel?: string;
+  source?: LocationSource;
+  placeId?: string;
 }
 
-export interface CollegeLandmark {
+export interface State {
+  id: string;
+  name: string;
+  code: string; // e.g. 'UP', 'DL', 'MH', 'KA'
+  slug: string;
+  type?: 'state' | 'ut';
+  capital?: string;
+  region?: string;
+}
+
+export interface District {
+  id: string;
+  name: string;
+  slug: string;
+  state_code: string;
+  state_name: string;
+}
+
+export interface City {
+  id: string;
+  name: string;
+  slug: string;
+  state_code: string;
+  state_name: string;
+  district?: string;
+  district_id?: string;
+  latitude: number;
+  longitude: number;
+  is_popular?: boolean;
+  image_url?: string;
+  popular_for?: string;
+  active_listings_count?: number;
+}
+
+export interface Locality {
+  id: string;
+  name: string;
+  slug: string;
+  city_slug: string;
+  city_name: string;
+  state_code: string;
+  state_name: string;
+  district?: string;
+  district_id?: string;
+  latitude: number;
+  longitude: number;
+  pincode?: string;
+  hindi_name?: string;
+  landmark_highlight?: string;
+  popular_for?: string;
+  active_listings_count?: number;
+  average_rent?: number;
+}
+
+export interface Landmark {
   id: string;
   name: string;
   short_name: string;
-  category: 'university' | 'coaching_hub' | 'college' | 'transit';
+  category: 'university' | 'coaching_hub' | 'college' | 'transit' | 'tech_park' | 'landmark';
+  city_slug: string;
+  city_name: string;
+  locality: string;
   latitude: number;
   longitude: number;
-  locality: string;
-  radius_km_recommended: number;
+  radius_km_recommended?: number;
 }
+
+export interface LocalityInfo extends Locality {
+  description?: string;
+  image_url?: string;
+}
+
+export interface CollegeLandmark extends Landmark {}
 
 export interface ContactRequest {
   id: string;
@@ -170,15 +267,23 @@ export interface ContactRequest {
   property_title?: string;
   requester_id: string;
   requester_name: string;
-  requester_role: UserRole;
+  requester_role?: string;
   requester_phone?: string;
   receiver_id: string;
   receiver_name: string;
-  receiver_role: UserRole;
+  receiver_role?: string;
   receiver_phone?: string;
   status: ContactRequestStatus;
   created_at: string;
   updated_at: string;
+}
+
+export interface ExactLocationShare {
+  exact_address: string;
+  landmark_directions?: string;
+  google_maps_url: string;
+  whatsapp_url?: string;
+  shared_at: string;
 }
 
 export interface Message {
@@ -197,6 +302,7 @@ export interface Message {
     rent: number;
     image_url?: string;
   };
+  location_share?: ExactLocationShare;
 }
 
 export interface Conversation {
@@ -209,6 +315,7 @@ export interface Conversation {
   unread_count: number;
   property_id?: string;
   property_title?: string;
+  exact_location_share?: ExactLocationShare;
 }
 
 export interface Report {
@@ -244,10 +351,44 @@ export interface Review {
   is_moderated: boolean;
 }
 
+export type UserLocationSource = LocationSource;
+
+export interface UserLocationState {
+  latitude?: number;
+  longitude?: number;
+  country?: string;
+  countryCode?: string;
+  state?: string;
+  stateCode?: string;
+  district?: string;
+  city?: string;
+  citySlug?: string;
+  locality: string;
+  localitySlug?: string;
+  subLocality?: string;
+  landmark?: string;
+  displayName: string;
+  formattedAddress?: string;
+  source: UserLocationSource;
+  accuracy?: number; // In meters
+  isLowAccuracy?: boolean;
+  accuracyLabel?: string;
+  timestamp?: number;
+  error?: string;
+  isDetecting?: boolean;
+}
+
 export interface PropertySearchParams {
+  country?: string;
+  state?: string;
+  city?: string;
+  city_slug?: string;
   locality?: string;
+  locality_slug?: string;
+  query?: string;
   reference_lat?: number;
   reference_lng?: number;
+  location_source?: UserLocationSource;
   property_type?: PropertyType | 'all';
   gender?: GenderPreference;
   room_type?: RoomType | 'all';
@@ -261,6 +402,8 @@ export interface PropertySearchParams {
 export interface SearchResultSummary {
   properties: Property[];
   reference_locality: string;
+  reference_city?: string;
+  reference_state?: string;
   reference_coordinates: { latitude: number; longitude: number };
   total_found: number;
   exact_area_count: number;

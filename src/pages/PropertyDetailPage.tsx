@@ -102,7 +102,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
       </div>
 
       {copiedLink && (
-        <div className="mb-4 p-2.5 bg-emerald-50 text-emerald-800 text-xs font-semibold rounded-xl text-center border border-emerald-200 animate-in fade-in">
+        <div className="mb-4 p-2.5 bg-[#FFFBEB] text-[#92400E] text-xs font-semibold rounded-xl text-center border border-[#FDE68A] animate-in fade-in">
           Property link copied to clipboard!
         </div>
       )}
@@ -173,7 +173,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 
             <div className="flex items-center gap-1.5 text-sm text-[#667085]">
               <MapPin className="w-4 h-4 text-[#F59E0B] shrink-0" />
-              <span>{property.locality}, Prayagraj</span>
+              <span>{property.locality}{property.city ? ', ' + property.city : ''}</span>
               {property.landmark && <span>• Near {property.landmark}</span>}
             </div>
           </div>
@@ -201,7 +201,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                 <span className="text-base font-bold text-[#101828]">
                   ₹{property.security_deposit.toLocaleString('en-IN')}
                 </span>
-                <span className="text-[10px] text-emerald-600 block">100% Refundable</span>
+                <span className="text-[10px] text-[#92400E] font-medium block">100% Refundable</span>
               </div>
 
               <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
@@ -286,7 +286,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                   >
                     <CheckCircle2
                       className={`w-4 h-4 shrink-0 ${
-                        isIncluded ? 'text-emerald-600' : 'text-slate-300'
+                        isIncluded ? 'text-[#D97706]' : 'text-slate-300'
                       }`}
                     />
                     <span>{a.name}</span>
@@ -325,18 +325,72 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 
           {/* 8. Approximate Neighborhood Location Map */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-base text-[#101828] font-heading">
-                Neighborhood Location
-              </h3>
-              <span className="text-[11px] text-[#667085] flex items-center gap-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-1">
+              <div>
+                <h3 className="font-bold text-base text-[#101828] font-heading">
+                  Neighborhood Area: {property.locality}{property.city ? ', ' + property.city : ''}
+                </h3>
+                <p className="text-xs text-[#667085]">
+                  {property.landmark ? `In the vicinity of ${property.landmark}` : 'Central student accommodation sector'}
+                </p>
+              </div>
+              <span className="text-[11px] font-semibold text-[#92400E] bg-[#FFFBEB] px-2.5 py-1 rounded-full border border-[#FDE68A] flex items-center gap-1.5 self-start sm:self-center">
                 <Lock className="w-3 h-3 text-[#F59E0B]" />
-                Approximate coordinates shown for owner safety
+                Approximate location shown for privacy
               </span>
             </div>
+
+            {/* Location Privacy State */}
+            {property.is_exact_location_shared ? (
+              <div className="p-3.5 bg-[#FFFBEB] border border-[#FDE68A] rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] flex items-center justify-center shrink-0">
+                    <MapPin className="w-4 h-4 text-[#D97706]" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-[#92400E] text-xs sm:text-sm block">
+                      Exact location shared privately in chat
+                    </span>
+                    <span className="text-[11px] text-[#78350F]">
+                      Doorstep navigation details are protected and kept inside your conversation thread.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openChatWithContext({
+                      id: property.id,
+                      title: property.title,
+                      locality: property.locality,
+                      rent: property.rent,
+                      owner_id: property.owner_id,
+                      owner_name: property.owner_name,
+                    })
+                  }
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#101828] text-white text-[11px] font-semibold hover:bg-[#1E293B] transition-colors shadow-2xs self-start sm:self-center shrink-0 cursor-pointer"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-[#F59E0B]" />
+                  <span>Open Location in Chat</span>
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs text-[#64748B] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-[#F59E0B] shrink-0" />
+                  <span>
+                    Exact doorstep address is kept private. Message the host to receive navigation directions.
+                  </span>
+                </div>
+              </div>
+            )}
+
             <PropertyMap
               properties={[property]}
-              centerCoordinates={{ latitude: property.latitude, longitude: property.longitude }}
+              centerCoordinates={{
+                latitude: property.display_latitude || 25.4563,
+                longitude: property.display_longitude || 81.8546,
+              }}
               className="h-64 w-full rounded-2xl"
             />
           </div>
@@ -354,29 +408,30 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                 </span>
                 <span className="text-sm text-[#667085]">/ month</span>
               </div>
-              <span className="inline-block mt-2 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+              <span className="inline-block mt-2 text-[11px] font-semibold text-[#92400E] bg-[#FFFBEB] border border-[#FDE68A] px-2 py-0.5 rounded-md">
                 Zero Brokerage Commission
               </span>
             </div>
 
-            {/* Owner Info Box */}
+            {/* Lister / Member Info Box */}
             <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0]">
               <img
                 src={
+                  property.lister_avatar ||
                   property.owner_avatar ||
                   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
                 }
-                alt={property.owner_name}
+                alt={property.lister_name || property.owner_name}
                 className="w-12 h-12 rounded-xl object-cover ring-1 ring-[#CBD5E1]"
               />
               <div className="min-w-0 flex-1">
                 <h4 className="text-xs font-bold text-[#111827] truncate">
-                  {property.owner_name}
+                  {property.lister_name || property.owner_name}
                 </h4>
-                <p className="text-[11px] text-[#667085]">Property Host</p>
+                <p className="text-[11px] text-[#667085]">Listed by Member</p>
                 <div className="text-[10px] text-[#F59E0B] font-semibold flex items-center gap-1 mt-0.5">
                   <ShieldCheck className="w-3 h-3" />
-                  Verified Identity
+                  Verified Member
                 </div>
               </div>
             </div>
@@ -386,7 +441,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-[#101828]">Phone Contact:</span>
                 {isPhoneAuthorized ? (
-                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-bold text-[#92400E] bg-[#FEF3C7] border border-[#FDE68A] px-2 py-0.5 rounded-full">
                     Unlocked
                   </span>
                 ) : (
@@ -396,17 +451,17 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                 )}
               </div>
 
-              {isPhoneAuthorized && property.owner_phone ? (
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-center">
-                  <div className="text-xs text-emerald-700 font-semibold mb-1">
-                    Owner Direct Phone:
+              {isPhoneAuthorized && (property.lister_phone || property.owner_phone) ? (
+                <div className="p-3 bg-[#FFFBEB] rounded-xl border border-[#FDE68A] text-center">
+                  <div className="text-xs text-[#92400E] font-semibold mb-1">
+                    Lister Direct Phone:
                   </div>
                   <a
-                    href={`tel:${property.owner_phone}`}
-                    className="text-base font-bold text-emerald-900 hover:underline flex items-center justify-center gap-1.5"
+                    href={`tel:${property.lister_phone || property.owner_phone}`}
+                    className="text-base font-bold text-[#101828] hover:text-[#D97706] hover:underline flex items-center justify-center gap-1.5"
                   >
-                    <Phone className="w-4 h-4" />
-                    {property.owner_phone}
+                    <Phone className="w-4 h-4 text-[#F59E0B]" />
+                    {property.lister_phone || property.owner_phone}
                   </a>
                 </div>
               ) : (
@@ -432,13 +487,13 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                     locality: property.locality,
                     rent: property.rent,
                     owner_id: property.owner_id,
-                    owner_name: property.owner_name,
+                    owner_name: property.lister_name || property.owner_name,
                   })
                 }
                 icon={<MessageSquare className="w-5 h-5" />}
                 className="font-bold"
               >
-                Message Owner
+                Message Lister
               </Button>
 
               {!isPhoneAuthorized && (

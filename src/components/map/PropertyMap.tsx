@@ -8,14 +8,21 @@ interface PropertyMapProps {
   centerCoordinates?: { latitude: number; longitude: number };
   onSelectProperty?: (property: Property) => void;
   className?: string;
+  zoom?: number;
 }
 
 export const PropertyMap: React.FC<PropertyMapProps> = ({
   properties,
-  centerCoordinates = { latitude: 25.4563, longitude: 81.8546 },
+  centerCoordinates,
   onSelectProperty,
   className = 'h-96 w-full rounded-2xl overflow-hidden',
+  zoom = 14,
 }) => {
+  // Determine dynamic default center
+  const effectiveCenter = centerCoordinates || (properties.length > 0 && properties[0].display_latitude
+    ? { latitude: properties[0].display_latitude, longitude: properties[0].display_longitude || 78.9629 }
+    : { latitude: 20.5937, longitude: 78.9629 });
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersGroupRef = useRef<L.LayerGroup | null>(null);
@@ -25,8 +32,8 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
 
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
-        center: [centerCoordinates.latitude, centerCoordinates.longitude],
-        zoom: 14,
+        center: [effectiveCenter.latitude, effectiveCenter.longitude],
+        zoom,
         zoomControl: true,
         scrollWheelZoom: false,
       });
@@ -51,15 +58,15 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
 
   // Update center when reference coordinates change
   useEffect(() => {
-    if (mapInstanceRef.current && centerCoordinates) {
+    if (mapInstanceRef.current && effectiveCenter) {
       mapInstanceRef.current.setView(
-        [centerCoordinates.latitude, centerCoordinates.longitude],
+        [effectiveCenter.latitude, effectiveCenter.longitude],
         mapInstanceRef.current.getZoom()
       );
     }
-  }, [centerCoordinates.latitude, centerCoordinates.longitude]);
+  }, [effectiveCenter.latitude, effectiveCenter.longitude]);
 
-  // Render markers using presentation-layer fuzzed coordinates (preserving privacy)
+  // Render markers using STRICTLY presentation-layer approximate coordinates
   useEffect(() => {
     if (!mapInstanceRef.current || !markersGroupRef.current) return;
 
@@ -67,40 +74,54 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
 
     const bounds = L.latLngBounds([]);
 
-    // Reference center circle
-    const centerCircle = L.circle([centerCoordinates.latitude, centerCoordinates.longitude], {
-      radius: 600,
-      color: '#F59E0B',
+    // Reference center circle for the search locality/neighborhood
+    const centerCircle = L.circle([effectiveCenter.latitude, effectiveCenter.longitude], {
+      radius: 650,
+      color: '#101828',
       fillColor: '#F59E0B',
-      fillOpacity: 0.1,
+      fillOpacity: 0.08,
       weight: 1.5,
       dashArray: '4, 4',
-    }).bindTooltip('Search Reference Area', { permanent: false });
+    }).bindTooltip('Target Area Vicinity', { permanent: false });
     markersGroupRef.current.addLayer(centerCircle);
-    bounds.extend([centerCoordinates.latitude, centerCoordinates.longitude]);
+    bounds.extend([effectiveCenter.latitude, effectiveCenter.longitude]);
 
     properties.forEach((property) => {
-      // Use fuzzed coordinates to protect exact house location
-      const mapLat = property.display_latitude || property.latitude;
-      const mapLng = property.display_longitude || property.longitude;
+      // STRICT LOCATION PRIVACY:
+      // Always use display_latitude / display_longitude (neighborhood jitter).
+      // NEVER place marker on exact building/doorstep.
+      const mapLat = property.display_latitude || effectiveCenter.latitude;
+      const mapLng = property.display_longitude || effectiveCenter.longitude;
 
-      // Custom styled HTML marker badge with rent
+      // Draw an approximate neighborhood area circle (~220m) representing general vicinity
+      const approxAreaCircle = L.circle([mapLat, mapLng], {
+        radius: 220,
+        color: '#F59E0B',
+        fillColor: '#F59E0B',
+        fillOpacity: 0.12,
+        weight: 1,
+        dashArray: '3, 3',
+      });
+      markersGroupRef.current?.addLayer(approxAreaCircle);
+
+      // Custom styled HTML marker badge showing rent & neighborhood label
       const markerHtml = `
         <div style="
           background-color: #101828;
           color: #ffffff;
-          padding: 4px 8px;
+          padding: 4px 9px;
           border-radius: 9999px;
           font-weight: 700;
           font-size: 11px;
           border: 2px solid #F59E0B;
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+          box-shadow: 0 4px 8px -1px rgba(0,0,0,0.25);
           white-space: nowrap;
           cursor: pointer;
           display: flex;
           align-items: center;
           gap: 4px;
         ">
+          <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background-color:#F59E0B;"></span>
           <span>₹${property.rent.toLocaleString('en-IN')}</span>
         </div>
       `;
@@ -108,38 +129,51 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
       const customIcon = L.divIcon({
         html: markerHtml,
         className: 'custom-map-marker',
-        iconSize: [64, 28],
-        iconAnchor: [32, 14],
+        iconSize: [72, 28],
+        iconAnchor: [36, 14],
       });
 
       const marker = L.marker([mapLat, mapLng], { icon: customIcon });
 
       const popupContent = document.createElement('div');
-      popupContent.style.width = '200px';
+      popupContent.style.width = '220px';
       popupContent.innerHTML = `
         <div style="font-family: inherit;">
-          <div style="font-weight: 700; font-size: 13px; color: #101828; margin-bottom: 2px;">
+          <div style="font-weight: 700; font-size: 13px; color: #101828; margin-bottom: 3px;">
             ${property.title}
           </div>
           <div style="font-size: 11px; color: #64748B; margin-bottom: 6px;">
-            ${property.locality} • ${property.distance_formatted || 'Near target'}
+            ${property.locality}${property.city ? ', ' + property.city : ''} ${property.distance_formatted ? `• ${property.distance_formatted}` : ''}
           </div>
-          <div style="font-weight: 800; font-size: 14px; color: #101828; margin-bottom: 8px;">
+          <div style="font-weight: 800; font-size: 14px; color: #101828; margin-bottom: 6px;">
             ₹${property.rent.toLocaleString('en-IN')} <span style="font-size: 10px; font-weight: normal; color: #667085;">/mo</span>
           </div>
-          <div style="font-size: 10px; color: #94A3B8; font-style: italic; margin-bottom: 6px;">
-            🔒 Approximate neighborhood location shown for privacy
+          <div style="
+            background-color: #FFFBEB;
+            border: 1px solid #FDE68A;
+            border-radius: 6px;
+            padding: 5px 8px;
+            font-size: 10px;
+            color: #92400E;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          ">
+            <span>🔒 Approximate location shown for privacy</span>
           </div>
           <button id="btn-view-${property.id}" style="
             width: 100%;
-            background-color: #F59E0B;
-            color: #101828;
+            background-color: #101828;
+            color: #ffffff;
             border: none;
             border-radius: 8px;
-            padding: 6px 10px;
+            padding: 7px 10px;
             font-size: 11px;
             font-weight: 700;
             cursor: pointer;
+            transition: background 0.2s;
           ">
             View Details
           </button>
@@ -156,7 +190,7 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     });
 
     // Auto-fit if multiple properties exist
-    if (properties.length > 0 && bounds.isValid()) {
+    if (properties.length > 1 && bounds.isValid()) {
       mapInstanceRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
     }
   }, [properties, onSelectProperty, centerCoordinates]);
@@ -164,10 +198,11 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   return (
     <div className={`relative ${className} border border-[#E5E7EB] bg-[#F1F5F9]`}>
       <div ref={mapContainerRef} className="w-full h-full" />
+      
       {/* Privacy note overlay badge */}
-      <div className="absolute bottom-2 left-2 z-[400] bg-white/90 backdrop-blur-xs text-[10px] text-[#475569] px-2.5 py-1 rounded-md border border-[#E2E8F0] shadow-xs flex items-center gap-1.5 pointer-events-none">
-        <span className="w-2 h-2 rounded-full bg-[#F59E0B]"></span>
-        <span>Map pins approximate (~200m) for privacy</span>
+      <div className="absolute bottom-2.5 left-2.5 z-[400] bg-white/95 backdrop-blur-md text-[11px] font-semibold text-[#101828] px-3 py-1.5 rounded-xl border border-[#E2E8F0] shadow-sm flex items-center gap-2 pointer-events-none">
+        <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse"></span>
+        <span>Approximate location shown for privacy</span>
       </div>
     </div>
   );

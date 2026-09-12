@@ -107,7 +107,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             Report Received
           </h4>
           <p className="text-xs text-[#667085] leading-relaxed max-w-xs mx-auto mb-6">
-            Thank you for helping keep PrayagLiving safe for students. Our Prayagraj safety team has flagged "{entityName}" for manual review within 24 hours.
+            Thank you for helping keep Rented Thikan safe. Our trust and safety team has flagged "{entityName}" for review within 24 hours.
           </p>
           <Button onClick={handleClose} variant="dark" fullWidth>
             Back to Listing

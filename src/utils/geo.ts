@@ -1,4 +1,9 @@
 import { ProximityBucket } from '../types';
+import {
+  ALL_INDIAN_LOCALITIES,
+  ALL_INDIAN_CITIES,
+  ALL_INDIAN_LANDMARKS
+} from '../data/indiaLocations';
 
 /**
  * Earth radius in kilometers
@@ -69,7 +74,7 @@ export const PROXIMITY_BUCKET_LABELS: Record<ProximityBucket, { title: string; s
     subtitle: 'Between 3 km and 5 km away',
   },
   more_options: {
-    title: 'More Options Across Prayagraj',
+    title: 'More Options Nearby',
     subtitle: 'More than 5 km away',
   },
 };
@@ -83,7 +88,7 @@ export const PROXIMITY_BUCKET_LABELS: Record<ProximityBucket, { title: string; s
 export function getPublicDisplayCoordinates(
   lat: number,
   lng: number,
-  saltSeed: string = 'prayag'
+  saltSeed: string = 'rented_thikan_v1'
 ): { latitude: number; longitude: number } {
   // Deterministic pseudo-random angle and offset based on coordinate values and salt
   let hash = 0;
@@ -107,3 +112,88 @@ export function getPublicDisplayCoordinates(
     longitude: Math.round(jitteredLng * 100000) / 100000,
   };
 }
+
+export interface ReverseGeocodeResult {
+  localityName: string;
+  cityName?: string;
+  stateName?: string;
+  stateCode?: string;
+  displayName: string;
+  nearestLandmark?: string;
+  distanceToLocalityKm: number;
+  isWithinPrayagraj?: boolean;
+  isWithinIndia?: boolean;
+}
+
+/**
+ * Checks if coordinates fall within the greater Prayagraj administrative bounds.
+ */
+export function isWithinPrayagrajRegion(lat: number, lng: number): boolean {
+  return lat >= 25.20 && lat <= 25.65 && lng >= 81.65 && lng <= 82.15;
+}
+
+/**
+ * Universal reverse-geocodes geographic coordinates across India.
+ * Resolves to the nearest City, Locality, and Landmark.
+ */
+export function reverseGeocode(lat: number, lng: number): ReverseGeocodeResult {
+  // Find nearest city
+  let closestCity = ALL_INDIAN_CITIES[0];
+  let minCityDist = calculateHaversineDistanceKm(lat, lng, closestCity.latitude, closestCity.longitude);
+  for (let i = 1; i < ALL_INDIAN_CITIES.length; i++) {
+    const dist = calculateHaversineDistanceKm(lat, lng, ALL_INDIAN_CITIES[i].latitude, ALL_INDIAN_CITIES[i].longitude);
+    if (dist < minCityDist) {
+      minCityDist = dist;
+      closestCity = ALL_INDIAN_CITIES[i];
+    }
+  }
+
+  // Find nearest locality
+  let closestLocality = ALL_INDIAN_LOCALITIES[0];
+  let minLocDist = calculateHaversineDistanceKm(lat, lng, closestLocality.latitude, closestLocality.longitude);
+  for (let i = 1; i < ALL_INDIAN_LOCALITIES.length; i++) {
+    const dist = calculateHaversineDistanceKm(lat, lng, ALL_INDIAN_LOCALITIES[i].latitude, ALL_INDIAN_LOCALITIES[i].longitude);
+    if (dist < minLocDist) {
+      minLocDist = dist;
+      closestLocality = ALL_INDIAN_LOCALITIES[i];
+    }
+  }
+
+  // Find nearest landmark (< 2.5km)
+  let nearestLandmark: string | undefined = undefined;
+  for (const lm of ALL_INDIAN_LANDMARKS) {
+    if (lm.city_slug === closestLocality.city_slug) {
+      const d = calculateHaversineDistanceKm(lat, lng, lm.latitude, lm.longitude);
+      if (d < 2.5) {
+        nearestLandmark = lm.short_name || lm.name;
+        break;
+      }
+    }
+  }
+
+  const isWithinPrayagraj = isWithinPrayagrajRegion(lat, lng);
+  const isWithinIndia = lat >= 8 && lat <= 37 && lng >= 68 && lng <= 98;
+  const displayName = minLocDist < 25
+    ? `Near ${closestLocality.name}, ${closestLocality.city_name}`
+    : `${closestCity.name} Region, ${closestCity.state_code}`;
+
+  return {
+    localityName: minLocDist < 25 ? closestLocality.name : closestCity.name,
+    cityName: minLocDist < 25 ? closestLocality.city_name : closestCity.name,
+    stateName: minLocDist < 25 ? closestLocality.state_name : closestCity.state_name,
+    stateCode: minLocDist < 25 ? closestLocality.state_code : closestCity.state_code,
+    displayName,
+    nearestLandmark,
+    distanceToLocalityKm: minLocDist,
+    isWithinPrayagraj,
+    isWithinIndia,
+  };
+}
+
+/**
+ * Backwards-compatibility alias for reverseGeocode
+ */
+export function reverseGeocodePrayagraj(lat: number, lng: number): ReverseGeocodeResult {
+  return reverseGeocode(lat, lng);
+}
+

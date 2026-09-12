@@ -6,13 +6,14 @@ import {
   ContactRequestStatus
 } from '../types';
 import { MOCK_PROPERTIES } from '../data/mockProperties';
-import { PRAYAGRAJ_LOCALITIES } from '../config/localities';
+import { locationRepository } from './locationRepository';
 import {
   calculateHaversineDistanceKm,
   formatDistance,
   getProximityBucket,
   getPublicDisplayCoordinates
 } from '../utils/geo';
+import { serverAuth } from './serverAuth';
 
 const STORAGE_KEY = 'prayag_living_properties_v1';
 
@@ -64,29 +65,80 @@ export class PropertyRepository implements IPropertyRepository {
   }
 
   /**
-   * Enforces backend phone privacy rule:
-   * Phone number is revealed ONLY when:
-   *   phone_privacy === 'public' OR contact_request_status === 'accepted'
-   * Otherwise, the raw phone is stripped/nullified before reaching presentation.
+   * Helper to check if owner has shared exact location with this user in chat.
    */
-  private applyPhonePrivacyEnforcement(property: Property, currentUserId?: string): Property {
+  private hasSharedExactLocation(propertyId: string, userId?: string): boolean {
+    if (!userId) return false;
+    try {
+      const stored = localStorage.getItem('prayag_living_conversations_v1');
+      if (stored) {
+        const convs = JSON.parse(stored);
+        const match = convs.find(
+          (c: any) =>
+            c.property_id === propertyId &&
+            c.participant_ids.includes(userId) &&
+            Boolean(c.exact_location_share)
+        );
+        if (match) return true;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return false;
+  }
+
+  /**
+   * Enforces backend privacy rules:
+   * 1. PHONE PRIVACY: Phone number is revealed ONLY when:
+   *    phone_privacy === 'public' OR contact_request_status === 'accepted' OR user is owner
+   * 2. LOCATION PRIVACY: Canonical coordinates & exact house addresses are NEVER
+   *    exposed to public users. Public map only receives display_latitude / display_longitude
+   *    (neighborhood jitter). Exact address is only shared when explicitly sent by owner in chat.
+   */
+  private applyPrivacyEnforcement(property: Property, currentUserId?: string): Property {
     const cloned = { ...property };
     const requestStatus = this.getContactRequestStatus(cloned.id, currentUserId);
     cloned.contact_request_status = requestStatus;
 
-    const isAuthorized =
+    const isOwnerOrAdmin = Boolean(
+      currentUserId && (cloned.owner_id === currentUserId || currentUserId === 'admin-1')
+    );
+
+    const isLocationShared = this.hasSharedExactLocation(cloned.id, currentUserId);
+    cloned.is_exact_location_shared = isLocationShared;
+
+    // 1. Phone Privacy
+    const isPhoneAuthorized =
       cloned.phone_privacy === 'public' ||
       requestStatus === 'accepted' ||
-      (currentUserId && cloned.owner_id === currentUserId);
+      isOwnerOrAdmin;
 
-    if (!isAuthorized) {
+    if (!isPhoneAuthorized) {
       cloned.owner_phone = null;
     }
 
-    // Attach public display coordinates (with privacy jitter) for map rendering
-    const fuzzed = getPublicDisplayCoordinates(cloned.latitude, cloned.longitude, cloned.id);
+    // 2. Approximate Presentation Coordinates (Neighborhood jitter)
+    // Always compute fuzzed coordinates based on canonical coordinates
+    const canonicalLat = property.latitude || 25.4563;
+    const canonicalLng = property.longitude || 81.8546;
+    const fuzzed = getPublicDisplayCoordinates(canonicalLat, canonicalLng, cloned.id);
     cloned.display_latitude = fuzzed.latitude;
     cloned.display_longitude = fuzzed.longitude;
+
+    // 3. Coordinate & Address Sanitization for Public Clients
+    if (!isOwnerOrAdmin) {
+      // Stripped at repository layer: public clients NEVER receive canonical latitude/longitude
+      delete (cloned as any).latitude;
+      delete (cloned as any).longitude;
+
+      // Always sanitize public address to locality level (e.g. "Katra, Prayagraj", "Gomti Nagar, Lucknow")
+      // The exact doorstep address is strictly confined to the authenticated chat conversation
+      cloned.address = `${cloned.locality}, ${cloned.city || 'India'}`;
+      cloned.exact_address_shared = null;
+    } else {
+      // Owner/admin keeps full canonical access for maintenance & verification
+      cloned.exact_address_shared = property.address;
+    }
 
     return cloned;
   }
@@ -97,24 +149,82 @@ export class PropertyRepository implements IPropertyRepository {
   ): Promise<SearchResultSummary> {
     const all = this.getStoredProperties();
 
-    // 1. Resolve reference coordinates
+    // 1. Resolve reference coordinates and geographic context
     let refLat = params.reference_lat;
     let refLng = params.reference_lng;
-    let refLocalityName = params.locality || 'Katra';
+    let refLocalityName = params.locality || '';
+    let refCity = params.city;
+    let refState = params.state;
 
-    if (!refLat || !refLng) {
-      const foundLocality = PRAYAGRAJ_LOCALITIES.find(
-        (l) => l.name.toLowerCase() === (params.locality || 'katra').toLowerCase()
-      );
-      if (foundLocality) {
-        refLat = foundLocality.latitude;
-        refLng = foundLocality.longitude;
-        refLocalityName = foundLocality.name;
+    // A. If coordinates are provided (e.g. from GPS or map click):
+    if (refLat && refLng) {
+      if (!refLocalityName || !refCity) {
+        const rev = locationRepository.reverseGeocode(refLat, refLng);
+        if (!refLocalityName) refLocalityName = rev.localityName;
+        if (!refCity) refCity = rev.cityName;
+        if (!refState) refState = rev.stateName;
+      }
+    } else if (params.locality) {
+      // B. Locality lookup
+      const foundLoc = locationRepository.getLocalityBySlugOrName(params.locality, params.city);
+      if (foundLoc) {
+        refLat = foundLoc.latitude;
+        refLng = foundLoc.longitude;
+        refLocalityName = foundLoc.name;
+        if (!refCity) refCity = foundLoc.city_name;
+        if (!refState) refState = foundLoc.state_name;
       } else {
-        // Default to Katra (center of student ecosystem)
-        refLat = 25.4563;
-        refLng = 81.8546;
-        refLocalityName = 'Katra';
+        // Check if locality query was actually a city name!
+        const foundCity = locationRepository.getCityBySlugOrName(params.locality);
+        if (foundCity) {
+          refLat = foundCity.latitude;
+          refLng = foundCity.longitude;
+          refLocalityName = foundCity.name;
+          refCity = foundCity.name;
+          refState = foundCity.state_name;
+        }
+      }
+    } else if (params.city) {
+      // C. City lookup
+      const foundCity = locationRepository.getCityBySlugOrName(params.city);
+      if (foundCity) {
+        refLat = foundCity.latitude;
+        refLng = foundCity.longitude;
+        refLocalityName = foundCity.name;
+        refCity = foundCity.name;
+        refState = foundCity.state_name;
+      }
+    } else if (params.query) {
+      // D. Omnibox search query lookup
+      const matches = locationRepository.searchLocations(params.query);
+      if (matches.length > 0) {
+        const best = matches[0];
+        refLat = best.latitude;
+        refLng = best.longitude;
+        refLocalityName = best.locality || best.city;
+        refCity = best.city;
+        refState = best.state;
+      }
+    }
+
+    // Default fallback if still unresolved
+    if (!refLat || !refLng) {
+      if (refCity) {
+        const foundCity = locationRepository.getCityBySlugOrName(refCity);
+        if (foundCity) {
+          refLat = foundCity.latitude;
+          refLng = foundCity.longitude;
+          refLocalityName = refLocalityName || foundCity.name;
+          refState = refState || foundCity.state_name;
+        }
+      }
+      if (!refLat || !refLng) {
+        // Center of India geographic centroid
+        refLat = 20.5937;
+        refLng = 78.9629;
+        refLocalityName = refLocalityName || 'All Locations';
+        refCity = refCity || 'All India';
+        refState = refState || 'India';
       }
     }
 
@@ -124,6 +234,25 @@ export class PropertyRepository implements IPropertyRepository {
       if (p.availability_status === 'rented' || p.availability_status === 'paused') {
         return false;
       }
+
+      // Explicit city filter (when user actively selects a city in filters)
+      const explicitCity = params.city && params.city !== 'all' ? params.city : undefined;
+      if (explicitCity) {
+        const cityMatch =
+          (p.city_slug && p.city_slug.toLowerCase() === explicitCity.toLowerCase()) ||
+          p.city.toLowerCase() === explicitCity.toLowerCase();
+        if (!cityMatch) return false;
+      }
+
+      // Explicit state filter (if specified)
+      const explicitState = params.state && params.state !== 'all' ? params.state : undefined;
+      if (explicitState) {
+        const stateMatch =
+          (p.state_code && p.state_code.toLowerCase() === explicitState.toLowerCase()) ||
+          p.state.toLowerCase() === explicitState.toLowerCase();
+        if (!stateMatch) return false;
+      }
+
       if (params.property_type && params.property_type !== 'all' && p.property_type !== params.property_type) {
         return false;
       }
@@ -151,9 +280,15 @@ export class PropertyRepository implements IPropertyRepository {
 
     // 3. Compute continuous distance and bucket for each property
     const scoredProperties = candidates.map((p) => {
-      const dist = calculateHaversineDistanceKm(refLat!, refLng!, p.latitude, p.longitude);
+      const canonicalLat = p.latitude
+        ?? locationRepository.getCityBySlugOrName(p.city_slug || p.city)?.latitude
+        ?? 20.5937;
+      const canonicalLng = p.longitude
+        ?? locationRepository.getCityBySlugOrName(p.city_slug || p.city)?.longitude
+        ?? 78.9629;
+      const dist = calculateHaversineDistanceKm(refLat!, refLng!, canonicalLat, canonicalLng);
       const bucket = getProximityBucket(dist);
-      const secured = this.applyPhonePrivacyEnforcement(p, currentUserId);
+      const secured = this.applyPrivacyEnforcement(p, currentUserId);
       secured.distance_km = dist;
       secured.distance_formatted = formatDistance(dist);
       secured.proximity_bucket = bucket;
@@ -202,7 +337,9 @@ export class PropertyRepository implements IPropertyRepository {
     // Continuous dynamic radius expansion message
     const isExpanded = exactAreaCount === 0 || exactAreaCount < 2;
     let expandedMessage: string | undefined;
-    if (exactAreaCount === 0) {
+    if (scoredProperties.length === 0) {
+      expandedMessage = `No rooms currently listed in ${refLocalityName || 'this location'}. Be the first to list one!`;
+    } else if (exactAreaCount === 0) {
       expandedMessage = `No exact matches right inside ${refLocalityName}. Showing ${scoredProperties.length} verified options starting from nearest areas nearby.`;
     } else if (exactAreaCount < 2) {
       expandedMessage = `Showing ${exactAreaCount} option in ${refLocalityName} plus ${scoredProperties.length - exactAreaCount} nearby options within close distance.`;
@@ -211,6 +348,8 @@ export class PropertyRepository implements IPropertyRepository {
     return {
       properties: scoredProperties,
       reference_locality: refLocalityName,
+      reference_city: refCity,
+      reference_state: refState,
       reference_coordinates: { latitude: refLat!, longitude: refLng! },
       total_found: scoredProperties.length,
       exact_area_count: exactAreaCount,
@@ -222,21 +361,35 @@ export class PropertyRepository implements IPropertyRepository {
 
   async getPropertyById(id: string, currentUserId?: string): Promise<Property | null> {
     const all = this.getStoredProperties();
-    const found = all.find((p) => p.id === id);
-    if (!found) return null;
-    return this.applyPhonePrivacyEnforcement(found, currentUserId);
+    const prop = all.find((p) => p.id === id);
+    if (!prop) return null;
+    return this.applyPrivacyEnforcement(prop, currentUserId);
   }
 
-  async createProperty(data: Partial<Property>): Promise<Property> {
+  async createProperty(
+    data: Partial<Property>,
+    authenticatedUserId?: string
+  ): Promise<Property> {
     const all = this.getStoredProperties();
+    const id = `prop-${Date.now()}`;
+    const slug = (data.title || 'student-room')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
+    const creatorId = authenticatedUserId || data.created_by || data.owner_id || 'user-default';
+
     const newProperty: Property = {
-      id: `prop-${Date.now()}`,
-      owner_id: data.owner_id || 'owner-me',
-      owner_name: data.owner_name || 'Property Owner',
-      owner_phone: data.owner_phone || '+91 98765 43210',
-      owner_avatar: data.owner_avatar,
-      title: data.title || 'New Student Accommodation',
-      slug: (data.title || 'property').toLowerCase().replace(/\s+/g, '-'),
+      id,
+      owner_id: creatorId,
+      created_by: creatorId,
+      owner_name: data.lister_name || data.owner_name || 'Member',
+      lister_name: data.lister_name || data.owner_name || 'Member',
+      owner_phone: data.owner_phone || null,
+      lister_phone: data.owner_phone || null,
+      lister_type: data.lister_type || 'individual',
+      title: data.title || 'Student Room',
+      slug,
       description: data.description || '',
       property_type: data.property_type || 'pg',
       gender_preference: data.gender_preference || 'any',
@@ -255,17 +408,36 @@ export class PropertyRepository implements IPropertyRepository {
       balcony: Boolean(data.balcony),
       availability_status: 'available',
       is_verified: false,
+      verification_badge: undefined,
       is_featured: false,
       is_demo: false, // User-created listings are real local listings!
-      locality: data.locality || 'Katra',
+      country: data.country || 'India',
+      state: data.state || '',
+      state_code: data.state_code || '',
+      city: data.city || '',
+      city_slug: data.city_slug || (data.city ? data.city.toLowerCase().replace(/\s+/g, '-') : ''),
+      locality: data.locality || '',
+      locality_slug: data.locality_slug || (data.locality ? data.locality.toLowerCase().replace(/\s+/g, '-') : ''),
       sub_locality: data.sub_locality,
       landmark: data.landmark,
-      city: 'Prayagraj',
-      state: 'Uttar Pradesh',
-      pincode: data.pincode || '211002',
+      pincode: data.pincode || '',
       address: data.address || '',
-      latitude: Number(data.latitude) || 25.4563,
-      longitude: Number(data.longitude) || 81.8546,
+      latitude: (() => {
+        if (data.latitude && !isNaN(Number(data.latitude))) return Number(data.latitude);
+        const loc = locationRepository.getLocalityBySlugOrName(data.locality || '', data.city);
+        if (loc) return loc.latitude;
+        const ct = locationRepository.getCityBySlugOrName(data.city || '');
+        if (ct) return ct.latitude;
+        return 20.5937;
+      })(),
+      longitude: (() => {
+        if (data.longitude && !isNaN(Number(data.longitude))) return Number(data.longitude);
+        const loc = locationRepository.getLocalityBySlugOrName(data.locality || '', data.city);
+        if (loc) return loc.longitude;
+        const ct = locationRepository.getCityBySlugOrName(data.city || '');
+        if (ct) return ct.longitude;
+        return 78.9629;
+      })(),
       amenities: data.amenities || ['wifi', 'ro_water', 'study_table'],
       rules: data.rules || ['quiet_hours'],
       images: data.images && data.images.length > 0 ? data.images : [
@@ -286,10 +458,22 @@ export class PropertyRepository implements IPropertyRepository {
     return newProperty;
   }
 
-  async updateProperty(id: string, updates: Partial<Property>): Promise<Property> {
+  async updateProperty(
+    id: string,
+    updates: Partial<Property>,
+    requestingUserId?: string
+  ): Promise<Property> {
     const all = this.getStoredProperties();
     const index = all.findIndex((p) => p.id === id);
     if (index === -1) throw new Error(`Property ${id} not found`);
+
+    if (requestingUserId) {
+      const isOwner = all[index].created_by === requestingUserId || all[index].owner_id === requestingUserId;
+      const isAdmin = await serverAuth.verifySuperAdminAuthorization(requestingUserId);
+      if (!isOwner && !isAdmin) {
+        throw new Error('403 Forbidden: You do not have permission to modify this listing');
+      }
+    }
 
     const updated = {
       ...all[index],
@@ -301,26 +485,48 @@ export class PropertyRepository implements IPropertyRepository {
     return updated;
   }
 
-  async getPropertiesByOwner(ownerId: string): Promise<Property[]> {
+  async deleteProperty(id: string, requestingUserId?: string): Promise<boolean> {
     const all = this.getStoredProperties();
-    return all.filter((p) => p.owner_id === ownerId);
+    const index = all.findIndex((p) => p.id === id);
+    if (index === -1) return false;
+
+    if (requestingUserId) {
+      const isOwner = all[index].created_by === requestingUserId || all[index].owner_id === requestingUserId;
+      const isAdmin = await serverAuth.verifySuperAdminAuthorization(requestingUserId);
+      if (!isOwner && !isAdmin) {
+        throw new Error('403 Forbidden: You do not have permission to delete this listing');
+      }
+    }
+
+    all.splice(index, 1);
+    this.saveStoredProperties(all);
+    return true;
   }
 
-  async getAllPropertiesAdmin(): Promise<Property[]> {
+  async getPropertiesByOwner(ownerId: string): Promise<Property[]> {
+    const all = this.getStoredProperties();
+    return all.filter((p) => p.owner_id === ownerId || p.created_by === ownerId);
+  }
+
+  async getAllPropertiesAdmin(adminUserId?: string): Promise<Property[]> {
+    await serverAuth.assertSuperAdmin(adminUserId);
     return this.getStoredProperties();
   }
 
   async updatePropertyStatus(
     id: string,
-    status: Property['availability_status']
+    status: Property['availability_status'],
+    requestingUserId?: string
   ): Promise<Property> {
-    return this.updateProperty(id, { availability_status: status });
+    return this.updateProperty(id, { availability_status: status }, requestingUserId);
   }
 
   async verifyProperty(
     id: string,
-    badge: Property['verification_badge'] = 'platform_verified'
+    badge: Property['verification_badge'] = 'platform_verified',
+    adminUserId?: string
   ): Promise<Property> {
+    await serverAuth.assertSuperAdmin(adminUserId);
     return this.updateProperty(id, {
       is_verified: true,
       verification_badge: badge,

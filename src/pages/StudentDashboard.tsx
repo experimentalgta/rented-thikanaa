@@ -217,7 +217,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               Phone Number Privacy Controls
             </h2>
             <p className="text-xs text-[#667085] mt-1">
-              PrayagLiving is built on privacy-first communication. Control exactly who can view your phone number.
+              Rented Thikan is built on privacy-first communication. Control exactly who can view your phone number.
             </p>
           </div>
 

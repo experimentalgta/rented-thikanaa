@@ -166,8 +166,9 @@ export class RoommateRepository implements IRoommateRepository {
       roommates = roommates.filter((r) => r.gender === filters.gender);
     }
     if (filters?.locality && filters.locality !== 'all') {
+      const q = filters.locality.trim().toLowerCase();
       roommates = roommates.filter((r) =>
-        r.preferred_areas.some((a) => a.toLowerCase() === filters.locality?.toLowerCase())
+        r.preferred_areas.some((a) => a.toLowerCase().includes(q) || q.includes(a.toLowerCase()))
       );
     }
     if (filters?.maxBudget) {

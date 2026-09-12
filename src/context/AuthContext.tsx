@@ -1,64 +1,86 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserRole } from '../types';
+import { User, UserRole, AccountType } from '../types';
+import { serverAuth } from '../services/serverAuth';
 
 interface AuthContextType {
   currentUser: User;
-  setRole: (role: UserRole) => void;
+  isSuperAdmin: boolean;
+  updateProfile: (updates: Partial<User>) => void;
+  setRole: (role: UserRole) => void; // Maintained for backwards compatibility
   switchUser: (role: UserRole) => void;
 }
 
-const DEMO_USERS: Record<UserRole, User> = {
-  student: {
-    id: 'user-stud-1',
-    email: 'ankit.tiwari@allduniv.ac.in',
-    full_name: 'Ankit Tiwari',
-    role: 'student',
-    avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
-    phone_number: '+91 98394 55123',
-    is_verified: true,
-    created_at: '2026-08-01T00:00:00Z',
-  },
-  owner: {
-    id: 'owner-101',
-    email: 'pandey.nilayam@gmail.com',
-    full_name: 'Pandey Nilayam Residency',
-    role: 'owner',
-    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    phone_number: '+91 94152 38472',
-    is_verified: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-  admin: {
-    id: 'admin-1',
-    email: 'moderation@prayagliving.in',
-    full_name: 'PrayagLiving Trust & Safety',
-    role: 'admin',
-    avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80',
-    phone_number: '+91 94500 00001',
-    is_verified: true,
-    created_at: '2026-06-01T00:00:00Z',
-  },
+const DEFAULT_MEMBER: User = {
+  id: 'user-member-1',
+  email: 'ankit.tiwari@allduniv.ac.in',
+  full_name: 'Ankit Tiwari',
+  account_type: 'user',
+  role: 'member',
+  avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
+  phone_number: '+91 98394 55123',
+  is_verified: true,
+  college: 'Allahabad University (AU)',
+  occupation: 'Student / Civil Services Aspirant',
+  bio: 'Preparing for UPSC & State PCS in Katra. Looking for quiet study accommodations and offering a spare room in our 2BHK accommodation.',
+  preferred_areas: ['Katra', 'Mumfordganj', 'Civil Lines'],
+  budget: 5500,
+  created_at: '2026-08-01T00:00:00Z',
 };
+
+const SUPER_ADMIN_ACCOUNT: User = {
+  id: 'admin-1', // Verified by serverAuth in SERVER_SUPER_ADMIN_IDS
+  email: 'moderation@rentedthikan.in',
+  full_name: 'Rented Thikan Trust & Safety',
+  account_type: 'super_admin',
+  role: 'admin',
+  avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80',
+  phone_number: '+91 94500 00001',
+  is_verified: true,
+  created_at: '2026-06-01T00:00:00Z',
+};
+
+const USER_STORAGE_KEY = 'prayag_living_current_user_v2';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User>(() => {
     try {
-      const savedRole = localStorage.getItem('prayag_living_active_role') as UserRole;
-      if (savedRole && DEMO_USERS[savedRole]) {
-        return DEMO_USERS[savedRole];
+      const stored = localStorage.getItem(USER_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.id) return parsed;
       }
     } catch (e) {}
-    return DEMO_USERS.student;
+    return DEFAULT_MEMBER;
   });
 
+  // Server-side authorization authority determines Super Admin UX display
+  const isSuperAdmin = serverAuth.isSuperAdmin(currentUser.id);
+
+  const updateProfile = (updates: Partial<User>) => {
+    setCurrentUser((prev) => {
+      const updated = { ...prev, ...updates };
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  // Backwards compatibility helper
   const setRole = (role: UserRole) => {
-    const user = DEMO_USERS[role];
-    setCurrentUser(user);
-    try {
-      localStorage.setItem('prayag_living_active_role', role);
-    } catch (e) {}
+    if (role === 'admin') {
+      setCurrentUser(SUPER_ADMIN_ACCOUNT);
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(SUPER_ADMIN_ACCOUNT));
+      } catch (e) {}
+    } else {
+      setCurrentUser(DEFAULT_MEMBER);
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(DEFAULT_MEMBER));
+      } catch (e) {}
+    }
   };
 
   const switchUser = (role: UserRole) => {
@@ -66,7 +88,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, setRole, switchUser }}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        isSuperAdmin,
+        updateProfile,
+        setRole,
+        switchUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

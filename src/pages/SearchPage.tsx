@@ -7,7 +7,8 @@ import {
   ShieldCheck,
   RotateCcw,
   Sparkles,
-  Info
+  Info,
+  Navigation
 } from 'lucide-react';
 import { LocationSelector } from '../components/search/LocationSelector';
 import { FilterSidebar } from '../components/search/FilterSidebar';
@@ -24,25 +25,37 @@ import {
 import { propertyRepository } from '../services/propertyRepository';
 import { PROXIMITY_BUCKET_LABELS } from '../utils/geo';
 import { useAuth } from '../context/AuthContext';
+import { useLocation } from '../context/LocationContext';
 
 interface SearchPageProps {
   initialLocality?: string;
   initialPropertyType?: string;
   onSelectProperty: (property: Property) => void;
+  onNavigate?: (view: string, param?: any) => void;
 }
 
 export const SearchPage: React.FC<SearchPageProps> = ({
-  initialLocality = 'Katra',
+  initialLocality = '',
   initialPropertyType,
   onSelectProperty,
+  onNavigate,
 }) => {
   const { currentUser } = useAuth();
-  const [selectedLocality, setSelectedLocality] = useState(initialLocality);
+  const { userLocation, clearLocation } = useLocation();
+  const [selectedLocality, setSelectedLocality] = useState(() => {
+    if (userLocation.source === 'gps' && userLocation.locality) {
+      return userLocation.locality;
+    }
+    return initialLocality;
+  });
   const [viewMode, setViewMode] = useState<'split' | 'list' | 'map'>('list');
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
-  const [filters, setFilters] = useState<PropertySearchParams>({
-    locality: initialLocality,
+  const [filters, setFilters] = useState<PropertySearchParams>(() => ({
+    locality: userLocation.source === 'gps' && userLocation.locality ? userLocation.locality : initialLocality,
+    reference_lat: userLocation.source === 'gps' ? userLocation.latitude : undefined,
+    reference_lng: userLocation.source === 'gps' ? userLocation.longitude : undefined,
+    location_source: userLocation.source,
     property_type: (initialPropertyType as any) || 'all',
     gender: 'any',
     room_type: 'all',
@@ -50,7 +63,30 @@ export const SearchPage: React.FC<SearchPageProps> = ({
     sort_by: 'nearest',
     amenities: [],
     verified_only: false,
-  });
+  }));
+
+  // Sync when userLocation updates (e.g. GPS detected or cleared)
+  useEffect(() => {
+    if (userLocation.source === 'gps' && userLocation.latitude && userLocation.longitude) {
+      setFilters((prev) => ({
+        ...prev,
+        locality: userLocation.locality || prev.locality,
+        reference_lat: userLocation.latitude,
+        reference_lng: userLocation.longitude,
+        location_source: 'gps',
+      }));
+      if (userLocation.locality) {
+        setSelectedLocality(userLocation.locality);
+      }
+    } else if (userLocation.source === 'none') {
+      setFilters((prev) => ({
+        ...prev,
+        reference_lat: undefined,
+        reference_lng: undefined,
+        location_source: 'none',
+      }));
+    }
+  }, [userLocation.source, userLocation.latitude, userLocation.longitude, userLocation.locality]);
 
   const [searchResult, setSearchResult] = useState<SearchResultSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,11 +133,12 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         <div className="w-full sm:max-w-md">
           <LocationSelector
             selectedLocality={selectedLocality}
-            onSelect={(loc, lat, lng) => {
+            onSelect={(loc, lat, lng, cityName) => {
               setSelectedLocality(loc);
               setFilters((prev) => ({
                 ...prev,
                 locality: loc,
+                city: cityName,
                 reference_lat: lat,
                 reference_lng: lng,
               }));
@@ -165,6 +202,37 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           </div>
         </div>
       </div>
+
+      {/* GPS Active Proximity Notice */}
+      {userLocation.source === 'gps' && (
+        <div className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-[#101828] text-white border border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs animate-in fade-in-50">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-[#F59E0B]/20 text-[#F59E0B] flex items-center justify-center shrink-0 border border-[#F59E0B]/30">
+              <Navigation className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-bold text-sm text-white flex items-center gap-2">
+                <span>Showing the closest options to your location</span>
+                <span className="text-[10px] font-semibold text-[#F59E0B] bg-[#F59E0B]/15 px-2 py-0.5 rounded-full border border-[#F59E0B]/20">
+                  GPS Active
+                </span>
+              </div>
+              <p className="text-[#94A3B8] text-xs mt-0.5">
+                {userLocation.displayName || `Near ${selectedLocality}, Prayagraj`} • Ranked by true walking distance without hard cutoffs
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              clearLocation();
+            }}
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#94A3B8] hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+          >
+            Clear GPS
+          </button>
+        </div>
+      )}
 
       {/* Low-Inventory Auto-Expansion Banner */}
       {searchResult?.is_expanded && searchResult.expanded_message && (
@@ -255,20 +323,32 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                   );
                 })
               ) : (
-                /* Empty state with nearby fallback recommendation */
-                <div className="bg-white rounded-2xl border border-[#E5E7EB] p-8 text-center">
+                /* Empty state with listing prompt */
+                <div className="bg-white rounded-2xl border border-[#E5E7EB] p-8 text-center max-w-lg mx-auto">
                   <div className="w-12 h-12 rounded-full bg-[#FFFBEB] text-[#D97706] flex items-center justify-center mx-auto mb-3">
                     <MapPin className="w-6 h-6" />
                   </div>
                   <h4 className="text-base font-bold text-[#111827] font-heading mb-1">
-                    No exact listings match your current filters
+                    No rooms listed in {selectedLocality || 'this location'} yet
                   </h4>
                   <p className="text-xs text-[#667085] max-w-sm mx-auto mb-5">
-                    Try broadening your budget, clearing room type restrictions, or searching nearby student localities like Katra or Civil Lines.
+                    {searchResult?.expanded_message ||
+                      'Be the first member to list a room, PG, flat, or hostel here. You can also reset filters to explore more areas.'}
                   </p>
-                  <Button variant="primary" size="sm" onClick={handleResetFilters}>
-                    Reset Search Filters
-                  </Button>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button variant="primary" size="sm" onClick={handleResetFilters}>
+                      Reset Search Filters
+                    </Button>
+                    {onNavigate && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onNavigate('add-property')}
+                      >
+                        + List a Property Here
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

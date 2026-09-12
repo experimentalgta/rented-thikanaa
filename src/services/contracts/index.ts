@@ -17,9 +17,9 @@ export interface IPropertyRepository {
   createProperty(data: Partial<Property>): Promise<Property>;
   updateProperty(id: string, updates: Partial<Property>): Promise<Property>;
   getPropertiesByOwner(ownerId: string): Promise<Property[]>;
-  getAllPropertiesAdmin(): Promise<Property[]>;
+  getAllPropertiesAdmin(adminUserId?: string): Promise<Property[]>;
   updatePropertyStatus(id: string, status: Property['availability_status']): Promise<Property>;
-  verifyProperty(id: string, badge: Property['verification_badge']): Promise<Property>;
+  verifyProperty(id: string, badge: Property['verification_badge'], adminUserId?: string): Promise<Property>;
 }
 
 export interface IRoommateRepository {
@@ -41,23 +41,24 @@ export interface IChatRepository {
   getConversations(userId: string): Promise<Conversation[]>;
   getMessages(conversationId: string): Promise<Message[]>;
   sendMessage(data: {
-    conversationId: string;
+    conversationId?: string;
     senderId: string;
     senderName: string;
     receiverId: string;
     text: string;
     propertyContext?: Message['property_context'];
+    locationShare?: Message['location_share'];
   }): Promise<Message>;
   sendContactRequest(data: {
     propertyId?: string;
     propertyTitle?: string;
     requesterId: string;
     requesterName: string;
-    requesterRole: 'student' | 'owner';
+    requesterRole?: string;
     requesterPhone?: string;
     receiverId: string;
     receiverName: string;
-    receiverRole: 'student' | 'owner';
+    receiverRole?: string;
   }): Promise<ContactRequest>;
   updateContactRequestStatus(requestId: string, status: ContactRequestStatus): Promise<ContactRequest>;
   getContactRequests(userId: string): Promise<ContactRequest[]>;

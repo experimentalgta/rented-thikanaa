@@ -83,7 +83,7 @@ export const ContactRequestModal: React.FC<ContactRequestModalProps> = ({
             <div>
               <span className="font-bold">Phone Number Protected</span>
               <p className="mt-0.5 leading-relaxed text-[11px] text-[#B45309]">
-                To prevent spam and protect privacy, owner numbers are private by default. Sending a request lets the owner review your student profile before exchanging phone numbers.
+                To prevent spam and protect privacy, lister phone numbers are private by default. Sending a request lets the lister review your member profile before exchanging phone numbers.
               </p>
             </div>
           </div>
@@ -96,8 +96,8 @@ export const ContactRequestModal: React.FC<ContactRequestModalProps> = ({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">Owner / Host:</span>
-              <span className="font-medium text-[#111827]">{property.owner_name}</span>
+              <span className="text-[#64748B]">Listed by / Host:</span>
+              <span className="font-medium text-[#111827]">{property.lister_name || property.owner_name}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#64748B]">Your Phone to Share:</span>

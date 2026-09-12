@@ -1,6 +1,6 @@
 import React from 'react';
-import { ShieldCheck, MapPin, Phone, Mail, Heart } from 'lucide-react';
-import { PRAYAGRAJ_LOCALITIES } from '../../config/localities';
+import { ShieldCheck, MapPin, Phone, Mail, Heart, Building2 } from 'lucide-react';
+import { INDIAN_CITIES } from '../../config/locations';
 
 interface FooterProps {
   onSelectLocality: (localityName: string) => void;
@@ -16,39 +16,39 @@ export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) 
           <div className="lg:col-span-2">
             <div className="flex items-center gap-2.5 mb-4">
               <div className="w-9 h-9 rounded-xl bg-[#F59E0B] flex items-center justify-center">
-                <span className="text-xl font-black text-[#101828] font-heading">P</span>
+                <span className="text-base font-black text-[#101828] font-heading">RT</span>
               </div>
               <span className="text-xl font-bold tracking-tight font-heading text-white">
-                PrayagLiving
+                Rented Thikan
               </span>
             </div>
             <p className="text-sm text-[#94A3B8] leading-relaxed mb-4 max-w-sm">
-              The premium, privacy-first student living platform for Prayagraj. Discover verified rooms, PGs, hostels and compatible student roommates near Allahabad University and major coaching hubs.
+              India's premier, privacy-first living marketplace. Find verified rooms, PGs, hostels, flats, and compatible roommates across India's top education and job hubs.
             </p>
             <div className="p-3.5 rounded-xl bg-[#172554]/60 border border-[#1E293B] max-w-sm">
               <div className="flex items-center gap-2 text-[#F59E0B] text-xs font-semibold mb-1">
                 <ShieldCheck className="w-4 h-4 shrink-0" />
-                Privacy-First Architecture
+                Privacy-First Living Architecture
               </div>
               <p className="text-[11px] text-[#94A3B8] leading-normal">
-                Phone numbers are private by default. In-app communication first. Exact property coordinates are kept private and fuzzed on the public map.
+                Phone numbers are private by default. In-app communication first. Exact doorstep coordinates and house numbers remain confidential and are fuzzed on the public map.
               </p>
             </div>
           </div>
 
-          {/* Col 3: Popular Localities */}
+          {/* Col 3: Popular Cities */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-4">
-              Student Localities
+              Top Indian Cities
             </h4>
             <ul className="space-y-2 text-sm text-[#CBD5E1]">
-              {PRAYAGRAJ_LOCALITIES.slice(0, 6).map((loc) => (
-                <li key={loc.id}>
+              {INDIAN_CITIES.slice(0, 6).map((city) => (
+                <li key={city.id}>
                   <button
-                    onClick={() => onSelectLocality(loc.name)}
+                    onClick={() => onSelectLocality(city.name)}
                     className="hover:text-white transition-colors text-left"
                   >
-                    Rooms in {loc.name}
+                    Rooms in {city.name}
                   </button>
                 </li>
               ))}
@@ -66,7 +66,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) 
                   onClick={() => onNavigate('search')}
                   className="hover:text-white transition-colors text-left"
                 >
-                  Browse Student PGs
+                  Browse Rooms &amp; PGs
                 </button>
               </li>
               <li>
@@ -79,18 +79,18 @@ export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) 
               </li>
               <li>
                 <button
-                  onClick={() => onNavigate('owner-add')}
+                  onClick={() => onNavigate('add-property')}
                   className="hover:text-white transition-colors text-left"
                 >
-                  List Your Property (Free)
+                  List Your Room (Free)
                 </button>
               </li>
               <li>
                 <button
-                  onClick={() => onNavigate('student-dashboard')}
+                  onClick={() => onNavigate('member-dashboard')}
                   className="hover:text-white transition-colors text-left"
                 >
-                  Student Dashboard
+                  Member Dashboard
                 </button>
               </li>
               <li>
@@ -104,29 +104,35 @@ export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) 
             </ul>
           </div>
 
-          {/* Col 5: Expansion & City Teaser */}
+          {/* Col 5: Active & Expanding Hubs */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-4">
-              Launch Cities
+              Active Hubs
             </h4>
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
-                <span className="font-medium text-white">Prayagraj, UP</span>
+                <span className="font-medium text-white">Prayagraj</span>
                 <span className="text-[10px] bg-[#F59E0B] text-[#101828] font-bold px-1.5 py-0.5 rounded">
-                  LIVE
+                  ACTIVE
                 </span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 opacity-60">
-                <span>Varanasi</span>
-                <span className="text-[10px] text-[#94A3B8]">Coming Next</span>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
+                <span className="font-medium text-white">Lucknow</span>
+                <span className="text-[10px] bg-[#F59E0B] text-[#101828] font-bold px-1.5 py-0.5 rounded">
+                  ACTIVE
+                </span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 opacity-60">
-                <span>Lucknow</span>
-                <span className="text-[10px] text-[#94A3B8]">Coming Next</span>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
+                <span className="font-medium text-white">Delhi / NCR</span>
+                <span className="text-[10px] bg-[#F59E0B] text-[#101828] font-bold px-1.5 py-0.5 rounded">
+                  ACTIVE
+                </span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 opacity-60">
-                <span>Delhi (North Campus)</span>
-                <span className="text-[10px] text-[#94A3B8]">Coming Next</span>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
+                <span className="font-medium text-white">Mumbai &amp; Bengaluru</span>
+                <span className="text-[10px] bg-[#F59E0B] text-[#101828] font-bold px-1.5 py-0.5 rounded">
+                  ACTIVE
+                </span>
               </div>
             </div>
           </div>
@@ -134,9 +140,9 @@ export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) 
 
         {/* Bottom copyright & disclaimer */}
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#64748B]">
-          <p>© 2026 PrayagLiving. Built for the student community of Prayagraj.</p>
+          <p>© 2026 Rented Thikan. India-Wide Room, Property &amp; Roommate Marketplace.</p>
           <div className="flex items-center gap-4">
-            <span className="text-amber-400/80">Demo seed data clearly flagged for evaluation</span>
+            <span className="text-amber-400/80">Find a Room. Find a Roommate. Stay Safe.</span>
             <span>•</span>
             <span>Privacy Policy</span>
             <span>•</span>

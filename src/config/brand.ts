@@ -1,11 +1,11 @@
 export const BRAND = {
-  name: 'PrayagLiving',
+  name: 'Rented Thikan',
   tagline: 'Find a Room. Find a Roommate. Stay Safe.',
-  subheading: 'Discover verified student rooms, PGs, hostels and compatible roommates near Allahabad University, coaching hubs, and colleges with privacy-first contact.',
-  city: 'Prayagraj',
-  state: 'Uttar Pradesh',
+  subheading: 'Discover verified rooms, PGs, hostels, flats, and compatible roommates across India with privacy-first contact.',
+  city: 'All India',
+  state: 'India',
   country: 'India',
-  contactEmail: 'support@prayagliving.in',
+  contactEmail: 'support@rentedthikan.in',
   supportHours: '9:00 AM – 8:00 PM IST',
 };
 

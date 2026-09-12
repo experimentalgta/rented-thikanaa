@@ -11,9 +11,11 @@ import {
   ExternalLink,
   Lock
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { Property, Report } from '../types';
 import { propertyRepository } from '../services/propertyRepository';
 import { chatAndSafetyRepository } from '../services/safetyAndChatRepository';
+import { serverAuth } from '../services/serverAuth';
 import { Button } from '../components/common/Button';
 
 interface AdminDashboardProps {
@@ -23,20 +25,27 @@ interface AdminDashboardProps {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onSelectProperty,
 }) => {
+  const { currentUser } = useAuth();
   const [properties, setProperties] = useState<Property[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<'listings' | 'reports'>('listings');
 
   const loadAdminData = async () => {
     setLoading(true);
     try {
-      const props = await propertyRepository.getAllPropertiesAdmin();
-      setProperties(props);
-      const reps = await chatAndSafetyRepository.getReports();
-      setReports(reps);
+      const authorized = await serverAuth.verifySuperAdminAuthorization(currentUser?.id);
+      setIsAuthorized(authorized);
+      if (authorized && currentUser?.id) {
+        const props = await propertyRepository.getAllPropertiesAdmin(currentUser.id);
+        setProperties(props);
+        const reps = await chatAndSafetyRepository.getReports(currentUser.id);
+        setReports(reps);
+      }
     } catch (e) {
       console.error(e);
+      setIsAuthorized(false);
     } finally {
       setLoading(false);
     }
@@ -44,11 +53,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   useEffect(() => {
     loadAdminData();
-  }, []);
+  }, [currentUser?.id]);
 
   const handleVerifyProperty = async (propertyId: string) => {
     try {
-      await propertyRepository.verifyProperty(propertyId, 'platform_verified');
+      await propertyRepository.verifyProperty(propertyId, 'platform_verified', currentUser?.id);
       await loadAdminData();
     } catch (e) {
       console.error(e);
@@ -57,12 +66,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleReportAction = async (reportId: string, status: Report['status']) => {
     try {
-      await chatAndSafetyRepository.updateReportStatus(reportId, status);
+      await chatAndSafetyRepository.updateReportStatus(reportId, status, currentUser?.id);
       await loadAdminData();
     } catch (e) {
       console.error(e);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-16 text-center text-[#667085]">
+        Verifying administrative authorization...
+      </div>
+    );
+  }
+
+  if (isAuthorized === false) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-20 text-center">
+        <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-200">
+          <Lock className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl font-bold text-[#101828] font-heading mb-2">
+          403 Forbidden — Access Denied
+        </h1>
+        <p className="text-xs text-[#667085] max-w-md mx-auto mb-6">
+          Super Admin authorization is strictly enforced server-side. Your current account does not have administrative moderation privileges.
+        </p>
+        <div className="p-4 bg-white border border-[#E2E8F0] rounded-2xl text-xs text-[#64748B] text-left space-y-1.5 shadow-xs">
+          <p className="font-semibold text-[#111827]">Security Architecture Guarantees:</p>
+          <ul className="list-disc list-inside space-y-1 text-[11px]">
+            <li>Zero client-side trust: client state and localStorage changes are ignored.</li>
+            <li>Privileged endpoints validate authenticated IDs against server authority.</li>
+            <li>Normal member accounts receive zero admin data.</li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28">
@@ -72,11 +113,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center gap-2 mb-1">
             <ShieldCheck className="w-6 h-6 text-[#F59E0B]" />
             <h1 className="text-xl sm:text-2xl font-bold font-heading">
-              PrayagLiving Trust &amp; Safety Panel
+              Rented Thikan Trust &amp; Safety Panel
             </h1>
           </div>
           <p className="text-xs text-[#94A3B8]">
-            Moderation center for Prayagraj student housing. Review pending listings, verify owner identities, and resolve student safety reports.
+            Nationwide moderation center for Rented Thikan. Review listings, verify member identities, and resolve trust &amp; safety reports.
           </p>
         </div>
 

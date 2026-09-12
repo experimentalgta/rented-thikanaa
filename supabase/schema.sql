@@ -1,29 +1,113 @@
 -- ========================================================================
--- PrayagLiving Production PostgreSQL & PostGIS Database Schema
--- Premium Student Housing & Roommate Discovery Platform
+-- Rented Thikan Production PostgreSQL & PostGIS Database Schema
+-- Scalable India-Wide Room, Property & Roommate Discovery Marketplace
 -- ========================================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "postgis";
 
+-- 0. NORMALIZED ALL-INDIA GEOGRAPHIC HIERARCHY (OSM / PostGIS)
+-- Country -> State/UT -> District -> City/Town -> Locality/Area -> Landmark
+CREATE TABLE IF NOT EXISTS public.geo_countries (
+  code TEXT PRIMARY KEY, -- 'IN'
+  name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.geo_states (
+  code TEXT PRIMARY KEY, -- 'UP', 'MH', 'KA', 'DL', etc.
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'state', -- 'state' or 'ut'
+  slug TEXT NOT NULL UNIQUE,
+  capital TEXT,
+  region TEXT
+);
+
+CREATE TABLE IF NOT EXISTS public.geo_districts (
+  id TEXT PRIMARY KEY,
+  state_code TEXT NOT NULL REFERENCES public.geo_states(code) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.geo_cities (
+  id TEXT PRIMARY KEY,
+  district_id TEXT REFERENCES public.geo_districts(id) ON DELETE CASCADE,
+  state_code TEXT NOT NULL REFERENCES public.geo_states(code) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  is_popular BOOLEAN DEFAULT false,
+  location GEOGRAPHY(POINT, 4326)
+);
+
+CREATE TABLE IF NOT EXISTS public.geo_localities (
+  id TEXT PRIMARY KEY,
+  city_id TEXT NOT NULL REFERENCES public.geo_cities(id) ON DELETE CASCADE,
+  district_id TEXT REFERENCES public.geo_districts(id) ON DELETE CASCADE,
+  state_code TEXT NOT NULL REFERENCES public.geo_states(code) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  pincode TEXT,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  location GEOGRAPHY(POINT, 4326)
+);
+
+CREATE TABLE IF NOT EXISTS public.geo_landmarks (
+  id TEXT PRIMARY KEY,
+  locality_id TEXT REFERENCES public.geo_localities(id) ON DELETE CASCADE,
+  city_id TEXT NOT NULL REFERENCES public.geo_cities(id) ON DELETE CASCADE,
+  state_code TEXT NOT NULL REFERENCES public.geo_states(code) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  short_name TEXT,
+  category TEXT NOT NULL,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  location GEOGRAPHY(POINT, 4326)
+);
+
+CREATE INDEX IF NOT EXISTS idx_geo_cities_location ON public.geo_cities USING GIST (location);
+CREATE INDEX IF NOT EXISTS idx_geo_localities_location ON public.geo_localities USING GIST (location);
+
 -- 1. USERS & ROLES
-CREATE TYPE user_role AS ENUM ('student', 'owner', 'admin');
+CREATE TYPE account_type_enum AS ENUM ('user', 'super_admin');
+CREATE TYPE user_role AS ENUM ('member', 'admin'); -- Legacy support
 CREATE TYPE phone_privacy_level AS ENUM ('private', 'on_request', 'public');
 CREATE TYPE contact_request_status AS ENUM ('pending', 'accepted', 'rejected');
 CREATE TYPE property_type_enum AS ENUM ('room', 'pg', 'hostel', 'flat', 'homestay', 'shared_room');
 CREATE TYPE gender_enum AS ENUM ('male', 'female', 'any');
 CREATE TYPE availability_enum AS ENUM ('available', 'limited', 'rented', 'paused', 'expired');
 
+-- Protected Super Admin table (Server-side authorization only; no public write)
+CREATE TABLE IF NOT EXISTS public.super_admins (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.super_admins ENABLE ROW LEVEL SECURITY;
+
+-- Helper function to verify super admin access without trusting client payloads
+CREATE OR REPLACE FUNCTION public.is_super_admin(user_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM public.super_admins WHERE super_admins.user_id = user_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   phone_number TEXT,
-  role user_role NOT NULL DEFAULT 'student',
+  account_type account_type_enum NOT NULL DEFAULT 'user',
   avatar_url TEXT,
   phone_privacy phone_privacy_level NOT NULL DEFAULT 'private',
   is_verified BOOLEAN NOT NULL DEFAULT false,
   is_blocked BOOLEAN NOT NULL DEFAULT false,
+  college TEXT,
+  occupation TEXT,
+  bio TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -50,6 +134,8 @@ CREATE TABLE IF NOT EXISTS public.student_profiles (
 CREATE TABLE IF NOT EXISTS public.properties (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   owner_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  created_by UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  lister_type TEXT DEFAULT 'individual',
   title TEXT NOT NULL,
   slug TEXT NOT NULL,
   description TEXT,
@@ -77,9 +163,9 @@ CREATE TABLE IF NOT EXISTS public.properties (
   locality TEXT NOT NULL,
   sub_locality TEXT,
   landmark TEXT,
-  city TEXT NOT NULL DEFAULT 'Prayagraj',
-  state TEXT NOT NULL DEFAULT 'Uttar Pradesh',
-  pincode TEXT NOT NULL DEFAULT '211002',
+  city TEXT NOT NULL,
+  state TEXT NOT NULL,
+  pincode TEXT NOT NULL DEFAULT '',
   address TEXT NOT NULL,
   location GEOGRAPHY(POINT, 4326) NOT NULL, -- Exact Lat/Lon point
   

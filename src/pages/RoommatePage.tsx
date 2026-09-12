@@ -43,7 +43,7 @@ export const RoommatePage: React.FC = () => {
     openChatWithContext({
       id: `roommate-${roommate.id}`,
       title: `Roommate Inquiry: ${roommate.full_name}`,
-      locality: roommate.preferred_areas[0] || 'Katra',
+      locality: roommate.preferred_areas[0] || 'Local Area',
       rent: roommate.budget_min,
       owner_id: roommate.user_id,
       owner_name: roommate.full_name,
@@ -60,10 +60,10 @@ export const RoommatePage: React.FC = () => {
             <span>Smart Compatibility Matching</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-black font-heading tracking-tight mb-3">
-            Find Your Student Roommate in Prayagraj
+            Find Your Roommate Across India
           </h1>
           <p className="text-xs sm:text-sm text-[#CBD5E1] leading-relaxed">
-            Connect with students from Allahabad University, CMP, MNNIT, and civil services coaching hubs. Match on lifestyle, sleep habits, diet, and budget with privacy-first contact.
+            Connect with students, working professionals, and co-living seekers across India. Match on lifestyle, sleep habits, diet, and budget with privacy-first contact.
           </p>
         </div>
       </div>
@@ -102,18 +102,13 @@ export const RoommatePage: React.FC = () => {
           <label className="block text-[10px] uppercase font-bold text-[#64748B] mb-1">
             Area Target
           </label>
-          <select
-            value={localityFilter}
-            onChange={(e) => setLocalityFilter(e.target.value)}
-            className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-1.5 text-xs text-[#111827] focus:outline-none"
-          >
-            <option value="all">Any Locality</option>
-            <option value="Katra">Katra</option>
-            <option value="Civil Lines">Civil Lines</option>
-            <option value="Mumfordganj">Mumfordganj</option>
-            <option value="George Town">George Town</option>
-            <option value="University Area">University Area</option>
-          </select>
+          <input
+            type="text"
+            value={localityFilter === 'all' ? '' : localityFilter}
+            onChange={(e) => setLocalityFilter(e.target.value.trim() ? e.target.value : 'all')}
+            placeholder="Filter city or area..."
+            className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-1.5 text-xs text-[#111827] focus:outline-none focus:border-[#F59E0B] w-36 sm:w-44"
+          />
         </div>
 
         {/* Dietary */}

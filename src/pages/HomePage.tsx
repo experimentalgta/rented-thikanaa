@@ -15,9 +15,11 @@ import {
   PhoneOff
 } from 'lucide-react';
 import { LocationSelector } from '../components/search/LocationSelector';
+import { LocationPromptBanner } from '../components/search/LocationPromptBanner';
+import { useLocation } from '../context/LocationContext';
 import { PropertyCard } from '../components/property/PropertyCard';
 import { Property, StudentProfile } from '../types';
-import { PRAYAGRAJ_LOCALITIES } from '../config/localities';
+import { INDIAN_CITIES } from '../config/locations';
 import { Button } from '../components/common/Button';
 
 interface HomePageProps {
@@ -35,7 +37,14 @@ export const HomePage: React.FC<HomePageProps> = ({
   onSelectProperty,
   onNavigate,
 }) => {
-  const [selectedLocality, setSelectedLocality] = React.useState('Katra');
+  const { userLocation } = useLocation();
+  const [selectedLocality, setSelectedLocality] = React.useState(userLocation.locality || '');
+
+  React.useEffect(() => {
+    if (userLocation.locality) {
+      setSelectedLocality(userLocation.locality);
+    }
+  }, [userLocation.locality]);
 
   const propertyTypes = [
     { id: 'room', name: 'Rooms', icon: '🏠', count: '48+ active' },
@@ -57,25 +66,34 @@ export const HomePage: React.FC<HomePageProps> = ({
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-semibold text-[#F59E0B] mb-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse" />
-            <span>Now Live in Prayagraj • Katra, Civil Lines, Mumfordganj &amp; University</span>
+            <span>India's Privacy-First Housing Network • Find Rooms &amp; Compatible Roommates</span>
           </div>
 
           {/* Core Headline */}
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight font-heading leading-tight sm:leading-none text-white mb-6">
-            Find a Room. <br className="hidden sm:inline" />
-            <span className="text-[#F59E0B]">Find a Roommate.</span> <br />
-            Stay Safe.
+            Find Your Perfect Thikan. <br className="hidden sm:inline" />
+            <span className="text-[#F59E0B]">Across All of India.</span>
           </h1>
 
           {/* Subheading */}
-          <p className="text-sm sm:text-lg text-[#CBD5E1] max-w-2xl mx-auto mb-10 leading-relaxed">
-            Discover verified rooms, PGs, hostels and compatible student roommates near Allahabad University, CMP, MNNIT, and civil services coaching centers with privacy-first contact.
+          <p className="text-sm sm:text-lg text-[#CBD5E1] max-w-2xl mx-auto mb-8 leading-relaxed">
+            Discover verified rooms, PGs, hostels, flats, and compatible roommates across Indian cities with transparent rent and zero broker hassle.
           </p>
+
+          {/* Geolocation Prompt Banner */}
+          <LocationPromptBanner
+            className="mb-5 max-w-3xl mx-auto text-left"
+            onSuccess={() => {
+              if (userLocation.locality) {
+                onSearch(userLocation.locality);
+              }
+            }}
+          />
 
           {/* Main Search Component */}
           <div className="bg-white rounded-3xl p-3 sm:p-4 shadow-2xl border border-white/20 text-[#111827] max-w-3xl mx-auto text-left">
             <div className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] mb-2 px-1">
-              Where do you want to stay in Prayagraj?
+              Where do you want to stay in India?
             </div>
             <div className="flex flex-col sm:flex-row gap-2.5">
               <div className="flex-1">
@@ -100,18 +118,18 @@ export const HomePage: React.FC<HomePageProps> = ({
             {/* Quick area suggestions */}
             <div className="mt-3 pt-3 border-t border-[#F1F5F9] flex flex-wrap items-center gap-1.5 text-xs text-[#64748B]">
               <span className="font-semibold text-[#111827]">Quick hubs:</span>
-              {['Katra', 'Civil Lines', 'Mumfordganj', 'University Area', 'George Town'].map(
-                (area) => (
+              {['Prayagraj', 'Lucknow', 'Delhi / NCR', 'Mumbai', 'Bengaluru', 'Pune'].map(
+                (city) => (
                   <button
-                    key={area}
+                    key={city}
                     type="button"
                     onClick={() => {
-                      setSelectedLocality(area);
-                      onSearch(area);
+                      setSelectedLocality(city);
+                      onSearch(city);
                     }}
                     className="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#334155] border border-[#E2E8F0] transition-colors"
                   >
-                    {area}
+                    {city}
                   </button>
                 )
               )}
@@ -162,7 +180,7 @@ export const HomePage: React.FC<HomePageProps> = ({
               key={pt.id}
               onClick={() => {
                 if (pt.id === 'roommates') onNavigate('roommates');
-                else onSearch('Katra', pt.id);
+                else onSearch(selectedLocality || '', pt.id);
               }}
               className="p-4 rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#F59E0B] hover:shadow-md transition-all text-left flex flex-col justify-between group"
             >
@@ -180,29 +198,29 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
-      {/* 3. POPULAR STUDENT AREAS IN PRAYAGRAJ */}
-      <section id="areas" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* 3. POPULAR CITIES & HUBS ACROSS INDIA */}
+      <section id="cities" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-end justify-between mb-8">
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-1">
-              Location-Based Discovery
+              Nationwide Living Network
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold text-[#101828] font-heading">
-              Popular Student Areas in Prayagraj
+              Popular Cities &amp; Hubs Across India
             </h2>
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-          {PRAYAGRAJ_LOCALITIES.slice(0, 4).map((loc) => (
+          {INDIAN_CITIES.slice(0, 4).map((city) => (
             <div
-              key={loc.id}
-              onClick={() => onSearch(loc.name)}
+              key={city.id}
+              onClick={() => onSearch(city.name)}
               className="group relative rounded-2xl overflow-hidden shadow-xs hover:shadow-lg transition-all cursor-pointer h-64 flex flex-col justify-end p-5"
             >
               <img
-                src={loc.image_url}
-                alt={loc.name}
+                src={city.image_url}
+                alt={city.name}
                 loading="lazy"
                 className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
@@ -211,20 +229,18 @@ export const HomePage: React.FC<HomePageProps> = ({
               <div className="relative z-10 text-white">
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5">
-                    <h3 className="text-lg font-bold font-heading">{loc.name}</h3>
-                    <span className="text-xs text-[#FDE68A]">{loc.hindi_name}</span>
+                    <h3 className="text-lg font-bold font-heading">{city.name}</h3>
+                    <span className="text-xs text-[#FDE68A]">{city.state_name}</span>
                   </div>
                   <span className="text-[11px] font-bold bg-[#F59E0B] text-[#101828] px-2 py-0.5 rounded-full">
-                    {loc.active_listings_count} rooms
+                    {city.active_listings_count} rooms
                   </span>
                 </div>
                 <p className="text-xs text-[#CBD5E1] line-clamp-2 mb-2">
-                  {loc.popular_for}
+                  {city.popular_for}
                 </p>
                 <div className="text-[11px] text-[#FDE68A] font-medium flex items-center gap-1">
-                  <span>Avg. rent ₹{loc.average_rent.toLocaleString('en-IN')}/mo</span>
-                  <span>•</span>
-                  <span>{loc.landmark_highlight}</span>
+                  <span>Explore Rooms in {city.name} →</span>
                 </div>
               </div>
             </div>
@@ -278,7 +294,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 Don't want to pay full rent alone?
               </h2>
               <p className="text-sm sm:text-base text-[#94A3B8] leading-relaxed mb-6">
-                Connect with compatible students preparing for civil services, pursuing university degrees, or coaching in Prayagraj. Match based on sleep schedules, study habits, food preferences, and budget.
+                Connect with compatible students and aspirants preparing for civil services, pursuing university degrees, or working across Indian hubs. Match based on sleep schedules, study habits, food preferences, and budget.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button
@@ -293,10 +309,10 @@ export const HomePage: React.FC<HomePageProps> = ({
                 <Button
                   variant="outline"
                   size="lg"
-                  onClick={() => onNavigate('student-dashboard', 'requirements')}
+                  onClick={() => onNavigate('roommates')}
                   className="bg-transparent text-white border-white/20 hover:bg-white/10"
                 >
-                  Post Your Requirement
+                  Browse Roommate Profiles
                 </Button>
               </div>
             </div>
@@ -332,14 +348,14 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
-      {/* 6. WHY USE PRAYAGLIVING (TRUST PILLARS) */}
+      {/* 6. WHY CHOOSE RENTED THIKAN (TRUST PILLARS) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-2xl mx-auto mb-12">
           <div className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-2">
-            Built Specifically for Students &amp; Owners
+            Nationwide Trust &amp; Safety
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold text-[#101828] font-heading">
-            Why Use PrayagLiving?
+            Why Choose Rented Thikan?
           </h2>
         </div>
 
@@ -382,22 +398,22 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
-      {/* 7. HOW IT WORKS (STUDENTS & OWNERS) */}
+      {/* 7. HOW IT WORKS (SEEKERS & LISTERS) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-[#F8FAFC] py-12 rounded-3xl border border-[#E2E8F0]">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          {/* For Students */}
+          {/* Find Your Place */}
           <div className="space-y-4">
             <div className="inline-block text-xs font-bold uppercase tracking-wider text-[#101828] bg-white px-3 py-1 rounded-full border border-[#E2E8F0]">
-              For Students
+              Find Your Place
             </div>
             <h3 className="text-xl font-bold text-[#101828] font-heading">
               Find Your Room in 5 Easy Steps
             </h3>
             <div className="space-y-3 pt-2">
               {[
-                { step: '1', title: 'Select Location or College', desc: 'Choose Katra, Civil Lines, or proximity to Allahabad University.' },
+                { step: '1', title: 'Select City or Area', desc: 'Choose your city and locality, or auto-detect with one tap.' },
                 { step: '2', title: 'Compare Verified Options', desc: 'Filter by rent, Wi-Fi, food, gender, or attached washroom.' },
-                { step: '3', title: 'Inquire In-Platform', desc: 'Send a message directly to the owner without exposing your personal phone number.' },
+                { step: '3', title: 'Inquire In-Platform', desc: 'Send a message directly to the lister without exposing your personal phone number.' },
                 { step: '4', title: 'Request Contact or Visit', desc: 'Exchange contact details securely and schedule an in-person room visit.' },
                 { step: '5', title: 'Move In & Stay Safe', desc: 'Finalize your stay with transparent pricing and no broker commissions.' },
               ].map((item) => (
@@ -414,21 +430,21 @@ export const HomePage: React.FC<HomePageProps> = ({
             </div>
           </div>
 
-          {/* For Property Owners */}
+          {/* List a Property / Room */}
           <div className="space-y-4">
             <div className="inline-block text-xs font-bold uppercase tracking-wider text-[#F59E0B] bg-[#FFFBEB] px-3 py-1 rounded-full border border-[#FDE68A]">
-              For Property Owners
+              List a Property / Room
             </div>
             <h3 className="text-xl font-bold text-[#101828] font-heading">
-              List Your Room to Verified Students
+              Offer Your Vacancy to Verified Members
             </h3>
             <div className="space-y-3 pt-2">
               {[
-                { step: '1', title: 'Quick Registration', desc: 'Create your owner profile in seconds with mobile verification.' },
+                { step: '1', title: 'Quick Member Setup', desc: 'Use your verified Rented Thikan member account with zero hassle.' },
                 { step: '2', title: 'Upload Photos & Set Rent', desc: 'Add room photos, select amenities, and define house rules.' },
                 { step: '3', title: 'Control Phone Privacy', desc: 'Decide whether your phone number is private, on-request, or public.' },
-                { step: '4', title: 'Receive Direct Student Inquiries', desc: 'Chat with genuine university and coaching aspirants.' },
-                { step: '5', title: 'Fill Vacancies Quickly', desc: 'Mark rooms rented anytime with a single tap from your owner dashboard.' },
+                { step: '4', title: 'Receive Direct Member Inquiries', desc: 'Chat with genuine university and coaching aspirants.' },
+                { step: '5', title: 'Manage Vacancies Anytime', desc: 'Mark rooms rented or pause anytime with a single tap from your dashboard.' },
               ].map((item) => (
                 <div key={item.step} className="flex items-start gap-3">
                   <span className="w-6 h-6 rounded-full bg-[#F59E0B] text-[#101828] text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
@@ -445,25 +461,25 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
-      {/* 8. BOTTOM OWNER CALL TO ACTION */}
+      {/* 8. BOTTOM CALL TO ACTION */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-r from-[#172554] to-[#101828] text-white flex flex-col md:flex-row items-center justify-between gap-6 border border-[#1E293B]">
           <div>
             <h2 className="text-2xl sm:text-3xl font-black font-heading mb-2">
-              Are you a property owner in Prayagraj?
+              Have a room, flat, or PG to offer?
             </h2>
             <p className="text-sm text-[#94A3B8] max-w-lg">
-              List your student room, PG, or flat for free. Connect with verified students from Allahabad University, CMP, and coaching hubs without broker fees.
+              List your room, PG, or flat for free. Connect directly with verified seekers and students across Indian cities without broker fees.
             </p>
           </div>
           <Button
             variant="primary"
             size="lg"
-            onClick={() => onNavigate('owner-add')}
+            onClick={() => onNavigate('add-property')}
             icon={<PlusCircle className="w-5 h-5" />}
-            className="shrink-0 font-bold"
+            className="shrink-0 font-bold cursor-pointer"
           >
-            Add Your Property Now
+            List a Room / Property
           </Button>
         </div>
       </section>
