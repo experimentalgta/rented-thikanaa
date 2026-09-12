@@ -71,13 +71,29 @@ CREATE INDEX IF NOT EXISTS idx_geo_cities_location ON public.geo_cities USING GI
 CREATE INDEX IF NOT EXISTS idx_geo_localities_location ON public.geo_localities USING GIST (location);
 
 -- 1. USERS & ROLES
-CREATE TYPE account_type_enum AS ENUM ('user', 'super_admin');
-CREATE TYPE user_role AS ENUM ('member', 'admin'); -- Legacy support
-CREATE TYPE phone_privacy_level AS ENUM ('private', 'on_request', 'public');
-CREATE TYPE contact_request_status AS ENUM ('pending', 'accepted', 'rejected');
-CREATE TYPE property_type_enum AS ENUM ('room', 'pg', 'hostel', 'flat', 'homestay', 'shared_room');
-CREATE TYPE gender_enum AS ENUM ('male', 'female', 'any');
-CREATE TYPE availability_enum AS ENUM ('available', 'limited', 'rented', 'paused', 'expired');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'account_type_enum') THEN
+    CREATE TYPE account_type_enum AS ENUM ('user', 'super_admin');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+    CREATE TYPE user_role AS ENUM ('member', 'admin');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'phone_privacy_level') THEN
+    CREATE TYPE phone_privacy_level AS ENUM ('private', 'on_request', 'public');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'contact_request_status') THEN
+    CREATE TYPE contact_request_status AS ENUM ('pending', 'accepted', 'rejected');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'property_type_enum') THEN
+    CREATE TYPE property_type_enum AS ENUM ('room', 'pg', 'hostel', 'flat', 'homestay', 'shared_room');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'gender_enum') THEN
+    CREATE TYPE gender_enum AS ENUM ('male', 'female', 'any');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'availability_enum') THEN
+    CREATE TYPE availability_enum AS ENUM ('available', 'limited', 'rented', 'paused', 'expired');
+  END IF;
+END $$;
 
 -- Protected Super Admin table (Server-side authorization only; no public write)
 CREATE TABLE IF NOT EXISTS public.super_admins (
