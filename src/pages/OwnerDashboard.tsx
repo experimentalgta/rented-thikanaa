@@ -38,6 +38,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   const [loading, setLoading] = useState(true);
 
   const loadOwnerProperties = async () => {
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const all = await propertyRepository.getPropertiesByOwner(currentUser.id);
@@ -57,7 +61,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
   useEffect(() => {
     loadOwnerProperties();
-  }, [currentUser.id]);
+  }, [currentUser?.id]);
 
   const handleStatusChange = async (
     propertyId: string,
@@ -80,7 +84,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-xl sm:text-2xl font-bold text-[#101828] font-heading">
-              {currentUser.full_name} Dashboard
+              {currentUser?.full_name || 'Owner'} Dashboard
             </h1>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#101828] text-white">
               Host / Owner

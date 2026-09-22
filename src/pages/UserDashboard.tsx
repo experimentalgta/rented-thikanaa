@@ -31,6 +31,7 @@ import { Property, ContactRequest } from '../types';
 import { propertyRepository } from '../services/propertyRepository';
 import { PropertyCard } from '../components/property/PropertyCard';
 import { Button } from '../components/common/Button';
+import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 
 interface UserDashboardProps {
   initialTab?: string;
@@ -60,23 +61,18 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [profileSuccessMsg, setProfileSuccessMsg] = useState(false);
 
   // Profile editable fields
-  const [fullName, setFullName] = useState(currentUser.full_name);
-  const [phoneNumber, setPhoneNumber] = useState(currentUser.phone_number || '+91 98394 55123');
-  const [occupation, setOccupation] = useState(currentUser.occupation || 'Aspirant / Professional');
-  const [college, setCollege] = useState(currentUser.college || 'National University / Institute');
-  const [budget, setBudget] = useState(currentUser.budget || 6500);
+  const [fullName, setFullName] = useState(currentUser?.full_name || '');
+  const [phoneNumber, setPhoneNumber] = useState(currentUser?.phone_number || '');
+  const [occupation, setOccupation] = useState(currentUser?.occupation || '');
+  const [college, setCollege] = useState(currentUser?.college || '');
+  const [budget, setBudget] = useState(currentUser?.budget || 6500);
 
   const loadMemberProperties = async () => {
+    if (!currentUser) return;
     setLoading(true);
     try {
       const all = await propertyRepository.getPropertiesByOwner(currentUser.id);
-      // If user has no properties yet, fallback to sample properties for demo/testing
-      if (all.length === 0) {
-        const fallback = await propertyRepository.getPropertiesByOwner('owner-101');
-        setProperties(fallback);
-      } else {
-        setProperties(all);
-      }
+      setProperties(all);
     } catch (e) {
       console.error(e);
     } finally {
@@ -85,8 +81,15 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   };
 
   useEffect(() => {
-    loadMemberProperties();
-  }, [currentUser.id]);
+    if (currentUser) {
+      setFullName(currentUser.full_name || '');
+      setPhoneNumber(currentUser.phone_number || '');
+      setOccupation(currentUser.occupation || '');
+      setCollege(currentUser.college || '');
+      setBudget(currentUser.budget || 6500);
+      loadMemberProperties();
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (initialTab) {
@@ -98,6 +101,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     propertyId: string,
     status: Property['availability_status']
   ) => {
+    if (!currentUser) return;
     try {
       await propertyRepository.updatePropertyStatus(propertyId, status, currentUser.id);
       await loadMemberProperties();
@@ -107,6 +111,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   };
 
   const handleDeleteListing = async (propertyId: string, title: string) => {
+    if (!currentUser) return;
     const confirmed = window.confirm(`Are you sure you want to delete the listing "${title}"? This action cannot be undone.`);
     if (!confirmed) return;
 
@@ -141,13 +146,13 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   };
 
   // Segregate contact requests: Received on user's listings vs Sent to other listers
-  const receivedInquiries = contactRequests.filter(
-    (r) => r.receiver_id === currentUser.id || r.receiver_role === 'owner' || (r as any).receiver_role === 'lister'
-  );
+  const receivedInquiries = currentUser
+    ? contactRequests.filter((r) => r.receiver_id === currentUser.id)
+    : [];
 
-  const sentInquiries = contactRequests.filter(
-    (r) => r.requester_id === currentUser.id || r.requester_role === 'student' || (r as any).requester_role === 'member'
-  );
+  const sentInquiries = currentUser
+    ? contactRequests.filter((r) => r.requester_id === currentUser.id)
+    : [];
 
   const filteredProperties = properties.filter((p) => {
     if (listingFilter === 'all') return true;
@@ -155,7 +160,13 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28">
+    <ProtectedRoute
+      fallbackTitle="Sign in to view your dashboard"
+      fallbackDescription="Please sign in with Google to view and manage your accommodations, saved rooms, and roommate requests."
+      pendingAction={{ type: 'dashboard', subTab: initialTab }}
+    >
+      {currentUser && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28">
       {/* Top Banner - Unified Member Header */}
       <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 sm:p-8 mb-8 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
@@ -1062,6 +1073,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           </div>
         </div>
       )}
-    </div>
+        </div>
+      )}
+    </ProtectedRoute>
   );
 };

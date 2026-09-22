@@ -35,8 +35,8 @@ async function runSeed() {
     host: 'aws-0-ap-southeast-2.pooler.supabase.com',
     port: 6543,
     database: 'postgres',
-    user: 'postgres.kjamjylsntwuundttcio',
-    password: '9451184211@aA',
+    user: process.env.SUPABASE_DB_USER || 'postgres.kjamjylsntwuundttcio',
+    password: process.env.DB_PASSWORD || process.env.SUPABASE_DB_PASSWORD || '',
     ssl: { rejectUnauthorized: false }
   });
 

@@ -23,7 +23,7 @@ interface ChatContextType {
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, requireAuth } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -31,6 +31,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
   const loadData = async () => {
+    if (!currentUser) {
+      setConversations([]);
+      setContactRequests([]);
+      setActiveConversation(null);
+      setMessages([]);
+      return;
+    }
+
     try {
       const convs = await chatAndSafetyRepository.getConversations(currentUser.id);
       setConversations(convs);
@@ -52,14 +60,22 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    loadData();
-  }, [currentUser.id]);
+    if (!currentUser) {
+      setConversations([]);
+      setContactRequests([]);
+      setActiveConversation(null);
+      setMessages([]);
+      setIsChatModalOpen(false);
+    } else {
+      loadData();
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
-    if (activeConversation) {
+    if (activeConversation && currentUser) {
       chatAndSafetyRepository.getMessages(activeConversation.id).then(setMessages);
     }
-  }, [activeConversation?.id]);
+  }, [activeConversation?.id, currentUser?.id]);
 
   const selectConversation = async (conv: Conversation) => {
     setActiveConversation(conv);
@@ -75,6 +91,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     owner_id: string;
     owner_name: string;
   }) => {
+    if (
+      !requireAuth(
+        `Sign in with Google to message the lister for "${property.title}".`,
+        { type: 'chat', context: property }
+      )
+    ) {
+      return;
+    }
+
+    if (!currentUser) return;
+
     setIsChatModalOpen(true);
     // Find existing or initialize temporary
     const existing = conversations.find(
@@ -109,11 +136,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const sendMessage = async (text: string) => {
-    if (!activeConversation) return;
+    if (!activeConversation || !currentUser) return;
 
     const otherParticipantId = activeConversation.participant_ids.find(
       (id) => id !== currentUser.id
-    ) || 'owner-101';
+    );
+
+    if (!otherParticipantId) return;
 
     const sent = await chatAndSafetyRepository.sendMessage({
       conversationId: activeConversation.id,
@@ -141,6 +170,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     owner_id: string;
     owner_name: string;
   }) => {
+    if (!currentUser) {
+      throw new Error('Authentication required to send contact requests.');
+    }
+
     const req = await chatAndSafetyRepository.sendContactRequest({
       propertyId: property.id,
       propertyTitle: property.title,
@@ -163,7 +196,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const shareExactLocation = async (locationShare: import('../types').ExactLocationShare) => {
-    if (!activeConversation) return;
+    if (!activeConversation || !currentUser) return;
 
     const otherParticipantId =
       activeConversation.participant_ids.find((id) => id !== currentUser.id) || 'user-stud-1';

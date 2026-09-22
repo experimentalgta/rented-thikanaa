@@ -16,13 +16,14 @@ import {
 import { Property, PropertyImage } from '../types';
 import { useSaved } from '../context/SavedContext';
 import { useChat } from '../context/ChatContext';
+import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
 import { DistanceBadge } from '../components/property/DistanceBadge';
 import { ContactRequestModal } from '../components/safety/ContactRequestModal';
 import { ReportModal } from '../components/safety/ReportModal';
 import { PropertyMap } from '../components/map/PropertyMap';
+import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
-
 
 interface PropertyDetailPageProps {
   property: Property;
@@ -35,6 +36,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 }) => {
   const { isSaved, toggleSave } = useSaved();
   const { openChatWithContext } = useChat();
+  const { requireAuth } = useAuth();
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -81,8 +83,12 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
             <Share2 className="w-4 h-4" />
           </button>
           <button
-            onClick={() => toggleSave(property)}
-            className="p-2.5 rounded-xl border border-[#E5E7EB] bg-white text-[#475569] hover:bg-[#F8FAFC] transition-colors"
+            onClick={() => {
+              if (requireAuth('Sign in with Google to save properties to your favorites.', { type: 'property-detail', propertyId: property.id, property })) {
+                toggleSave(property);
+              }
+            }}
+            className="p-2.5 rounded-xl border border-[#E5E7EB] bg-white text-[#475569] hover:bg-[#F8FAFC] transition-colors cursor-pointer"
             title={saved ? 'Remove from saved' : 'Save Property'}
           >
             <Heart
@@ -92,8 +98,12 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
             />
           </button>
           <button
-            onClick={() => setIsReportModalOpen(true)}
-            className="p-2.5 rounded-xl border border-[#E5E7EB] bg-white text-[#475569] hover:text-rose-600 transition-colors"
+            onClick={() => {
+              if (requireAuth('Sign in with Google to report a property listing.')) {
+                setIsReportModalOpen(true);
+              }
+            }}
+            className="p-2.5 rounded-xl border border-[#E5E7EB] bg-white text-[#475569] hover:text-rose-600 transition-colors cursor-pointer"
             title="Report this listing"
           >
             <AlertTriangle className="w-4 h-4" />
@@ -107,8 +117,13 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
         </div>
       )}
 
-      {/* Main Grid: Gallery & Details on Left, Sticky Booking/Contact on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Protected Main Grid: Gallery & Details on Left, Sticky Booking/Contact on Right */}
+      <ProtectedRoute
+        fallbackTitle="Sign in to view complete room details"
+        fallbackDescription="Full room photos, exact address, contact details, and owner chat are protected for verified students and members."
+        pendingAction={{ type: 'property-detail', propertyId: property.id, property }}
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left 2 Columns: Gallery & Property Information */}
         <div className="lg:col-span-2 space-y-8">
           {/* 1. Large Image Gallery */}
@@ -501,7 +516,16 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                   variant="outline"
                   size="md"
                   fullWidth
-                  onClick={() => setIsContactModalOpen(true)}
+                  onClick={() => {
+                    if (
+                      requireAuth(
+                        'Sign in with Google to request direct phone contact from the property owner.',
+                        { type: 'property-detail', propertyId: property.id, property }
+                      )
+                    ) {
+                      setIsContactModalOpen(true);
+                    }
+                  }}
                   icon={<Phone className="w-4 h-4 text-[#F59E0B]" />}
                 >
                   Request Phone Contact
@@ -518,7 +542,8 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </ProtectedRoute>
 
       {/* Modals */}
       <ContactRequestModal

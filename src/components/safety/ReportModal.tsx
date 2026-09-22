@@ -62,6 +62,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) return;
     setIsSubmitting(true);
     try {
       await chatAndSafetyRepository.submitReport({

@@ -25,3 +25,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Scratch & migration scripts
+scripts/*.cjs
+!scripts/import-osm-locations.cjs
+!scripts/seed_database.cjs
+!scripts/verify_supabase_connection.cjs

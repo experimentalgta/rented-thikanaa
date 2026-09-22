@@ -42,21 +42,21 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 sm:p-8 mb-8 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <img
-            src={currentUser.avatar_url || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80'}
-            alt={currentUser.full_name}
+            src={currentUser?.avatar_url || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80'}
+            alt={currentUser?.full_name || 'Student'}
             className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#E2E8F0]"
           />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-[#101828] font-heading">
-                {currentUser.full_name}
+                {currentUser?.full_name || 'Student Profile'}
               </h1>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]">
                 Student
               </span>
             </div>
             <p className="text-xs text-[#667085] mt-0.5">
-              {currentUser.email} • Allahabad University Aspirant
+              {currentUser?.email || ''} • Allahabad University Aspirant
             </p>
             <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium mt-1">
               <ShieldCheck className="w-3.5 h-3.5" />

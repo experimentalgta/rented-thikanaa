@@ -11,6 +11,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useSaved } from '../../context/SavedContext';
 import { useChat } from '../../context/ChatContext';
+import { UserMenu } from '../auth/UserMenu';
 
 interface HeaderProps {
   currentView: string;
@@ -18,7 +19,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, isAuthenticated, requireAuth } = useAuth();
   const { savedCount } = useSaved();
   const { unreadCount, setIsChatModalOpen } = useChat();
 
@@ -85,7 +86,11 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Saved Rooms Button (All Members) */}
             <button
-              onClick={() => onNavigate('member-dashboard', 'saved')}
+              onClick={() => {
+                if (requireAuth('Sign in with Google to view your saved accommodations.', { type: 'saved' })) {
+                  onNavigate('member-dashboard', 'saved');
+                }
+              }}
               className="relative p-2.5 text-[#667085] hover:text-[#101828] hover:bg-[#F8FAFC] rounded-xl transition-colors cursor-pointer"
               title="Saved Properties"
             >
@@ -99,7 +104,11 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
 
             {/* In-App Messaging Button (All Members) */}
             <button
-              onClick={() => setIsChatModalOpen(true)}
+              onClick={() => {
+                if (requireAuth('Sign in with Google to access your in-app messages and conversations.', { type: 'chat' })) {
+                  setIsChatModalOpen(true);
+                }
+              }}
               className="relative p-2.5 text-[#667085] hover:text-[#101828] hover:bg-[#F8FAFC] rounded-xl transition-colors cursor-pointer"
               title="In-App Messages"
             >
@@ -111,28 +120,28 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
 
             {/* Universal Member Primary CTA: List Property */}
             <button
-              onClick={() => onNavigate('add-property')}
+              onClick={() => {
+                if (requireAuth('Sign in with Google to list your accommodation or spare room.', { type: 'add-property' })) {
+                  onNavigate('add-property');
+                }
+              }}
               className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#101828] text-white hover:bg-[#1E293B] shadow-xs transition-all active:scale-95 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4 text-[#F59E0B]" />
               List Property
             </button>
 
-            {/* Member Profile Avatar & Dashboard Link */}
-            <button
-              onClick={() => onNavigate('member-dashboard')}
-              className="flex items-center gap-2 p-1.5 pl-2 rounded-xl hover:bg-[#F8FAFC] border border-transparent hover:border-[#E2E8F0] transition-all cursor-pointer"
-              title="Open Member Dashboard"
-            >
-              <img
-                src={currentUser.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
-                alt={currentUser.full_name}
-                className="w-8 h-8 rounded-lg object-cover ring-1 ring-[#E2E8F0]"
-              />
-              <span className="text-xs font-semibold text-[#111827] hidden md:inline">
-                {currentUser.full_name.split(' ')[0]}
-              </span>
-            </button>
+            {/* Authenticated User Menu vs Anonymous Sign In */}
+            {isAuthenticated && currentUser ? (
+              <UserMenu onNavigate={onNavigate} />
+            ) : (
+              <button
+                onClick={() => requireAuth('Sign in with Google to view complete room details, contact numbers, and chat with owners.')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-[#101828] text-white hover:bg-[#1E293B] shadow-xs hover:shadow-md transition-all active:scale-95 cursor-pointer"
+              >
+                <span>Sign In</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

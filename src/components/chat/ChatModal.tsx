@@ -243,7 +243,7 @@ export const ChatModal: React.FC = () => {
                         Phone: {relevantRequest.receiver_phone || relevantRequest.requester_phone}
                       </span>
                     ) : relevantRequest.status === 'pending' &&
-                      relevantRequest.receiver_id === currentUser.id ? (
+                      currentUser && relevantRequest.receiver_id === currentUser.id ? (
                       <button
                         onClick={() => updateContactRequest(relevantRequest.id, 'accepted')}
                         className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#101828] text-white hover:bg-[#F59E0B] hover:text-[#101828] transition-colors"
@@ -263,7 +263,7 @@ export const ChatModal: React.FC = () => {
             {/* Messages Scroll Area */}
             <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F8FAFC]">
               {messages.map((msg) => {
-                const isMe = msg.sender_id === currentUser.id;
+                const isMe = currentUser ? msg.sender_id === currentUser.id : false;
                 return (
                   <div
                     key={msg.id}

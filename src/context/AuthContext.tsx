@@ -1,85 +1,282 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserRole, AccountType } from '../types';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { Session, User as SupabaseAuthUser } from '@supabase/supabase-js';
+import { User, UserRole, PendingAction } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { serverAuth } from '../services/serverAuth';
 
 interface AuthContextType {
-  currentUser: User;
+  currentUser: User | null;
+  session: Session | null;
+  loading: boolean;
+  isAuthenticated: boolean;
   isSuperAdmin: boolean;
-  updateProfile: (updates: Partial<User>) => void;
-  setRole: (role: UserRole) => void; // Maintained for backwards compatibility
+  isLoginModalOpen: boolean;
+  loginModalReason: string;
+  pendingAction: PendingAction | null;
+  signInWithGoogle: () => Promise<void>;
+  signOut: () => Promise<void>;
+  updateProfile: (updates: Partial<User>) => Promise<void>;
+  requireAuth: (reason?: string, action?: PendingAction) => boolean;
+  setIsLoginModalOpen: (open: boolean) => void;
+  setPendingAction: (action: PendingAction | null) => void;
+  clearPendingAction: () => void;
+  consumePendingAction: () => PendingAction | null;
+  // Backwards compatibility helpers
+  setRole: (role: UserRole) => void;
   switchUser: (role: UserRole) => void;
 }
 
-const DEFAULT_MEMBER: User = {
-  id: '9750657b-9419-438a-a50e-eee9889d10a5',
-  email: 'ankit.tiwari@allduniv.ac.in',
-  full_name: 'Ankit Tiwari',
-  account_type: 'user',
-  role: 'member',
-  avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
-  phone_number: '+91 98394 55123',
-  is_verified: true,
-  college: 'Allahabad University (AU)',
-  occupation: 'Student / Civil Services Aspirant',
-  bio: 'Preparing for UPSC & State PCS in Katra. Looking for quiet study accommodations and offering a spare room in our 2BHK accommodation.',
-  preferred_areas: ['Katra', 'Mumfordganj', 'Civil Lines'],
-  budget: 5500,
-  created_at: '2026-08-01T00:00:00Z',
-};
-
-const SUPER_ADMIN_ACCOUNT: User = {
-  id: '4c44f036-b40d-582d-fbd1-b87a9cf1c4e5', // Verified in public.super_admins table
-  email: 'moderation@rentedthikan.in',
-  full_name: 'Rented Thikan Trust & Safety',
-  account_type: 'super_admin',
-  role: 'admin',
-  avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80',
-  phone_number: '+91 94500 00001',
-  is_verified: true,
-  created_at: '2026-06-01T00:00:00Z',
-};
-
-const USER_STORAGE_KEY = 'prayag_living_current_user_v2';
+const PENDING_ACTION_KEY = 'rt_pending_action';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User>(() => {
+  const [session, setSession] = useState<Session | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [loginModalReason, setLoginModalReason] = useState<string>('Sign in with Google to continue');
+  const [pendingAction, setPendingActionState] = useState<PendingAction | null>(() => {
     try {
-      const stored = localStorage.getItem(USER_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && parsed.id) return parsed;
-      }
-    } catch (e) {}
-    return DEFAULT_MEMBER;
+      const stored = sessionStorage.getItem(PENDING_ACTION_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
   });
 
-  // Server-side authorization authority determines Super Admin UX display
-  const isSuperAdmin = serverAuth.isSuperAdmin(currentUser.id);
+  const setPendingAction = useCallback((action: PendingAction | null) => {
+    setPendingActionState(action);
+    try {
+      if (action) {
+        sessionStorage.setItem(PENDING_ACTION_KEY, JSON.stringify(action));
+      } else {
+        sessionStorage.removeItem(PENDING_ACTION_KEY);
+      }
+    } catch {}
+  }, []);
 
-  const updateProfile = (updates: Partial<User>) => {
-    setCurrentUser((prev) => {
-      const updated = { ...prev, ...updates };
+  const clearPendingAction = useCallback(() => {
+    setPendingAction(null);
+  }, [setPendingAction]);
+
+  const consumePendingAction = useCallback((): PendingAction | null => {
+    let action = pendingAction;
+    if (!action) {
       try {
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+        const stored = sessionStorage.getItem(PENDING_ACTION_KEY);
+        if (stored) action = JSON.parse(stored);
+      } catch {}
+    }
+    clearPendingAction();
+    return action;
+  }, [pendingAction, clearPendingAction]);
+
+  // Fetch or construct profile from Supabase
+  const loadUserProfile = async (authUser: SupabaseAuthUser): Promise<User> => {
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle();
+
+        if (data && !error) {
+          const adminStatus = await serverAuth.verifySuperAdminAuthorization(authUser.id);
+          setIsSuperAdmin(adminStatus);
+          return {
+            id: data.id,
+            email: data.email || authUser.email || '',
+            full_name:
+              data.full_name ||
+              authUser.user_metadata?.full_name ||
+              authUser.user_metadata?.name ||
+              (authUser.email ? authUser.email.split('@')[0] : 'Student Member'),
+            account_type: data.account_type || (adminStatus ? 'super_admin' : 'user'),
+            role: adminStatus ? 'admin' : 'member',
+            avatar_url:
+              data.avatar_url ||
+              authUser.user_metadata?.avatar_url ||
+              authUser.user_metadata?.picture,
+            phone_number: data.phone_number,
+            is_verified: Boolean(data.is_verified),
+            is_blocked: Boolean(data.is_blocked),
+            college: data.college,
+            occupation: data.occupation,
+            bio: data.bio,
+            preferred_areas: data.preferred_areas,
+            budget: data.budget,
+            created_at: data.created_at || authUser.created_at || new Date().toISOString(),
+          };
+        }
+      } catch (err) {
+        console.error('Failed to load profile from database:', err);
+      }
+    }
+
+    // Fallback based on auth metadata
+    const meta = authUser.user_metadata || {};
+    const adminStatus = await serverAuth.verifySuperAdminAuthorization(authUser.id);
+    setIsSuperAdmin(adminStatus);
+
+    return {
+      id: authUser.id,
+      email: authUser.email || '',
+      full_name:
+        meta.full_name ||
+        meta.name ||
+        (authUser.email ? authUser.email.split('@')[0] : 'Student Member'),
+      account_type: adminStatus ? 'super_admin' : 'user',
+      role: adminStatus ? 'admin' : 'member',
+      avatar_url: meta.avatar_url || meta.picture,
+      is_verified: false,
+      created_at: authUser.created_at || new Date().toISOString(),
+    };
   };
 
-  // Backwards compatibility helper
+  // Initial session setup & subscription to auth state changes
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!supabase || !isSupabaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
+    // 1. Get initial session
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session: initSession }, error }) => {
+        if (!isMounted) return;
+        if (error) {
+          console.error('Error fetching initial auth session:', error);
+          setLoading(false);
+          return;
+        }
+
+        if (initSession && initSession.user) {
+          setSession(initSession);
+          const profile = await loadUserProfile(initSession.user);
+          if (isMounted) {
+            setCurrentUser(profile);
+          }
+        } else {
+          setSession(null);
+          setCurrentUser(null);
+          setIsSuperAdmin(false);
+        }
+        if (isMounted) setLoading(false);
+      })
+      .catch((err) => {
+        console.error('Unexpected error on auth initialization:', err);
+        if (isMounted) setLoading(false);
+      });
+
+    // 2. Real-time subscription to auth state changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!isMounted) return;
+
+      setSession(newSession);
+
+      if (newSession && newSession.user) {
+        const profile = await loadUserProfile(newSession.user);
+        if (isMounted) {
+          setCurrentUser(profile);
+          setIsLoginModalOpen(false); // Close login modal automatically on successful sign-in
+        }
+      } else {
+        if (isMounted) {
+          setCurrentUser(null);
+          setIsSuperAdmin(false);
+        }
+      }
+
+      setLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const signInWithGoogle = async () => {
+    if (!supabase) {
+      throw new Error('Supabase client is not configured.');
+    }
+
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+      },
+    });
+
+    if (error) throw error;
+  };
+
+  const signOut = async () => {
+    if (supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.error('Error signing out of Supabase:', e);
+      }
+    }
+    setSession(null);
+    setCurrentUser(null);
+    setIsSuperAdmin(false);
+    clearPendingAction();
+  };
+
+  const updateProfile = async (updates: Partial<User>) => {
+    if (!currentUser) return;
+    const updated = { ...currentUser, ...updates };
+    setCurrentUser(updated);
+
+    if (supabase && currentUser.id) {
+      try {
+        await supabase
+          .from('profiles')
+          .update({
+            full_name: updated.full_name,
+            phone_number: updated.phone_number,
+            college: updated.college,
+            occupation: updated.occupation,
+            bio: updated.bio,
+            preferred_areas: updated.preferred_areas,
+            budget: updated.budget,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentUser.id);
+      } catch (err) {
+        console.error('Failed to persist profile updates to Supabase:', err);
+      }
+    }
+  };
+
+  const requireAuth = (reason?: string, action?: PendingAction): boolean => {
+    if (currentUser && session) {
+      return true;
+    }
+    setLoginModalReason(
+      reason || 'Sign in with Google to view complete room/property details and chat with owners.'
+    );
+    if (action) {
+      setPendingAction(action);
+    }
+    setIsLoginModalOpen(true);
+    return false;
+  };
+
   const setRole = (role: UserRole) => {
-    if (role === 'admin') {
-      setCurrentUser(SUPER_ADMIN_ACCOUNT);
-      try {
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(SUPER_ADMIN_ACCOUNT));
-      } catch (e) {}
-    } else {
-      setCurrentUser(DEFAULT_MEMBER);
-      try {
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(DEFAULT_MEMBER));
-      } catch (e) {}
+    if (currentUser) {
+      setCurrentUser({ ...currentUser, role });
     }
   };
 
@@ -87,12 +284,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRole(role);
   };
 
+  const isAuthenticated = Boolean(currentUser && session);
+
   return (
     <AuthContext.Provider
       value={{
         currentUser,
+        session,
+        loading,
+        isAuthenticated,
         isSuperAdmin,
+        isLoginModalOpen,
+        loginModalReason,
+        pendingAction,
+        signInWithGoogle,
+        signOut,
         updateProfile,
+        requireAuth,
+        setIsLoginModalOpen,
+        setPendingAction,
+        clearPendingAction,
+        consumePendingAction,
         setRole,
         switchUser,
       }}

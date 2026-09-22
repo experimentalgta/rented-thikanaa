@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useSaved } from '../../context/SavedContext';
 import { useChat } from '../../context/ChatContext';
+import { useAuth } from '../../context/AuthContext';
 
 interface MobileNavProps {
   currentView: string;
@@ -17,6 +18,7 @@ interface MobileNavProps {
 export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate }) => {
   const { savedCount } = useSaved();
   const { unreadCount, setIsChatModalOpen } = useChat();
+  const { requireAuth } = useAuth();
 
   const isDashboard = currentView === 'member-dashboard' || currentView === 'student-dashboard' || currentView === 'owner-dashboard';
 
@@ -47,7 +49,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
 
         {/* 3. Saved */}
         <button
-          onClick={() => onNavigate('member-dashboard', 'saved')}
+          onClick={() => {
+            if (requireAuth('Sign in with Google to view your saved accommodations.', { type: 'saved' })) {
+              onNavigate('member-dashboard', 'saved');
+            }
+          }}
           className={`relative flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
             isDashboard ? 'text-[#101828] font-bold' : 'text-[#667085]'
           }`}
@@ -63,7 +69,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
 
         {/* 4. Messages */}
         <button
-          onClick={() => setIsChatModalOpen(true)}
+          onClick={() => {
+            if (requireAuth('Sign in with Google to access your in-app messages and conversations.', { type: 'chat' })) {
+              setIsChatModalOpen(true);
+            }
+          }}
           className="relative flex flex-col items-center justify-center w-14 h-full text-[#667085] cursor-pointer"
         >
           <MessageSquare className="w-5 h-5" />
@@ -75,7 +85,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
 
         {/* 5. Profile / Dashboard */}
         <button
-          onClick={() => onNavigate('member-dashboard')}
+          onClick={() => {
+            if (requireAuth('Sign in with Google to view your profile and student dashboard.', { type: 'dashboard' })) {
+              onNavigate('member-dashboard');
+            }
+          }}
           className={`flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
             isDashboard ? 'text-[#101828] font-bold' : 'text-[#667085]'
           }`}

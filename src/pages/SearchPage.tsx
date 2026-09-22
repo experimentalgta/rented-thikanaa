@@ -101,7 +101,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
     try {
       const summary = await propertyRepository.searchProperties(
         { ...filters, locality: selectedLocality },
-        currentUser.id
+        currentUser?.id
       );
       setSearchResult(summary);
     } catch (e: any) {
@@ -115,7 +115,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
 
   useEffect(() => {
     executeSearch();
-  }, [filters, selectedLocality, currentUser.id]);
+  }, [filters, selectedLocality, currentUser?.id]);
 
   const handleResetFilters = () => {
     setFilters({

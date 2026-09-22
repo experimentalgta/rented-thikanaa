@@ -27,6 +27,7 @@ import { evaluateLocationAccuracy } from '../services/location/locationAccuracy'
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { propertyRepository } from '../services/propertyRepository';
 import { LocationPickerMap } from '../components/map/LocationPickerMap';
+import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 
 interface AddPropertyPageProps {
   onSuccess: (newProperty: Property) => void;
@@ -79,7 +80,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       amenities: ['wifi', 'ro_water', 'power_backup', 'food_available', 'study_table'],
       rules: ['gate_timings', 'no_smoking', 'quiet_hours'],
       phone_privacy: 'private', // Default private by specification
-      owner_phone: currentUser.phone_number || '+91 94152 38472',
+      owner_phone: currentUser?.phone_number || '',
       images: [
         {
           id: 'img-seed-1',
@@ -250,6 +251,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       return;
     }
 
+    if (!currentUser) return;
     setIsSubmitting(true);
     try {
       const created = await propertyRepository.createProperty({
@@ -273,13 +275,13 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   // Construct a preview property representation for the live student preview
   const previewProperty: Property = {
     id: 'preview-sample',
-    owner_id: currentUser.id,
-    owner_name: currentUser.full_name,
+    owner_id: currentUser?.id || 'pending',
+    owner_name: currentUser?.full_name || 'Owner',
     owner_phone: formData.phone_privacy === 'public' ? formData.owner_phone : null,
-    created_by: currentUser.id,
-    lister_name: currentUser.full_name,
+    created_by: currentUser?.id || 'pending',
+    lister_name: currentUser?.full_name || 'Owner',
     lister_phone: formData.phone_privacy === 'public' ? formData.owner_phone : null,
-    lister_avatar: currentUser.avatar_url,
+    lister_avatar: currentUser?.avatar_url || '',
     title: formData.title || 'Student Accommodation Title',
     slug: 'preview',
     description: formData.description || 'Description will be shown to students here.',
@@ -318,7 +320,12 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-28">
+    <ProtectedRoute
+      fallbackTitle="Sign in to list your accommodation"
+      fallbackDescription="Please sign in with Google to create and publish verified rooms, PGs, or student flats."
+      pendingAction={{ type: 'add-property' }}
+    >
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-28">
       {/* Wizard Progress Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -1189,5 +1196,6 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
         </div>
       </div>
     </div>
+    </ProtectedRoute>
   );
 };

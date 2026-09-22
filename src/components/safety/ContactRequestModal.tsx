@@ -102,7 +102,7 @@ export const ContactRequestModal: React.FC<ContactRequestModalProps> = ({
             <div className="flex justify-between">
               <span className="text-[#64748B]">Your Phone to Share:</span>
               <span className="font-medium text-[#111827]">
-                {currentUser.phone_number || '+91 98394 55123 (Verified)'}
+                {currentUser?.phone_number || currentUser?.email || 'Registered account'}
               </span>
             </div>
           </div>

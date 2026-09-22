@@ -416,3 +416,18 @@ export interface SearchResultSummary {
     more_options: Property[];
   };
 }
+
+export interface PendingAction {
+  type: 'property-detail' | 'chat' | 'contact-request' | 'roommate-chat' | 'dashboard' | 'add-property' | 'saved';
+  propertyId?: string;
+  property?: Property;
+  context?: {
+    id: string;
+    title: string;
+    locality: string;
+    rent: number;
+    owner_id: string;
+    owner_name: string;
+  };
+  subTab?: string;
+}
