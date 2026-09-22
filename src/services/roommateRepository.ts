@@ -1,25 +1,45 @@
 import { IRoommateRepository } from './contracts';
 import { StudentProfile } from '../types';
-import { MOCK_ROOMMATES } from '../data/mockRoommates';
-
-const STORAGE_KEY = 'prayag_living_roommates_v1';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export class RoommateRepository implements IRoommateRepository {
-  private getStoredRoommates(): StudentProfile[] {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.warn('Could not read roommates from localStorage:', e);
+  private assertSupabaseClient() {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error(
+        'Supabase is not configured. Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.'
+      );
     }
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(MOCK_ROOMMATES));
-    } catch (e) {
-      // ignore
-    }
-    return [...MOCK_ROOMMATES];
+    return supabase;
+  }
+
+  private mapRowToStudentProfile(row: any): StudentProfile {
+    const userProfile = row.user || {};
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      full_name: userProfile.full_name || 'Student Aspirant',
+      avatar_url: userProfile.avatar_url,
+      gender: row.gender || 'male',
+      college: row.college || 'Allahabad University',
+      course: row.course || 'Civil Services Aspirant',
+      academic_year: row.academic_year || 'Preparing for Exams',
+      target_move_in: row.target_move_in || 'Immediately',
+      budget_min: Number(row.budget_min) || 3500,
+      budget_max: Number(row.budget_max) || 6500,
+      preferred_areas: Array.isArray(row.preferred_areas) ? row.preferred_areas : ['Katra'],
+      lifestyle: row.lifestyle || {
+        sleep_schedule: 'early_bird',
+        dietary: 'veg',
+        smoking: 'non_smoker',
+        quiet_study: true,
+        cleanliness: 'high',
+        visitors: 'rare',
+      },
+      bio: row.bio || userProfile.bio || '',
+      phone_privacy: userProfile.phone_privacy || 'on_request',
+      phone_number: userProfile.phone_privacy === 'public' ? userProfile.phone_number : undefined,
+      is_demo: Boolean(row.is_demo),
+    };
   }
 
   calculateCompatibility(
@@ -160,7 +180,32 @@ export class RoommateRepository implements IRoommateRepository {
     },
     referenceProfile?: Partial<StudentProfile>
   ): Promise<StudentProfile[]> {
-    let roommates = this.getStoredRoommates();
+    const client = this.assertSupabaseClient();
+
+    let query = client
+      .from('student_profiles')
+      .select(`
+        *,
+        user:profiles!student_profiles_user_id_fkey (
+          id,
+          full_name,
+          avatar_url,
+          phone_number,
+          phone_privacy,
+          bio
+        )
+      `);
+
+    if (filters?.maxBudget) {
+      query = query.lte('budget_min', filters.maxBudget);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      throw new Error(`Failed to fetch roommates from Supabase: ${error.message}`);
+    }
+
+    let roommates = (data || []).map((row) => this.mapRowToStudentProfile(row));
 
     if (filters?.gender && filters.gender !== 'any') {
       roommates = roommates.filter((r) => r.gender === filters.gender);
@@ -171,9 +216,6 @@ export class RoommateRepository implements IRoommateRepository {
         r.preferred_areas.some((a) => a.toLowerCase().includes(q) || q.includes(a.toLowerCase()))
       );
     }
-    if (filters?.maxBudget) {
-      roommates = roommates.filter((r) => r.budget_min <= filters.maxBudget!);
-    }
     if (filters?.dietary && filters.dietary !== 'all') {
       roommates = roommates.filter((r) => r.lifestyle.dietary === filters.dietary);
     }
@@ -181,7 +223,7 @@ export class RoommateRepository implements IRoommateRepository {
       roommates = roommates.filter((r) => r.lifestyle.smoking === filters.smoking);
     }
 
-    // Compute compatibility scores against reference profile (default student benchmark)
+    // Compute compatibility scores against reference profile
     const benchmark: Partial<StudentProfile> = referenceProfile || {
       budget_min: 4000,
       budget_max: 6000,
@@ -212,9 +254,30 @@ export class RoommateRepository implements IRoommateRepository {
   }
 
   async getRoommateById(id: string): Promise<StudentProfile | null> {
-    const all = this.getStoredRoommates();
-    const found = all.find((r) => r.id === id);
-    return found || null;
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('student_profiles')
+      .select(`
+        *,
+        user:profiles!student_profiles_user_id_fkey (
+          id,
+          full_name,
+          avatar_url,
+          phone_number,
+          phone_privacy,
+          bio
+        )
+      `)
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to fetch roommate profile: ${error.message}`);
+    }
+    if (!data) return null;
+
+    return this.mapRowToStudentProfile(data);
   }
 }
 

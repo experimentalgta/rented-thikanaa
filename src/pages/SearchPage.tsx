@@ -8,7 +8,9 @@ import {
   RotateCcw,
   Sparkles,
   Info,
-  Navigation
+  Navigation,
+  AlertTriangle,
+  RotateCw
 } from 'lucide-react';
 import { LocationSelector } from '../components/search/LocationSelector';
 import { FilterSidebar } from '../components/search/FilterSidebar';
@@ -90,18 +92,22 @@ export const SearchPage: React.FC<SearchPageProps> = ({
 
   const [searchResult, setSearchResult] = useState<SearchResultSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Perform search whenever filters or target locality changes
   const executeSearch = async () => {
     setLoading(true);
+    setError(null);
     try {
       const summary = await propertyRepository.searchProperties(
         { ...filters, locality: selectedLocality },
         currentUser.id
       );
       setSearchResult(summary);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Search query failed:', e);
+      setError(e.message || 'We could not load rooms right now. Please try again.');
+      setSearchResult(null);
     } finally {
       setLoading(false);
     }
@@ -279,6 +285,28 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                   {[1, 2, 3, 4].map((n) => (
                     <div key={n} className="h-64 bg-slate-200 rounded-2xl" />
                   ))}
+                </div>
+              ) : error ? (
+                <div className="bg-red-50/80 border border-red-200 rounded-2xl p-8 text-center max-w-lg mx-auto">
+                  <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-3">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-base font-bold text-red-900 font-heading mb-1">
+                    We couldn't load rooms right now
+                  </h4>
+                  <p className="text-xs text-red-700 max-w-sm mx-auto mb-5 leading-relaxed">
+                    {error}
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={executeSearch}
+                      icon={<RotateCw className="w-4 h-4" />}
+                    >
+                      Retry Connection
+                    </Button>
+                  </div>
                 </div>
               ) : searchResult && searchResult.properties.length > 0 ? (
                 // Group by continuous proximity presentation buckets

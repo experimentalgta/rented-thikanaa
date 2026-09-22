@@ -33,13 +33,24 @@ const MainApp: React.FC = () => {
   const [sampleRoommates, setSampleRoommates] = useState<StudentProfile[]>([]);
 
   useEffect(() => {
-    // Initial fetch for featured accommodations and roommates across India
-    propertyRepository.searchProperties({}).then((res) => {
-      setFeaturedProperties(res.properties);
-    });
-    roommateRepository.getRoommates().then((rms) => {
-      setSampleRoommates(rms);
-    });
+    // Initial fetch for featured accommodations and roommates across India from Supabase
+    propertyRepository
+      .searchProperties({})
+      .then((res) => {
+        setFeaturedProperties(res.properties);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch initial properties from Supabase:', err);
+      });
+
+    roommateRepository
+      .getRoommates()
+      .then((rms) => {
+        setSampleRoommates(rms);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch initial roommates from Supabase:', err);
+      });
   }, []);
 
   const handleNavigate = (view: string, param?: any) => {

@@ -3,9 +3,9 @@ import {
   Property,
   PropertySearchParams,
   SearchResultSummary,
-  ContactRequestStatus
+  ContactRequestStatus,
+  PropertyImage
 } from '../types';
-import { MOCK_PROPERTIES } from '../data/mockProperties';
 import { locationRepository } from './locationRepository';
 import {
   calculateHaversineDistanceKm,
@@ -14,97 +14,86 @@ import {
   getPublicDisplayCoordinates
 } from '../utils/geo';
 import { serverAuth } from './serverAuth';
-
-const STORAGE_KEY = 'prayag_living_properties_v1';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export class PropertyRepository implements IPropertyRepository {
-  private getStoredProperties(): Property[] {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.warn('Could not read properties from localStorage, using seed data:', e);
+  private assertSupabaseClient() {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error(
+        'Supabase is not configured. Please verify that VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.'
+      );
     }
-    // Initialize storage with seed properties
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(MOCK_PROPERTIES));
-    } catch (e) {
-      // ignore
-    }
-    return [...MOCK_PROPERTIES];
-  }
-
-  private saveStoredProperties(properties: Property[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(properties));
-    } catch (e) {
-      console.error('Failed to save properties to localStorage:', e);
-    }
+    return supabase;
   }
 
   /**
    * Helper to retrieve contact request status for the given property and requester.
    */
-  private getContactRequestStatus(propertyId: string, userId?: string): ContactRequestStatus {
-    if (!userId) return 'none';
+  private async getContactRequestStatus(propertyId: string, userId?: string): Promise<ContactRequestStatus> {
+    if (!userId || !supabase) return 'none';
     try {
-      const stored = localStorage.getItem('prayag_living_contact_requests_v1');
-      if (stored) {
-        const requests = JSON.parse(stored);
-        const req = requests.find(
-          (r: any) => r.property_id === propertyId && r.requester_id === userId
-        );
-        if (req) return req.status;
-      }
-    } catch (e) {
-      // ignore
+      const { data, error } = await supabase
+        .from('contact_requests')
+        .select('status')
+        .eq('property_id', propertyId)
+        .eq('requester_id', userId)
+        .maybeSingle();
+
+      if (error || !data) return 'none';
+      return data.status as ContactRequestStatus;
+    } catch {
+      return 'none';
     }
-    return 'none';
   }
 
   /**
    * Helper to check if owner has shared exact location with this user in chat.
    */
-  private hasSharedExactLocation(propertyId: string, userId?: string): boolean {
-    if (!userId) return false;
+  private async hasSharedExactLocation(propertyId: string, userId?: string): Promise<boolean> {
+    if (!userId || !supabase) return false;
     try {
-      const stored = localStorage.getItem('prayag_living_conversations_v1');
-      if (stored) {
-        const convs = JSON.parse(stored);
-        const match = convs.find(
-          (c: any) =>
-            c.property_id === propertyId &&
-            c.participant_ids.includes(userId) &&
-            Boolean(c.exact_location_share)
-        );
-        if (match) return true;
-      }
-    } catch (e) {
-      // ignore
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('property_id', propertyId)
+        .or(`participant_a.eq.${userId},participant_b.eq.${userId}`)
+        .maybeSingle();
+
+      return Boolean(data && !error);
+    } catch {
+      return false;
     }
-    return false;
   }
 
   /**
    * Enforces backend privacy rules:
    * 1. PHONE PRIVACY: Phone number is revealed ONLY when:
-   *    phone_privacy === 'public' OR contact_request_status === 'accepted' OR user is owner
+   *    phone_privacy === 'public' OR contact_request_status === 'accepted' OR user is owner/admin
    * 2. LOCATION PRIVACY: Canonical coordinates & exact house addresses are NEVER
    *    exposed to public users. Public map only receives display_latitude / display_longitude
    *    (neighborhood jitter). Exact address is only shared when explicitly sent by owner in chat.
    */
-  private applyPrivacyEnforcement(property: Property, currentUserId?: string): Property {
+  private async applyPrivacyEnforcement(
+    property: Property,
+    currentUserId?: string,
+    preloadedContactStatus?: ContactRequestStatus
+  ): Promise<Property> {
     const cloned = { ...property };
-    const requestStatus = this.getContactRequestStatus(cloned.id, currentUserId);
+    const requestStatus =
+      preloadedContactStatus !== undefined
+        ? preloadedContactStatus
+        : await this.getContactRequestStatus(cloned.id, currentUserId);
+
     cloned.contact_request_status = requestStatus;
 
     const isOwnerOrAdmin = Boolean(
-      currentUserId && (cloned.owner_id === currentUserId || currentUserId === 'admin-1')
+      currentUserId &&
+        (cloned.owner_id === currentUserId ||
+          cloned.created_by === currentUserId ||
+          serverAuth.isSuperAdmin(currentUserId))
     );
 
-    const isLocationShared = this.hasSharedExactLocation(cloned.id, currentUserId);
+    const isLocationShared = await this.hasSharedExactLocation(cloned.id, currentUserId);
     cloned.is_exact_location_shared = isLocationShared;
 
     // 1. Phone Privacy
@@ -115,10 +104,10 @@ export class PropertyRepository implements IPropertyRepository {
 
     if (!isPhoneAuthorized) {
       cloned.owner_phone = null;
+      cloned.lister_phone = null;
     }
 
     // 2. Approximate Presentation Coordinates (Neighborhood jitter)
-    // Always compute fuzzed coordinates based on canonical coordinates
     const canonicalLat = property.latitude || 25.4563;
     const canonicalLng = property.longitude || 81.8546;
     const fuzzed = getPublicDisplayCoordinates(canonicalLat, canonicalLng, cloned.id);
@@ -132,7 +121,6 @@ export class PropertyRepository implements IPropertyRepository {
       delete (cloned as any).longitude;
 
       // Always sanitize public address to locality level (e.g. "Katra, Prayagraj", "Gomti Nagar, Lucknow")
-      // The exact doorstep address is strictly confined to the authenticated chat conversation
       cloned.address = `${cloned.locality}, ${cloned.city || 'India'}`;
       cloned.exact_address_shared = null;
     } else {
@@ -143,11 +131,101 @@ export class PropertyRepository implements IPropertyRepository {
     return cloned;
   }
 
+  /**
+   * Maps a database row (from get_properties_proximity_ranked or table select) to Property model.
+   */
+  private mapRowToProperty(row: any): Property {
+    let images: PropertyImage[] = [];
+    if (Array.isArray(row.images)) {
+      images = row.images;
+    } else if (Array.isArray(row.property_images)) {
+      images = row.property_images.map((pi: any) => ({
+        id: pi.id,
+        url: pi.url,
+        caption: pi.caption,
+        is_cover: pi.is_cover,
+      }));
+    }
+
+    if (images.length === 0) {
+      images = [
+        {
+          id: 'img-default',
+          url: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=1000&q=80',
+          is_cover: true,
+          caption: 'Property overview',
+        },
+      ];
+    }
+
+    // Extract coordinates
+    let lat: number | undefined = row.latitude;
+    let lon: number | undefined = row.longitude;
+    if (lat === undefined && row.location && row.location.coordinates) {
+      lon = row.location.coordinates[0];
+      lat = row.location.coordinates[1];
+    }
+
+    return {
+      id: row.id,
+      owner_id: row.owner_id,
+      created_by: row.created_by || row.owner_id,
+      owner_name: row.owner?.full_name || row.owner_name || 'Host / Owner',
+      lister_name: row.owner?.full_name || row.owner_name || 'Host / Owner',
+      owner_phone: row.owner?.phone_number || row.phone_number || null,
+      lister_phone: row.owner?.phone_number || row.phone_number || null,
+      owner_avatar: row.owner?.avatar_url || undefined,
+      lister_avatar: row.owner?.avatar_url || undefined,
+      lister_type: row.lister_type || 'individual',
+      title: row.title,
+      slug: row.slug,
+      description: row.description || '',
+      property_type: row.property_type,
+      gender_preference: row.gender_preference,
+      room_type: row.room_type,
+      rent: Number(row.rent) || 0,
+      security_deposit: Number(row.security_deposit) || 0,
+      electricity_billing: row.electricity_billing || 'included',
+      electricity_rate_per_unit: row.electricity_rate_per_unit,
+      maintenance_fee: Number(row.maintenance_fee) || 0,
+      available_from: row.available_from || 'Immediately',
+      vacancies: Number(row.vacancies) || 1,
+      floor: row.floor,
+      total_floors: row.total_floors,
+      furnishing_status: row.furnishing_status || 'semi_furnished',
+      attached_bathroom: Boolean(row.attached_bathroom),
+      balcony: Boolean(row.balcony),
+      availability_status: row.availability_status || 'available',
+      is_verified: Boolean(row.is_verified),
+      verification_badge: row.verification_badge || undefined,
+      is_featured: Boolean(row.is_featured),
+      is_demo: Boolean(row.is_demo),
+      country: 'India',
+      state: row.state,
+      city: row.city,
+      city_slug: row.city?.toLowerCase().replace(/\s+/g, '-'),
+      locality: row.locality,
+      locality_slug: row.locality?.toLowerCase().replace(/\s+/g, '-'),
+      sub_locality: row.sub_locality,
+      landmark: row.landmark,
+      pincode: row.pincode || '',
+      address: row.address || `${row.locality}, ${row.city}`,
+      latitude: lat ? Number(lat) : 25.4563,
+      longitude: lon ? Number(lon) : 81.8546,
+      amenities: row.amenities || [],
+      rules: row.rules || [],
+      images,
+      phone_privacy: row.phone_privacy || 'private',
+      created_at: row.created_at || new Date().toISOString(),
+      updated_at: row.updated_at || new Date().toISOString(),
+    };
+  }
+
   async searchProperties(
     params: PropertySearchParams,
     currentUserId?: string
   ): Promise<SearchResultSummary> {
-    const all = this.getStoredProperties();
+    const client = this.assertSupabaseClient();
 
     // 1. Resolve reference coordinates and geographic context
     let refLat = params.reference_lat;
@@ -156,7 +234,7 @@ export class PropertyRepository implements IPropertyRepository {
     let refCity = params.city;
     let refState = params.state;
 
-    // A. If coordinates are provided (e.g. from GPS or map click):
+    // A. Coordinates provided (GPS or map click)
     if (refLat && refLng) {
       if (!refLocalityName || !refCity) {
         const rev = locationRepository.reverseGeocode(refLat, refLng);
@@ -174,7 +252,6 @@ export class PropertyRepository implements IPropertyRepository {
         if (!refCity) refCity = foundLoc.city_name;
         if (!refState) refState = foundLoc.state_name;
       } else {
-        // Check if locality query was actually a city name!
         const foundCity = locationRepository.getCityBySlugOrName(params.locality);
         if (foundCity) {
           refLat = foundCity.latitude;
@@ -207,7 +284,7 @@ export class PropertyRepository implements IPropertyRepository {
       }
     }
 
-    // Default fallback if still unresolved
+    // Default fallback coordinates if unresolved (Prayagraj default)
     if (!refLat || !refLng) {
       if (refCity) {
         const foundCity = locationRepository.getCityBySlugOrName(refCity);
@@ -219,110 +296,123 @@ export class PropertyRepository implements IPropertyRepository {
         }
       }
       if (!refLat || !refLng) {
-        // Center of India geographic centroid
-        refLat = 20.5937;
-        refLng = 78.9629;
-        refLocalityName = refLocalityName || 'All Locations';
-        refCity = refCity || 'All India';
-        refState = refState || 'India';
+        refLat = 25.4563;
+        refLng = 81.8546;
+        refLocalityName = refLocalityName || 'Prayagraj';
+        refCity = refCity || 'Prayagraj';
+        refState = refState || 'Uttar Pradesh';
       }
     }
 
-    // 2. Filter active properties based on query constraints (excluding rented/paused for search)
-    let candidates = all.filter((p) => {
-      // Hide rented or paused listings from search
-      if (p.availability_status === 'rented' || p.availability_status === 'paused') {
-        return false;
+    // 2. Query Supabase via PostGIS Proximity Function
+    const { data: rpcRows, error: rpcError } = await client.rpc(
+      'get_properties_proximity_ranked',
+      {
+        ref_lat: refLat,
+        ref_lon: refLng,
+        filter_gender: params.gender && params.gender !== 'any' ? params.gender : null,
+        filter_prop_type: params.property_type && params.property_type !== 'all' ? params.property_type : null,
+        filter_max_rent: params.max_price || null,
+        filter_city: params.city && params.city !== 'all' ? params.city : null,
+      }
+    );
+
+    let rawListings: any[] = [];
+
+    if (!rpcError && Array.isArray(rpcRows)) {
+      rawListings = rpcRows;
+    } else {
+      // Fallback to direct table query if RPC is unavailable
+      let query = client
+        .from('properties')
+        .select(`
+          *,
+          property_images (id, url, caption, is_cover, sort_order)
+        `)
+        .in('availability_status', ['available', 'limited']);
+
+      if (params.city && params.city !== 'all') {
+        query = query.ilike('city', `%${params.city}%`);
+      }
+      if (params.property_type && params.property_type !== 'all') {
+        query = query.eq('property_type', params.property_type);
+      }
+      if (params.gender && params.gender !== 'any') {
+        query = query.or(`gender_preference.eq.any,gender_preference.eq.${params.gender}`);
+      }
+      if (params.max_price) {
+        query = query.lte('rent', params.max_price);
       }
 
-      // Explicit city filter (when user actively selects a city in filters)
-      const explicitCity = params.city && params.city !== 'all' ? params.city : undefined;
-      if (explicitCity) {
-        const cityMatch =
-          (p.city_slug && p.city_slug.toLowerCase() === explicitCity.toLowerCase()) ||
-          p.city.toLowerCase() === explicitCity.toLowerCase();
-        if (!cityMatch) return false;
+      const { data: tableRows, error: tableError } = await query;
+      if (tableError) {
+        throw new Error(`Failed to retrieve properties from Supabase: ${tableError.message}`);
+      }
+      rawListings = tableRows || [];
+    }
+
+    // 3. Map rows and calculate geodesic distances
+    const scoredProperties: Property[] = [];
+
+    for (const row of rawListings) {
+      const prop = this.mapRowToProperty(row);
+
+      // Distance computation
+      let distanceKm: number;
+      if (row.distance_meters !== undefined && row.distance_meters !== null) {
+        distanceKm = Math.round((Number(row.distance_meters) / 1000) * 100) / 100;
+      } else {
+        const propLat = prop.latitude || 25.4563;
+        const propLng = prop.longitude || 81.8546;
+        distanceKm = calculateHaversineDistanceKm(refLat, refLng, propLat, propLng);
       }
 
-      // Explicit state filter (if specified)
-      const explicitState = params.state && params.state !== 'all' ? params.state : undefined;
-      if (explicitState) {
-        const stateMatch =
-          (p.state_code && p.state_code.toLowerCase() === explicitState.toLowerCase()) ||
-          p.state.toLowerCase() === explicitState.toLowerCase();
-        if (!stateMatch) return false;
+      prop.distance_km = distanceKm;
+      prop.distance_formatted = formatDistance(distanceKm);
+      prop.proximity_bucket = getProximityBucket(distanceKm);
+
+      // Filter by min price if specified
+      if (params.min_price && prop.rent < params.min_price) {
+        continue;
       }
 
-      if (params.property_type && params.property_type !== 'all' && p.property_type !== params.property_type) {
-        return false;
+      // Filter by verified only if requested
+      if (params.verified_only && !prop.is_verified) {
+        continue;
       }
-      if (params.gender && params.gender !== 'any' && p.gender_preference !== 'any' && p.gender_preference !== params.gender) {
-        return false;
+
+      // Filter by room type if requested
+      if (params.room_type && params.room_type !== 'all' && prop.room_type !== params.room_type) {
+        continue;
       }
-      if (params.room_type && params.room_type !== 'all' && p.room_type !== params.room_type) {
-        return false;
-      }
-      if (params.min_price && p.rent < params.min_price) {
-        return false;
-      }
-      if (params.max_price && p.rent > params.max_price) {
-        return false;
-      }
-      if (params.verified_only && !p.is_verified) {
-        return false;
-      }
+
+      // Filter by amenities if requested
       if (params.amenities && params.amenities.length > 0) {
-        const hasAll = params.amenities.every((a) => p.amenities.includes(a));
-        if (!hasAll) return false;
+        const hasAllAmenities = params.amenities.every((a) => prop.amenities?.includes(a));
+        if (!hasAllAmenities) continue;
       }
-      return true;
-    });
 
-    // 3. Compute continuous distance and bucket for each property
-    const scoredProperties = candidates.map((p) => {
-      const canonicalLat = p.latitude
-        ?? locationRepository.getCityBySlugOrName(p.city_slug || p.city)?.latitude
-        ?? 20.5937;
-      const canonicalLng = p.longitude
-        ?? locationRepository.getCityBySlugOrName(p.city_slug || p.city)?.longitude
-        ?? 78.9629;
-      const dist = calculateHaversineDistanceKm(refLat!, refLng!, canonicalLat, canonicalLng);
-      const bucket = getProximityBucket(dist);
-      const secured = this.applyPrivacyEnforcement(p, currentUserId);
-      secured.distance_km = dist;
-      secured.distance_formatted = formatDistance(dist);
-      secured.proximity_bucket = bucket;
-      return secured;
-    });
+      // Privacy enforcement
+      const sanitized = await this.applyPrivacyEnforcement(prop, currentUserId);
+      scoredProperties.push(sanitized);
+    }
 
-    // 4. Proximity-Dominant Ranking (Anti-Leapfrogging Rule)
-    // Primary: distance (ascending).
-    // Tie-breaker within same close distance range (< 350m): featured status or verification.
-    scoredProperties.sort((a, b) => {
-      const distDiff = (a.distance_km || 0) - (b.distance_km || 0);
-      // If distance difference is small (< 350m), featured or verified properties get a slight bump
-      if (Math.abs(distDiff) <= 0.35) {
-        const scoreA = (a.is_featured ? 2 : 0) + (a.is_verified ? 1 : 0);
-        const scoreB = (b.is_featured ? 2 : 0) + (b.is_verified ? 1 : 0);
-        if (scoreB !== scoreA) {
-          return scoreB - scoreA;
-        }
-      }
-      return distDiff;
-    });
-
-    // Optional user secondary sorting
-    if (params.sort_by === 'price_low') {
+    // 4. Sort properties
+    const sortBy = params.sort_by || 'nearest';
+    if (sortBy === 'price_low') {
       scoredProperties.sort((a, b) => a.rent - b.rent);
-    } else if (params.sort_by === 'price_high') {
+    } else if (sortBy === 'price_high') {
       scoredProperties.sort((a, b) => b.rent - a.rent);
-    } else if (params.sort_by === 'newest') {
+    } else if (sortBy === 'newest') {
       scoredProperties.sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
+    } else {
+      // Nearest default
+      scoredProperties.sort((a, b) => (a.distance_km ?? 999) - (b.distance_km ?? 999));
     }
 
-    // 5. Partition into Presentation Buckets
+    // 5. Partition into anti-leapfrogging proximity buckets
     const buckets = {
       very_near: scoredProperties.filter((p) => p.proximity_bucket === 'very_near'),
       nearby: scoredProperties.filter((p) => p.proximity_bucket === 'nearby'),
@@ -330,27 +420,19 @@ export class PropertyRepository implements IPropertyRepository {
       more_options: scoredProperties.filter((p) => p.proximity_bucket === 'more_options'),
     };
 
-    const exactAreaCount = scoredProperties.filter(
-      (p) => p.locality.toLowerCase() === refLocalityName.toLowerCase()
-    ).length;
-
-    // Continuous dynamic radius expansion message
-    const isExpanded = exactAreaCount === 0 || exactAreaCount < 2;
+    const exactAreaCount = buckets.very_near.length;
+    const isExpanded = exactAreaCount === 0 && scoredProperties.length > 0;
     let expandedMessage: string | undefined;
-    if (scoredProperties.length === 0) {
-      expandedMessage = `No rooms currently listed in ${refLocalityName || 'this location'}. Be the first to list one!`;
-    } else if (exactAreaCount === 0) {
-      expandedMessage = `No exact matches right inside ${refLocalityName}. Showing ${scoredProperties.length} verified options starting from nearest areas nearby.`;
-    } else if (exactAreaCount < 2) {
-      expandedMessage = `Showing ${exactAreaCount} option in ${refLocalityName} plus ${scoredProperties.length - exactAreaCount} nearby options within close distance.`;
+
+    if (isExpanded) {
+      const nearestDist = scoredProperties[0]?.distance_formatted || 'nearby';
+      expandedMessage = `No active listings right inside ${refLocalityName}. Showing the closest options starting ${nearestDist}.`;
     }
 
     return {
       properties: scoredProperties,
       reference_locality: refLocalityName,
-      reference_city: refCity,
-      reference_state: refState,
-      reference_coordinates: { latitude: refLat!, longitude: refLng! },
+      reference_coordinates: { latitude: refLat, longitude: refLng },
       total_found: scoredProperties.length,
       exact_area_count: exactAreaCount,
       is_expanded: isExpanded,
@@ -360,44 +442,47 @@ export class PropertyRepository implements IPropertyRepository {
   }
 
   async getPropertyById(id: string, currentUserId?: string): Promise<Property | null> {
-    const all = this.getStoredProperties();
-    const prop = all.find((p) => p.id === id);
-    if (!prop) return null;
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('properties')
+      .select(`
+        *,
+        property_images (id, url, caption, is_cover, sort_order),
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number)
+      `)
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to fetch property from Supabase: ${error.message}`);
+    }
+    if (!data) return null;
+
+    const prop = this.mapRowToProperty(data);
     return this.applyPrivacyEnforcement(prop, currentUserId);
   }
 
-  async createProperty(
-    data: Partial<Property>,
-    authenticatedUserId?: string
-  ): Promise<Property> {
-    const all = this.getStoredProperties();
-    const id = `prop-${Date.now()}`;
-    const slug = (data.title || 'student-room')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
+  async createProperty(data: Partial<Property>): Promise<Property> {
+    const client = this.assertSupabaseClient();
 
-    const creatorId = authenticatedUserId || data.created_by || data.owner_id || 'user-default';
+    const lat = data.latitude || 25.4563;
+    const lon = data.longitude || 81.8546;
 
-    const newProperty: Property = {
-      id,
-      owner_id: creatorId,
-      created_by: creatorId,
-      owner_name: data.lister_name || data.owner_name || 'Member',
-      lister_name: data.lister_name || data.owner_name || 'Member',
-      owner_phone: data.owner_phone || null,
-      lister_phone: data.owner_phone || null,
-      lister_type: data.lister_type || 'individual',
-      title: data.title || 'Student Room',
-      slug,
+    const insertData: any = {
+      title: data.title,
+      slug:
+        data.slug ||
+        (data.title
+          ? data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString().slice(-4)
+          : 'listing-' + Date.now()),
       description: data.description || '',
       property_type: data.property_type || 'pg',
       gender_preference: data.gender_preference || 'any',
       room_type: data.room_type || 'single',
       rent: Number(data.rent) || 5000,
-      security_deposit: Number(data.security_deposit) || 5000,
+      security_deposit: Number(data.security_deposit) || 0,
       electricity_billing: data.electricity_billing || 'included',
-      electricity_rate_per_unit: data.electricity_rate_per_unit,
       maintenance_fee: Number(data.maintenance_fee) || 0,
       available_from: data.available_from || 'Immediately',
       vacancies: Number(data.vacancies) || 1,
@@ -407,55 +492,52 @@ export class PropertyRepository implements IPropertyRepository {
       attached_bathroom: Boolean(data.attached_bathroom),
       balcony: Boolean(data.balcony),
       availability_status: 'available',
-      is_verified: false,
-      verification_badge: undefined,
-      is_featured: false,
-      is_demo: false, // User-created listings are real local listings!
-      country: data.country || 'India',
-      state: data.state || '',
-      state_code: data.state_code || '',
-      city: data.city || '',
-      city_slug: data.city_slug || (data.city ? data.city.toLowerCase().replace(/\s+/g, '-') : ''),
       locality: data.locality || '',
-      locality_slug: data.locality_slug || (data.locality ? data.locality.toLowerCase().replace(/\s+/g, '-') : ''),
-      sub_locality: data.sub_locality,
-      landmark: data.landmark,
+      sub_locality: data.sub_locality || null,
+      landmark: data.landmark || null,
+      city: data.city || '',
+      state: data.state || '',
       pincode: data.pincode || '',
       address: data.address || '',
-      latitude: (() => {
-        if (data.latitude && !isNaN(Number(data.latitude))) return Number(data.latitude);
-        const loc = locationRepository.getLocalityBySlugOrName(data.locality || '', data.city);
-        if (loc) return loc.latitude;
-        const ct = locationRepository.getCityBySlugOrName(data.city || '');
-        if (ct) return ct.latitude;
-        return 20.5937;
-      })(),
-      longitude: (() => {
-        if (data.longitude && !isNaN(Number(data.longitude))) return Number(data.longitude);
-        const loc = locationRepository.getLocalityBySlugOrName(data.locality || '', data.city);
-        if (loc) return loc.longitude;
-        const ct = locationRepository.getCityBySlugOrName(data.city || '');
-        if (ct) return ct.longitude;
-        return 78.9629;
-      })(),
-      amenities: data.amenities || ['wifi', 'ro_water', 'study_table'],
-      rules: data.rules || ['quiet_hours'],
-      images: data.images && data.images.length > 0 ? data.images : [
-        {
-          id: 'img-default',
-          url: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=1000&q=80',
-          is_cover: true,
-          caption: 'Room overview'
-        }
-      ],
+      location: `POINT(${lon} ${lat})`,
+      amenities: data.amenities || [],
+      rules: data.rules || [],
       phone_privacy: data.phone_privacy || 'private',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      is_demo: false,
     };
 
-    all.unshift(newProperty);
-    this.saveStoredProperties(all);
-    return newProperty;
+    if (data.owner_id) {
+      insertData.owner_id = data.owner_id;
+      insertData.created_by = data.created_by || data.owner_id;
+    }
+
+    const { data: created, error } = await client
+      .from('properties')
+      .insert(insertData)
+      .select(`
+        *,
+        property_images (id, url, caption, is_cover, sort_order)
+      `)
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create property in Supabase: ${error.message}`);
+    }
+
+    // Insert images if provided
+    if (data.images && data.images.length > 0) {
+      const imageInserts = data.images.map((img, idx) => ({
+        property_id: created.id,
+        url: img.url,
+        caption: img.caption || '',
+        is_cover: Boolean(img.is_cover || idx === 0),
+        sort_order: idx,
+      }));
+
+      await client.from('property_images').insert(imageInserts);
+    }
+
+    return this.mapRowToProperty(created);
   }
 
   async updateProperty(
@@ -463,54 +545,116 @@ export class PropertyRepository implements IPropertyRepository {
     updates: Partial<Property>,
     requestingUserId?: string
   ): Promise<Property> {
-    const all = this.getStoredProperties();
-    const index = all.findIndex((p) => p.id === id);
-    if (index === -1) throw new Error(`Property ${id} not found`);
+    const client = this.assertSupabaseClient();
 
     if (requestingUserId) {
-      const isOwner = all[index].created_by === requestingUserId || all[index].owner_id === requestingUserId;
-      const isAdmin = await serverAuth.verifySuperAdminAuthorization(requestingUserId);
+      const current = await this.getPropertyById(id, requestingUserId);
+      if (!current) throw new Error(`Property ${id} not found`);
+
+      const isOwner = current.owner_id === requestingUserId || current.created_by === requestingUserId;
+      const isAdmin = serverAuth.isSuperAdmin(requestingUserId);
       if (!isOwner && !isAdmin) {
         throw new Error('403 Forbidden: You do not have permission to modify this listing');
       }
     }
 
-    const updated = {
-      ...all[index],
-      ...updates,
+    const updatePayload: any = {
       updated_at: new Date().toISOString(),
     };
-    all[index] = updated;
-    this.saveStoredProperties(all);
-    return updated;
+
+    if (updates.title !== undefined) updatePayload.title = updates.title;
+    if (updates.rent !== undefined) updatePayload.rent = Number(updates.rent);
+    if (updates.availability_status !== undefined) updatePayload.availability_status = updates.availability_status;
+    if (updates.is_verified !== undefined) updatePayload.is_verified = Boolean(updates.is_verified);
+    if (updates.verification_badge !== undefined) updatePayload.verification_badge = updates.verification_badge;
+    if (updates.description !== undefined) updatePayload.description = updates.description;
+    if (updates.amenities !== undefined) updatePayload.amenities = updates.amenities;
+    if (updates.rules !== undefined) updatePayload.rules = updates.rules;
+    if (updates.phone_privacy !== undefined) updatePayload.phone_privacy = updates.phone_privacy;
+
+    const { data, error } = await client
+      .from('properties')
+      .update(updatePayload)
+      .eq('id', id)
+      .select(`
+        *,
+        property_images (id, url, caption, is_cover, sort_order)
+      `)
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update property in Supabase: ${error.message}`);
+    }
+
+    return this.mapRowToProperty(data);
   }
 
   async deleteProperty(id: string, requestingUserId?: string): Promise<boolean> {
-    const all = this.getStoredProperties();
-    const index = all.findIndex((p) => p.id === id);
-    if (index === -1) return false;
+    const client = this.assertSupabaseClient();
 
     if (requestingUserId) {
-      const isOwner = all[index].created_by === requestingUserId || all[index].owner_id === requestingUserId;
-      const isAdmin = await serverAuth.verifySuperAdminAuthorization(requestingUserId);
+      const current = await this.getPropertyById(id, requestingUserId);
+      if (!current) return false;
+
+      const isOwner = current.owner_id === requestingUserId || current.created_by === requestingUserId;
+      const isAdmin = serverAuth.isSuperAdmin(requestingUserId);
       if (!isOwner && !isAdmin) {
         throw new Error('403 Forbidden: You do not have permission to delete this listing');
       }
     }
 
-    all.splice(index, 1);
-    this.saveStoredProperties(all);
+    const { error } = await client.from('properties').delete().eq('id', id);
+    if (error) {
+      throw new Error(`Failed to delete property from Supabase: ${error.message}`);
+    }
     return true;
   }
 
   async getPropertiesByOwner(ownerId: string): Promise<Property[]> {
-    const all = this.getStoredProperties();
-    return all.filter((p) => p.owner_id === ownerId || p.created_by === ownerId);
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('properties')
+      .select(`
+        *,
+        property_images (id, url, caption, is_cover, sort_order)
+      `)
+      .or(`owner_id.eq.${ownerId},created_by.eq.${ownerId}`);
+
+    if (error) {
+      throw new Error(`Failed to fetch owner properties from Supabase: ${error.message}`);
+    }
+
+    const properties: Property[] = [];
+    for (const row of data || []) {
+      const prop = this.mapRowToProperty(row);
+      properties.push(await this.applyPrivacyEnforcement(prop, ownerId));
+    }
+    return properties;
   }
 
   async getAllPropertiesAdmin(adminUserId?: string): Promise<Property[]> {
     await serverAuth.assertSuperAdmin(adminUserId);
-    return this.getStoredProperties();
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('properties')
+      .select(`
+        *,
+        property_images (id, url, caption, is_cover, sort_order)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to fetch admin properties from Supabase: ${error.message}`);
+    }
+
+    const properties: Property[] = [];
+    for (const row of data || []) {
+      const prop = this.mapRowToProperty(row);
+      properties.push(await this.applyPrivacyEnforcement(prop, adminUserId));
+    }
+    return properties;
   }
 
   async updatePropertyStatus(
@@ -527,10 +671,14 @@ export class PropertyRepository implements IPropertyRepository {
     adminUserId?: string
   ): Promise<Property> {
     await serverAuth.assertSuperAdmin(adminUserId);
-    return this.updateProperty(id, {
-      is_verified: true,
-      verification_badge: badge,
-    });
+    return this.updateProperty(
+      id,
+      {
+        is_verified: true,
+        verification_badge: badge,
+      },
+      adminUserId
+    );
   }
 }
 

@@ -7,157 +7,90 @@ import {
   Report
 } from '../types';
 import { serverAuth } from './serverAuth';
-
-const CHAT_STORAGE_KEY = 'prayag_living_messages_v1';
-const CONV_STORAGE_KEY = 'prayag_living_conversations_v1';
-const CONTACT_REQ_STORAGE_KEY = 'prayag_living_contact_requests_v1';
-const REPORTS_STORAGE_KEY = 'prayag_living_reports_v1';
-const BLOCKS_STORAGE_KEY = 'prayag_living_blocks_v1';
-
-// Initial seed conversations
-const INITIAL_CONVERSATIONS: Conversation[] = [
-  {
-    id: 'conv-1',
-    participant_ids: ['user-stud-1', 'owner-101'],
-    participant_names: {
-      'user-stud-1': 'Ankit Tiwari',
-      'owner-101': 'Pandey Nilayam Residency (Katra)',
-    },
-    participant_avatars: {
-      'user-stud-1': 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
-      'owner-101': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    },
-    last_message: 'Yes, double sharing room with cooler is available on 2nd floor.',
-    last_message_time: '10:45 AM',
-    unread_count: 1,
-    property_id: 'prop-katra-1',
-    property_title: 'Sunrise Boys PG & Study Hub – Katra',
-  },
-  {
-    id: 'conv-2',
-    participant_ids: ['user-stud-1', 'owner-104'],
-    participant_names: {
-      'user-stud-1': 'Ankit Tiwari',
-      'owner-104': 'Anand Heritage Stays (Mumfordganj)',
-    },
-    participant_avatars: {
-      'user-stud-1': 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
-      'owner-104': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-    },
-    last_message: 'Please feel free to visit today between 4 PM to 7 PM.',
-    last_message_time: 'Yesterday',
-    unread_count: 0,
-    property_id: 'prop-mumford-1',
-    property_title: 'Silent Aspirant Studio Rooms – Mumfordganj',
-  }
-];
-
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: 'msg-101',
-    conversation_id: 'conv-1',
-    sender_id: 'user-stud-1',
-    sender_name: 'Ankit Tiwari',
-    receiver_id: 'owner-101',
-    text: 'Namaste Pandey ji, I saw your Sunrise Boys PG in Katra on Rented Thikan. Is double sharing available for immediate move-in?',
-    timestamp: '10:30 AM',
-    is_read: true,
-    property_context: {
-      id: 'prop-katra-1',
-      title: 'Sunrise Boys PG & Study Hub – Katra',
-      locality: 'Katra',
-      rent: 6200,
-    },
-  },
-  {
-    id: 'msg-102',
-    conversation_id: 'conv-1',
-    sender_id: 'owner-101',
-    sender_name: 'Pandey Nilayam Residency',
-    receiver_id: 'user-stud-1',
-    text: 'Yes, double sharing room with cooler is available on 2nd floor. Mess is running full time. When would you like to come for a visit?',
-    timestamp: '10:45 AM',
-    is_read: false,
-    property_context: {
-      id: 'prop-katra-1',
-      title: 'Sunrise Boys PG & Study Hub – Katra',
-      locality: 'Katra',
-      rent: 6200,
-    },
-  },
-];
-
-const INITIAL_CONTACT_REQUESTS: ContactRequest[] = [
-  {
-    id: 'req-1',
-    property_id: 'prop-katra-1',
-    property_title: 'Sunrise Boys PG & Study Hub – Katra',
-    requester_id: 'user-stud-1',
-    requester_name: 'Ankit Tiwari',
-    requester_role: 'student',
-    requester_phone: '+91 98394 55123',
-    receiver_id: 'owner-101',
-    receiver_name: 'Pandey Nilayam Residency',
-    receiver_role: 'owner',
-    receiver_phone: '+91 94152 38472',
-    status: 'pending',
-    created_at: '2026-09-10T10:30:00Z',
-    updated_at: '2026-09-10T10:30:00Z',
-  }
-];
-
-const INITIAL_REPORTS: Report[] = [
-  {
-    id: 'rep-1',
-    reporter_id: 'user-stud-2',
-    reporter_name: 'Pooja Srivastava',
-    reported_entity_type: 'property',
-    reported_entity_id: 'prop-sample-fake',
-    reported_entity_name: 'Suspicious 1BHK Katra (Reported)',
-    reason: 'wrong_information',
-    notes: 'Price posted was ₹1500 but on visiting owner asked ₹9000 and demanded token money upfront.',
-    status: 'pending',
-    created_at: '2026-09-08T14:20:00Z',
-  }
-];
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export class ChatAndSafetyRepository implements IChatRepository, ISafetyRepository {
+  private assertSupabaseClient() {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error(
+        'Supabase is not configured. Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.'
+      );
+    }
+    return supabase;
+  }
+
   // --- CHAT REPOSITORY ---
 
-  private getStoredConversations(): Conversation[] {
-    try {
-      const stored = localStorage.getItem(CONV_STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch (e) {
-      console.warn(e);
-    }
-    try {
-      localStorage.setItem(CONV_STORAGE_KEY, JSON.stringify(INITIAL_CONVERSATIONS));
-    } catch (e) {}
-    return [...INITIAL_CONVERSATIONS];
-  }
-
-  private getStoredMessages(): Message[] {
-    try {
-      const stored = localStorage.getItem(CHAT_STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch (e) {
-      console.warn(e);
-    }
-    try {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(INITIAL_MESSAGES));
-    } catch (e) {}
-    return [...INITIAL_MESSAGES];
-  }
-
   async getConversations(userId: string): Promise<Conversation[]> {
-    const all = this.getStoredConversations();
-    return all.filter((c) => c.participant_ids.includes(userId));
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('conversations')
+      .select(`
+        *,
+        profile_a:profiles!conversations_participant_a_fkey (id, full_name, avatar_url),
+        profile_b:profiles!conversations_participant_b_fkey (id, full_name, avatar_url)
+      `)
+      .or(`participant_a.eq.${userId},participant_b.eq.${userId}`)
+      .order('last_message_time', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to load conversations: ${error.message}`);
+    }
+
+    return (data || []).map((c: any) => {
+      const nameA = c.profile_a?.full_name || 'User A';
+      const nameB = c.profile_b?.full_name || 'User B';
+      const avatarA = c.profile_a?.avatar_url;
+      const avatarB = c.profile_b?.avatar_url;
+
+      return {
+        id: c.id,
+        participant_ids: [c.participant_a, c.participant_b],
+        participant_names: {
+          [c.participant_a]: nameA,
+          [c.participant_b]: nameB,
+        },
+        participant_avatars: {
+          [c.participant_a]: avatarA,
+          [c.participant_b]: avatarB,
+        },
+        last_message: c.last_message || '',
+        last_message_time: c.last_message_time ? new Date(c.last_message_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+        unread_count: 0,
+        property_id: c.property_id,
+        property_title: c.property_title,
+      };
+    });
   }
 
   async getMessages(conversationId: string): Promise<Message[]> {
-    const all = this.getStoredMessages();
-    return all.filter((m) => m.conversation_id === conversationId);
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('messages')
+      .select(`
+        *,
+        sender:profiles!messages_sender_id_fkey (id, full_name)
+      `)
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to load messages: ${error.message}`);
+    }
+
+    return (data || []).map((m: any) => ({
+      id: m.id,
+      conversation_id: m.conversation_id,
+      sender_id: m.sender_id,
+      sender_name: m.sender?.full_name || 'User',
+      receiver_id: m.receiver_id,
+      text: m.text,
+      timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+      is_read: Boolean(m.is_read),
+      property_context: m.property_context,
+    }));
   }
 
   async sendMessage(data: {
@@ -169,45 +102,69 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     propertyContext?: Message['property_context'];
     locationShare?: Message['location_share'];
   }): Promise<Message> {
-    const conversations = this.getStoredConversations();
-    const messages = this.getStoredMessages();
+    const client = this.assertSupabaseClient();
 
     let targetConvId = data.conversationId;
 
     if (!targetConvId) {
       // Find or create conversation
-      const existing = conversations.find(
-        (c) =>
-          c.participant_ids.includes(data.senderId) &&
-          c.participant_ids.includes(data.receiverId) &&
-          (!data.propertyContext?.id || c.property_id === data.propertyContext.id)
-      );
+      const { data: existing, error: findErr } = await client
+        .from('conversations')
+        .select('id')
+        .or(`and(participant_a.eq.${data.senderId},participant_b.eq.${data.receiverId}),and(participant_a.eq.${data.receiverId},participant_b.eq.${data.senderId})`)
+        .maybeSingle();
 
       if (existing) {
         targetConvId = existing.id;
       } else {
-        targetConvId = `conv-${Date.now()}`;
-        const newConv: Conversation = {
-          id: targetConvId,
-          participant_ids: [data.senderId, data.receiverId],
-          participant_names: {
-            [data.senderId]: data.senderName,
-            [data.receiverId]: data.propertyContext?.title || 'User',
-          },
-          last_message: data.text,
-          last_message_time: 'Just now',
-          unread_count: 0,
-          property_id: data.propertyContext?.id,
-          property_title: data.propertyContext?.title,
-          exact_location_share: data.locationShare,
-        };
-        conversations.unshift(newConv);
+        const { data: newConv, error: createErr } = await client
+          .from('conversations')
+          .insert({
+            participant_a: data.senderId,
+            participant_b: data.receiverId,
+            property_id: data.propertyContext?.id,
+            property_title: data.propertyContext?.title,
+            last_message: data.text,
+            last_message_time: new Date().toISOString(),
+          })
+          .select()
+          .single();
+
+        if (createErr || !newConv) {
+          throw new Error(`Failed to initialize conversation: ${createErr?.message}`);
+        }
+        targetConvId = newConv.id;
       }
     }
 
-    const newMessage: Message = {
-      id: `msg-${Date.now()}`,
-      conversation_id: targetConvId,
+    const { data: newMsg, error: msgErr } = await client
+      .from('messages')
+      .insert({
+        conversation_id: targetConvId,
+        sender_id: data.senderId,
+        receiver_id: data.receiverId,
+        text: data.text,
+        property_context: data.propertyContext,
+      })
+      .select()
+      .single();
+
+    if (msgErr || !newMsg) {
+      throw new Error(`Failed to send message: ${msgErr?.message}`);
+    }
+
+    // Update conversation last message timestamp
+    await client
+      .from('conversations')
+      .update({
+        last_message: data.text,
+        last_message_time: new Date().toISOString(),
+      })
+      .eq('id', targetConvId);
+
+    return {
+      id: newMsg.id,
+      conversation_id: targetConvId!,
       sender_id: data.senderId,
       sender_name: data.senderName,
       receiver_id: data.receiverId,
@@ -217,39 +174,9 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
       property_context: data.propertyContext,
       location_share: data.locationShare,
     };
-
-    messages.push(newMessage);
-
-    // Update conversation metadata
-    const convIndex = conversations.findIndex((c) => c.id === targetConvId);
-    if (convIndex !== -1) {
-      conversations[convIndex].last_message = data.text;
-      conversations[convIndex].last_message_time = 'Just now';
-      if (data.locationShare) {
-        conversations[convIndex].exact_location_share = data.locationShare;
-      }
-    }
-
-    localStorage.setItem(CONV_STORAGE_KEY, JSON.stringify(conversations));
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
-
-    return newMessage;
   }
 
   // --- CONTACT REQUEST REPOSITORY ---
-
-  private getStoredContactRequests(): ContactRequest[] {
-    try {
-      const stored = localStorage.getItem(CONTACT_REQ_STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch (e) {
-      console.warn(e);
-    }
-    try {
-      localStorage.setItem(CONTACT_REQ_STORAGE_KEY, JSON.stringify(INITIAL_CONTACT_REQUESTS));
-    } catch (e) {}
-    return [...INITIAL_CONTACT_REQUESTS];
-  }
 
   async sendContactRequest(data: {
     propertyId?: string;
@@ -262,85 +189,177 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     receiverName: string;
     receiverRole?: string;
   }): Promise<ContactRequest> {
-    const all = this.getStoredContactRequests();
+    const client = this.assertSupabaseClient();
 
-    // Check if duplicate pending
-    const existing = all.find(
-      (r) =>
-        r.requester_id === data.requesterId &&
-        r.receiver_id === data.receiverId &&
-        r.property_id === data.propertyId
-    );
+    // Check existing
+    const { data: existing } = await client
+      .from('contact_requests')
+      .select('*')
+      .eq('property_id', data.propertyId)
+      .eq('requester_id', data.requesterId)
+      .eq('receiver_id', data.receiverId)
+      .maybeSingle();
+
     if (existing) {
-      return existing;
+      return {
+        id: existing.id,
+        property_id: existing.property_id,
+        property_title: data.propertyTitle,
+        requester_id: existing.requester_id,
+        requester_name: data.requesterName,
+        requester_role: (data.requesterRole as any) || 'member',
+        requester_phone: data.requesterPhone,
+        receiver_id: existing.receiver_id,
+        receiver_name: data.receiverName,
+        receiver_role: (data.receiverRole as any) || 'owner',
+        status: existing.status as ContactRequestStatus,
+        created_at: existing.created_at,
+        updated_at: existing.updated_at,
+      };
     }
 
-    const newReq: ContactRequest = {
-      id: `req-${Date.now()}`,
-      property_id: data.propertyId,
-      property_title: data.propertyTitle,
-      requester_id: data.requesterId,
-      requester_name: data.requesterName,
-      requester_role: data.requesterRole,
-      requester_phone: data.requesterPhone || '+91 98394 55123',
-      receiver_id: data.receiverId,
-      receiver_name: data.receiverName,
-      receiver_role: data.receiverRole,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    const { data: created, error } = await client
+      .from('contact_requests')
+      .insert({
+        property_id: data.propertyId,
+        requester_id: data.requesterId,
+        receiver_id: data.receiverId,
+        status: 'pending',
+      })
+      .select()
+      .single();
 
-    all.unshift(newReq);
-    localStorage.setItem(CONTACT_REQ_STORAGE_KEY, JSON.stringify(all));
-    return newReq;
+    if (error || !created) {
+      throw new Error(`Failed to send contact request: ${error?.message}`);
+    }
+
+    return {
+      id: created.id,
+      property_id: created.property_id,
+      property_title: data.propertyTitle,
+      requester_id: created.requester_id,
+      requester_name: data.requesterName,
+      requester_role: (data.requesterRole as any) || 'member',
+      requester_phone: data.requesterPhone,
+      receiver_id: created.receiver_id,
+      receiver_name: data.receiverName,
+      receiver_role: (data.receiverRole as any) || 'owner',
+      status: 'pending',
+      created_at: created.created_at,
+      updated_at: created.updated_at,
+    };
   }
 
   async updateContactRequestStatus(
     requestId: string,
     status: ContactRequestStatus
   ): Promise<ContactRequest> {
-    const all = this.getStoredContactRequests();
-    const index = all.findIndex((r) => r.id === requestId);
-    if (index === -1) throw new Error(`Contact request ${requestId} not found`);
+    const client = this.assertSupabaseClient();
 
-    all[index].status = status;
-    all[index].updated_at = new Date().toISOString();
+    const { data, error } = await client
+      .from('contact_requests')
+      .update({
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', requestId)
+      .select(`
+        *,
+        property:properties (id, title),
+        requester:profiles!contact_requests_requester_id_fkey (id, full_name, phone_number),
+        receiver:profiles!contact_requests_receiver_id_fkey (id, full_name, phone_number)
+      `)
+      .single();
 
-    localStorage.setItem(CONTACT_REQ_STORAGE_KEY, JSON.stringify(all));
-    return all[index];
+    if (error || !data) {
+      throw new Error(`Failed to update contact request status: ${error?.message}`);
+    }
+
+    return {
+      id: data.id,
+      property_id: data.property_id,
+      property_title: data.property?.title,
+      requester_id: data.requester_id,
+      requester_name: data.requester?.full_name || 'Requester',
+      requester_role: 'member',
+      requester_phone: data.requester?.phone_number,
+      receiver_id: data.receiver_id,
+      receiver_name: data.receiver?.full_name || 'Owner',
+      receiver_role: 'owner',
+      receiver_phone: data.receiver?.phone_number,
+      status: data.status,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
   }
 
   async getContactRequests(userId: string): Promise<ContactRequest[]> {
-    const all = this.getStoredContactRequests();
-    return all.filter((r) => r.requester_id === userId || r.receiver_id === userId);
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('contact_requests')
+      .select(`
+        *,
+        property:properties (id, title),
+        requester:profiles!contact_requests_requester_id_fkey (id, full_name, phone_number),
+        receiver:profiles!contact_requests_receiver_id_fkey (id, full_name, phone_number)
+      `)
+      .or(`requester_id.eq.${userId},receiver_id.eq.${userId}`)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to fetch contact requests: ${error.message}`);
+    }
+
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      property_id: r.property_id,
+      property_title: r.property?.title,
+      requester_id: r.requester_id,
+      requester_name: r.requester?.full_name || 'Student',
+      requester_role: 'member',
+      requester_phone: r.requester?.phone_number,
+      receiver_id: r.receiver_id,
+      receiver_name: r.receiver?.full_name || 'Owner',
+      receiver_role: 'owner',
+      receiver_phone: r.receiver?.phone_number,
+      status: r.status,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    }));
   }
 
   async getContactRequestForPropertyAndRequester(
     propertyId: string,
     requesterId: string
   ): Promise<ContactRequest | null> {
-    const all = this.getStoredContactRequests();
-    const found = all.find(
-      (r) => r.property_id === propertyId && r.requester_id === requesterId
-    );
-    return found || null;
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('contact_requests')
+      .select('*')
+      .eq('property_id', propertyId)
+      .eq('requester_id', requesterId)
+      .maybeSingle();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      property_id: data.property_id,
+      requester_id: data.requester_id,
+      requester_name: 'Requester',
+      requester_role: 'member',
+      receiver_id: data.receiver_id,
+      receiver_name: 'Owner',
+      receiver_role: 'owner',
+      status: data.status,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
   }
 
   // --- SAFETY & MODERATION REPOSITORY ---
-
-  private getStoredReports(): Report[] {
-    try {
-      const stored = localStorage.getItem(REPORTS_STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch (e) {
-      console.warn(e);
-    }
-    try {
-      localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify(INITIAL_REPORTS));
-    } catch (e) {}
-    return [...INITIAL_REPORTS];
-  }
 
   async submitReport(data: {
     reporterId: string;
@@ -351,27 +370,68 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     reason: Report['reason'];
     notes?: string;
   }): Promise<Report> {
-    const reports = this.getStoredReports();
-    const newReport: Report = {
-      id: `rep-${Date.now()}`,
-      reporter_id: data.reporterId,
+    const client = this.assertSupabaseClient();
+
+    const { data: created, error } = await client
+      .from('reports')
+      .insert({
+        reporter_id: data.reporterId,
+        reported_entity_type: data.reportedEntityType,
+        reported_entity_id: data.reportedEntityId,
+        reported_entity_name: data.reportedEntityName,
+        reason: data.reason,
+        notes: data.notes,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error || !created) {
+      throw new Error(`Failed to submit report: ${error?.message}`);
+    }
+
+    return {
+      id: created.id,
+      reporter_id: created.reporter_id,
       reporter_name: data.reporterName,
-      reported_entity_type: data.reportedEntityType,
-      reported_entity_id: data.reportedEntityId,
-      reported_entity_name: data.reportedEntityName,
-      reason: data.reason,
-      notes: data.notes,
-      status: 'pending',
-      created_at: new Date().toISOString(),
+      reported_entity_type: created.reported_entity_type,
+      reported_entity_id: created.reported_entity_id,
+      reported_entity_name: created.reported_entity_name,
+      reason: created.reason,
+      notes: created.notes,
+      status: created.status,
+      created_at: created.created_at,
     };
-    reports.unshift(newReport);
-    localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify(reports));
-    return newReport;
   }
 
   async getReports(requestingUserId?: string): Promise<Report[]> {
     await serverAuth.assertSuperAdmin(requestingUserId);
-    return this.getStoredReports();
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('reports')
+      .select(`
+        *,
+        reporter:profiles!reports_reporter_id_fkey (id, full_name)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to fetch moderation reports: ${error.message}`);
+    }
+
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      reporter_id: r.reporter_id,
+      reporter_name: r.reporter?.full_name || 'Platform User',
+      reported_entity_type: r.reported_entity_type,
+      reported_entity_id: r.reported_entity_id,
+      reported_entity_name: r.reported_entity_name,
+      reason: r.reason,
+      notes: r.notes,
+      status: r.status,
+      created_at: r.created_at,
+    }));
   }
 
   async updateReportStatus(
@@ -380,37 +440,55 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     requestingUserId?: string
   ): Promise<Report> {
     await serverAuth.assertSuperAdmin(requestingUserId);
-    const reports = this.getStoredReports();
-    const index = reports.findIndex((r) => r.id === reportId);
-    if (index === -1) throw new Error(`Report ${reportId} not found`);
+    const client = this.assertSupabaseClient();
 
-    reports[index].status = status;
-    localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify(reports));
-    return reports[index];
+    const { data, error } = await client
+      .from('reports')
+      .update({ status })
+      .eq('id', reportId)
+      .select()
+      .single();
+
+    if (error || !data) {
+      throw new Error(`Failed to update report status: ${error?.message}`);
+    }
+
+    return {
+      id: data.id,
+      reporter_id: data.reporter_id,
+      reporter_name: 'Platform User',
+      reported_entity_type: data.reported_entity_type,
+      reported_entity_id: data.reported_entity_id,
+      reported_entity_name: data.reported_entity_name,
+      reason: data.reason,
+      notes: data.notes,
+      status: data.status,
+      created_at: data.created_at,
+    };
   }
 
   async blockUser(blockerId: string, blockedId: string): Promise<boolean> {
+    const client = this.assertSupabaseClient();
     try {
-      const stored = localStorage.getItem(BLOCKS_STORAGE_KEY);
-      const blocks: { blockerId: string; blockedId: string }[] = stored ? JSON.parse(stored) : [];
-      blocks.push({ blockerId, blockedId });
-      localStorage.setItem(BLOCKS_STORAGE_KEY, JSON.stringify(blocks));
+      // In Supabase, flag profile or record moderation action
+      await client.from('profiles').update({ is_blocked: true }).eq('id', blockedId);
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
 
   async isUserBlocked(blockerId: string, targetId: string): Promise<boolean> {
+    const client = this.assertSupabaseClient();
     try {
-      const stored = localStorage.getItem(BLOCKS_STORAGE_KEY);
-      if (!stored) return false;
-      const blocks: { blockerId: string; blockedId: string }[] = JSON.parse(stored);
-      return blocks.some((b) => b.blockerId === blockerId && b.blockedId === targetId);
-    } catch (e) {
+      const { data } = await client.from('profiles').select('is_blocked').eq('id', targetId).maybeSingle();
+      return Boolean(data?.is_blocked);
+    } catch {
       return false;
     }
   }
 }
 
 export const chatAndSafetyRepository = new ChatAndSafetyRepository();
+export const safetyRepository = chatAndSafetyRepository;
+export const chatRepository = chatAndSafetyRepository;

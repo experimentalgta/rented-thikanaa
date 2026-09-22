@@ -11,7 +11,7 @@ interface AuthContextType {
 }
 
 const DEFAULT_MEMBER: User = {
-  id: 'user-member-1',
+  id: '9750657b-9419-438a-a50e-eee9889d10a5',
   email: 'ankit.tiwari@allduniv.ac.in',
   full_name: 'Ankit Tiwari',
   account_type: 'user',
@@ -28,7 +28,7 @@ const DEFAULT_MEMBER: User = {
 };
 
 const SUPER_ADMIN_ACCOUNT: User = {
-  id: 'admin-1', // Verified by serverAuth in SERVER_SUPER_ADMIN_IDS
+  id: '4c44f036-b40d-582d-fbd1-b87a9cf1c4e5', // Verified in public.super_admins table
   email: 'moderation@rentedthikan.in',
   full_name: 'Rented Thikan Trust & Safety',
   account_type: 'super_admin',
