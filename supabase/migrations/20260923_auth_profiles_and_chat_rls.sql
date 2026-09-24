@@ -4,7 +4,22 @@
 -- 1. Automatic Google Profile Sync Trigger
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
+DECLARE
+  v_full_name text;
+  v_avatar_url text;
 BEGIN
+  v_full_name := COALESCE(
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'name',
+    split_part(COALESCE(new.email, 'User'), '@', 1)
+  );
+
+  v_avatar_url := COALESCE(
+    new.raw_user_meta_data->>'avatar_url',
+    new.raw_user_meta_data->>'picture',
+    NULL
+  );
+
   INSERT INTO public.profiles (
     id,
     email,
@@ -20,27 +35,24 @@ BEGIN
   VALUES (
     new.id,
     COALESCE(new.email, ''),
-    COALESCE(
-      new.raw_user_meta_data->>'full_name',
-      new.raw_user_meta_data->>'name',
-      split_part(COALESCE(new.email, 'User'), '@', 1)
-    ),
-    COALESCE(
-      new.raw_user_meta_data->>'avatar_url',
-      new.raw_user_meta_data->>'picture',
-      NULL
-    ),
+    v_full_name,
+    v_avatar_url,
     'user'::public.account_type_enum,
-    'private'::public.phone_privacy_enum,
+    'private'::public.phone_privacy_level,
     false,
     false,
     NOW(),
     NOW()
   )
   ON CONFLICT (id) DO UPDATE SET
-    full_name = COALESCE(excluded.full_name, profiles.full_name),
-    avatar_url = COALESCE(excluded.avatar_url, profiles.avatar_url),
+    full_name = EXCLUDED.full_name,
+    avatar_url = COALESCE(EXCLUDED.avatar_url, profiles.avatar_url),
+    email = EXCLUDED.email,
     updated_at = NOW();
+
+  RETURN new;
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'handle_new_user warning: %', SQLERRM;
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
