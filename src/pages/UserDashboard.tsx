@@ -171,11 +171,17 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       {/* Top Banner - Unified Member Header */}
       <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 sm:p-8 mb-8 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <img
-            src={currentUser.avatar_url || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80'}
-            alt={currentUser.full_name}
-            className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#E2E8F0] shrink-0"
-          />
+          {currentUser.avatar_url ? (
+            <img
+              src={currentUser.avatar_url}
+              alt={currentUser.full_name}
+              className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#E2E8F0] shrink-0"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-[#101828] text-[#F59E0B] font-extrabold text-2xl flex items-center justify-center ring-2 ring-[#E2E8F0] shrink-0 font-heading">
+              {(currentUser.full_name || currentUser.email || 'U').charAt(0).toUpperCase()}
+            </div>
+          )}
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-[#101828] font-heading">

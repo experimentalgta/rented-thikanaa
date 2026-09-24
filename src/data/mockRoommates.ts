@@ -4,8 +4,8 @@ export const MOCK_ROOMMATES: StudentProfile[] = [
   {
     id: 'roommate-1',
     user_id: 'user-stud-1',
-    full_name: 'Ankit Tiwari',
-    avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=300&q=80',
+    full_name: 'Aman Sharma',
+    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
     gender: 'male',
     college: 'University of Allahabad (Faculty of Law)',
     course: 'LL.B 2nd Year',

@@ -28,6 +28,47 @@ interface AuthContextType {
 
 const PENDING_ACTION_KEY = 'rt_pending_action';
 
+// Robust display name resolver adhering to specification
+export function resolveUserDisplayName(
+  profile?: { full_name?: string | null; name?: string | null } | null,
+  authUser?: SupabaseAuthUser | null
+): string {
+  const profileName = profile?.full_name?.trim() || profile?.name?.trim();
+  if (profileName) return profileName;
+
+  const meta = authUser?.user_metadata || {};
+  const metaName =
+    (typeof meta.full_name === 'string' && meta.full_name.trim()) ||
+    (typeof meta.name === 'string' && meta.name.trim()) ||
+    (typeof meta.display_name === 'string' && meta.display_name.trim());
+  if (metaName) return metaName;
+
+  if (authUser?.email) {
+    const emailPrefix = authUser.email.split('@')[0]?.trim();
+    if (emailPrefix) {
+      return emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+    }
+  }
+
+  return 'User';
+}
+
+// Robust avatar resolver (returns undefined when no real avatar exists, avoiding mock fallbacks)
+export function resolveUserAvatar(
+  profile?: { avatar_url?: string | null } | null,
+  authUser?: SupabaseAuthUser | null
+): string | undefined {
+  if (profile?.avatar_url && typeof profile.avatar_url === 'string' && profile.avatar_url.trim()) {
+    return profile.avatar_url.trim();
+  }
+  const meta = authUser?.user_metadata || {};
+  const metaAvatar = meta.avatar_url || meta.picture;
+  if (metaAvatar && typeof metaAvatar === 'string' && metaAvatar.trim()) {
+    return metaAvatar.trim();
+  }
+  return undefined;
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -75,6 +116,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Fetch or construct profile from Supabase
   const loadUserProfile = async (authUser: SupabaseAuthUser): Promise<User> => {
+    let dbProfile: any = null;
+    let adminStatus = false;
+
     if (supabase) {
       try {
         const { data, error } = await supabase
@@ -84,55 +128,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .maybeSingle();
 
         if (data && !error) {
-          const adminStatus = await serverAuth.verifySuperAdminAuthorization(authUser.id);
-          setIsSuperAdmin(adminStatus);
-          return {
-            id: data.id,
-            email: data.email || authUser.email || '',
-            full_name:
-              data.full_name ||
-              authUser.user_metadata?.full_name ||
-              authUser.user_metadata?.name ||
-              (authUser.email ? authUser.email.split('@')[0] : 'Student Member'),
-            account_type: data.account_type || (adminStatus ? 'super_admin' : 'user'),
-            role: adminStatus ? 'admin' : 'member',
-            avatar_url:
-              data.avatar_url ||
-              authUser.user_metadata?.avatar_url ||
-              authUser.user_metadata?.picture,
-            phone_number: data.phone_number,
-            is_verified: Boolean(data.is_verified),
-            is_blocked: Boolean(data.is_blocked),
-            college: data.college,
-            occupation: data.occupation,
-            bio: data.bio,
-            preferred_areas: data.preferred_areas,
-            budget: data.budget,
-            created_at: data.created_at || authUser.created_at || new Date().toISOString(),
-          };
+          dbProfile = data;
         }
       } catch (err) {
         console.error('Failed to load profile from database:', err);
       }
+
+      try {
+        adminStatus = await serverAuth.verifySuperAdminAuthorization(authUser.id);
+        setIsSuperAdmin(adminStatus);
+      } catch {}
     }
 
-    // Fallback based on auth metadata
-    const meta = authUser.user_metadata || {};
-    const adminStatus = await serverAuth.verifySuperAdminAuthorization(authUser.id);
-    setIsSuperAdmin(adminStatus);
+    const resolvedName = resolveUserDisplayName(dbProfile, authUser);
+    const resolvedAvatar = resolveUserAvatar(dbProfile, authUser);
 
     return {
       id: authUser.id,
-      email: authUser.email || '',
-      full_name:
-        meta.full_name ||
-        meta.name ||
-        (authUser.email ? authUser.email.split('@')[0] : 'Student Member'),
-      account_type: adminStatus ? 'super_admin' : 'user',
+      email: dbProfile?.email || authUser.email || '',
+      full_name: resolvedName,
+      account_type: dbProfile?.account_type || (adminStatus ? 'super_admin' : 'user'),
       role: adminStatus ? 'admin' : 'member',
-      avatar_url: meta.avatar_url || meta.picture,
-      is_verified: false,
-      created_at: authUser.created_at || new Date().toISOString(),
+      avatar_url: resolvedAvatar,
+      phone_number: dbProfile?.phone_number,
+      is_verified: Boolean(dbProfile?.is_verified),
+      is_blocked: Boolean(dbProfile?.is_blocked),
+      college: dbProfile?.college,
+      occupation: dbProfile?.occupation,
+      bio: dbProfile?.bio,
+      preferred_areas: dbProfile?.preferred_areas,
+      budget: dbProfile?.budget,
+      created_at: dbProfile?.created_at || authUser.created_at || new Date().toISOString(),
     };
   };
 

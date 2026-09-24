@@ -45,14 +45,17 @@ export const RoommateCard: React.FC<RoommateCardProps> = ({
         {/* Header with Avatar & Compatibility Badge */}
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="flex items-center gap-3">
-            <img
-              src={
-                roommate.avatar_url ||
-                'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&q=80'
-              }
-              alt={roommate.full_name}
-              className="w-13 h-13 rounded-xl object-cover ring-2 ring-[#E2E8F0] shrink-0"
-            />
+            {roommate.avatar_url ? (
+              <img
+                src={roommate.avatar_url}
+                alt={roommate.full_name}
+                className="w-13 h-13 rounded-xl object-cover ring-2 ring-[#E2E8F0] shrink-0"
+              />
+            ) : (
+              <div className="w-13 h-13 rounded-xl bg-[#101828] text-[#F59E0B] font-extrabold text-base flex items-center justify-center ring-2 ring-[#E2E8F0] shrink-0 font-heading">
+                {roommate.full_name.charAt(0).toUpperCase()}
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-1.5">
                 <h3 className="font-bold text-base text-[#111827] font-heading">

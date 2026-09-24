@@ -182,14 +182,14 @@ const safetyRepo = new SafetyRepository();
   // TEST 1: Unified Member Can Create / List a Property
   console.log('TEST 1: Unified normal member can list a property with created_by attribution...');
   const memberA = {
-    id: 'user-member-ankit',
-    full_name: 'Ankit Tiwari',
+    id: 'user-member-aman',
+    full_name: 'Aman Sharma',
     account_type: 'user',
     role: 'member'
   };
 
   const createdProp = await propertyRepo.createProperty({
-    title: 'Ankit 2BHK Spare Study Room – Katra',
+    title: 'Aman 2BHK Spare Study Room – Katra',
     created_by: memberA.id,
     owner_id: memberA.id,
     lister_name: memberA.full_name,
@@ -200,7 +200,7 @@ const safetyRepo = new SafetyRepository();
   });
 
   assert.strictEqual(createdProp.created_by, memberA.id);
-  assert.strictEqual(createdProp.lister_name, 'Ankit Tiwari');
+  assert.strictEqual(createdProp.lister_name, 'Aman Sharma');
   assert.strictEqual(createdProp.availability_status, 'available');
   console.log('✓ TEST 1 PASSED: Property created with member attribution.\n');
 

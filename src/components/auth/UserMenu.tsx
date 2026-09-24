@@ -40,10 +40,9 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onNavigate }) => {
 
   if (!currentUser) return null;
 
-  const firstName = currentUser.full_name?.split(' ')[0] || 'Member';
-  const avatarUrl =
-    currentUser.avatar_url ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name || 'User')}&background=101828&color=F59E0B&bold=true`;
+  const displayName = currentUser.full_name || currentUser.email?.split('@')[0] || 'User';
+  const firstName = displayName.split(' ')[0] || 'User';
+  const initial = displayName.charAt(0).toUpperCase() || 'U';
 
   const handleItemClick = (view: string, param?: any) => {
     setIsOpen(false);
@@ -66,12 +65,18 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onNavigate }) => {
         aria-expanded={isOpen}
         aria-haspopup="true"
       >
-        <img
-          src={avatarUrl}
-          alt={currentUser.full_name}
-          className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover ring-1 ring-slate-200"
-        />
-        <span className="text-xs font-bold text-[#111827] hidden md:inline truncate max-w-[100px]">
+        {currentUser.avatar_url ? (
+          <img
+            src={currentUser.avatar_url}
+            alt={displayName}
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover ring-1 ring-slate-200 shrink-0"
+          />
+        ) : (
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-[#101828] text-[#F59E0B] font-extrabold text-xs flex items-center justify-center ring-1 ring-slate-200 shrink-0 font-heading">
+            {initial}
+          </div>
+        )}
+        <span className="inline-block text-xs font-bold text-[#111827] truncate max-w-[85px] sm:max-w-[120px]">
           {firstName}
         </span>
         <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -79,16 +84,29 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onNavigate }) => {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-60 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
           {/* User Details Header */}
-          <div className="px-4 py-3 border-b border-slate-100">
-            <p className="text-xs font-bold text-slate-900 truncate">{currentUser.full_name}</p>
-            <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
-            {isSuperAdmin && (
-              <span className="inline-block mt-1 text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
-                Super Admin
-              </span>
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
+            {currentUser.avatar_url ? (
+              <img
+                src={currentUser.avatar_url}
+                alt={displayName}
+                className="w-9 h-9 rounded-xl object-cover ring-1 ring-slate-200 shrink-0"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-[#101828] text-[#F59E0B] font-extrabold text-sm flex items-center justify-center ring-1 ring-slate-200 shrink-0 font-heading">
+                {initial}
+              </div>
             )}
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-slate-900 truncate">{displayName}</p>
+              <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
+              {isSuperAdmin && (
+                <span className="inline-block mt-1 text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
+                  Super Admin
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Navigation Links */}
