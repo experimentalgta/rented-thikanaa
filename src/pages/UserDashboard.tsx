@@ -22,7 +22,8 @@ import {
   MapPin,
   Settings,
   Copy,
-  AlertTriangle
+  AlertTriangle,
+  LogOut
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSaved } from '../context/SavedContext';
@@ -46,7 +47,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   onSelectProperty,
   onNavigate,
 }) => {
-  const { currentUser, updateProfile } = useAuth();
+  const { currentUser, updateProfile, signOut } = useAuth();
   const { savedItems, toggleSave } = useSaved();
   const { contactRequests, updateContactRequest, setIsChatModalOpen } = useChat();
 
@@ -212,6 +213,18 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             className="w-full sm:w-auto"
           >
             Messages
+          </Button>
+          <Button
+            variant="outline"
+            size="md"
+            onClick={async () => {
+              await signOut();
+              onNavigate('home');
+            }}
+            icon={<LogOut className="w-4 h-4 text-rose-500" />}
+            className="w-full sm:w-auto text-rose-600 hover:bg-rose-50 hover:border-rose-200"
+          >
+            Sign Out
           </Button>
         </div>
       </div>
@@ -1069,6 +1082,25 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           <div className="pt-4 flex justify-end">
             <Button variant="primary" size="md" onClick={handleSaveProfile}>
               Save Profile Changes
+            </Button>
+          </div>
+
+          <div className="pt-6 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-xs font-bold text-rose-700">Account Session</h3>
+              <p className="text-[11px] text-[#667085]">Sign out of your Rented Thikan session on this browser.</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                await signOut();
+                onNavigate('home');
+              }}
+              icon={<LogOut className="w-4 h-4 text-rose-500" />}
+              className="text-rose-600 hover:bg-rose-50 hover:border-rose-300 w-full sm:w-auto"
+            >
+              Sign Out
             </Button>
           </div>
         </div>
