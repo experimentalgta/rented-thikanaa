@@ -61,16 +61,16 @@ async function runSeed() {
       },
       {
         id: toUUID('user-member-1'),
-        full_name: 'Ankit Tiwari',
-        email: 'ankit.tiwari@allduniv.ac.in',
+        full_name: 'Aman Sharma',
+        email: 'aman.sharma@allduniv.ac.in',
         phone_number: '+91 98394 55123',
         account_type: 'user',
-        avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
+        avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
         phone_privacy: 'on_request',
         is_verified: true,
         college: 'Allahabad University (AU)',
-        occupation: 'Student / Civil Services Aspirant',
-        bio: 'Preparing for UPSC & State PCS in Katra.'
+        occupation: 'Student / Law Aspirant',
+        bio: 'Preparing for PCS-J in Katra.'
       },
       {
         id: toUUID('owner-101'),

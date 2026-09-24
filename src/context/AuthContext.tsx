@@ -140,8 +140,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {}
     }
 
+    // ── DEBUG: Print every value used in identity resolution ──
+    console.group('[AuthContext] loadUserProfile DEBUG');
+    console.log('authUser.id:', authUser.id);
+    console.log('authUser.email:', authUser.email);
+    console.log('authUser.user_metadata:', authUser.user_metadata);
+    console.log('dbProfile (from public.profiles):', dbProfile);
+    console.log('supabase configured:', !!supabase, 'isSupabaseConfigured:', isSupabaseConfigured);
+    console.groupEnd();
+
     const resolvedName = resolveUserDisplayName(dbProfile, authUser);
     const resolvedAvatar = resolveUserAvatar(dbProfile, authUser);
+
+    console.log('[AuthContext] Resolved name →', resolvedName, '| avatar →', resolvedAvatar);
 
     return {
       id: authUser.id,
