@@ -18,6 +18,7 @@ import { Property, PropertyType, GenderPreference, RoomType, PhonePrivacy, Prope
 import { locationRepository } from '../services/locationRepository';
 import { evaluateLocationAccuracy } from '../services/location/locationAccuracy';
 import { getSupportedCities, getCityConfig, getCityAreas } from '../data/cityAreas';
+import { lookupIndianPincode } from '../services/pincodeService';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { propertyRepository } from '../services/propertyRepository';
 import { uploadPropertyImage } from '../utils/imageUpload';
@@ -107,6 +108,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   const [accuracyLabel, setAccuracyLabel] = useState<string>('Location set manually');
   const [searchLocationQuery, setSearchLocationQuery] = useState('');
   const [isManualAreaEntry, setIsManualAreaEntry] = useState(false);
+  const [pincodePostOffices, setPincodePostOffices] = useState<string[]>([]);
 
   const watchIdRef = useRef<number | null>(null);
   const timerIdRef = useRef<any>(null);
@@ -849,10 +851,39 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                 <input
                   type="text"
                   value={formData.pincode || ''}
-                  onChange={(e) => updateField('pincode', e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    updateField('pincode', val);
+                    const clean = val.trim();
+                    if (clean.length === 6 && /^[1-9][0-9]{5}$/.test(clean)) {
+                      lookupIndianPincode(clean).then((res) => {
+                        setPincodePostOffices(res?.postOffices || []);
+                      });
+                    } else if (pincodePostOffices.length > 0) {
+                      setPincodePostOffices([]);
+                    }
+                  }}
                   placeholder="e.g. 211002, 229001, 110092"
                   className="w-full p-3.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-sm"
                 />
+                {pincodePostOffices.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] text-[#64748B] font-semibold">📮 Suggested Areas:</span>
+                    {pincodePostOffices.map((po) => (
+                      <button
+                        key={po}
+                        type="button"
+                        onClick={() => {
+                          updateField('locality', po);
+                          updateField('locality_slug', po.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                        }}
+                        className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-md font-medium cursor-pointer transition-colors"
+                      >
+                        + {po}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -10,6 +10,7 @@ import { locationCache } from './locationCache';
 
 const NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
 const PHOTON_REVERSE_URL = 'https://photon.komoot.io/reverse';
+const BIGDATACLOUD_REVERSE_URL = 'https://api.bigdatacloud.net/data/reverse-geocode-client';
 let lastReverseCallTime = 0;
 
 export class ReverseGeocoder {
@@ -132,6 +133,68 @@ export class ReverseGeocoder {
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         console.warn('Secondary Photon geocoder failed:', err);
+      }
+    }
+
+    // 4.5 Tertiary: BigDataCloud Client-side Reverse Geocoding (public-apis)
+    try {
+      const bdcController = new AbortController();
+      const bdcTimer = setTimeout(() => bdcController.abort(), 4000);
+      if (signal) {
+        signal.addEventListener('abort', () => bdcController.abort(), { once: true });
+      }
+
+      const bdcUrl = `${BIGDATACLOUD_REVERSE_URL}?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`;
+      const bdcRes = await fetch(bdcUrl, {
+        headers: { Accept: 'application/json' },
+        signal: bdcController.signal,
+      });
+      clearTimeout(bdcTimer);
+
+      if (bdcRes.ok) {
+        const bdc = await bdcRes.json();
+        if (bdc.city || bdc.principalSubdivision) {
+          const stateName = bdc.principalSubdivision || 'Uttar Pradesh';
+          const stateCode = bdc.principalSubdivisionCode ? bdc.principalSubdivisionCode.replace('IN-', '') : 'UP';
+          const cityName = bdc.city || bdc.locality || 'Prayagraj';
+          const localityName = bdc.locality || bdc.city || '';
+          const cleanLocalitySlug = localityName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          const cleanCitySlug = cityName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+          const normalized: LocationData = {
+            country: 'India',
+            countryCode: 'IN',
+            formattedAddress: [localityName, cityName, stateName].filter(Boolean).join(', '),
+            state: stateName,
+            stateCode,
+            city: cityName,
+            citySlug: cleanCitySlug,
+            locality: localityName,
+            localitySlug: cleanLocalitySlug,
+            pincode: bdc.postcode || '',
+            latitude,
+            longitude,
+            landmark: nearestLandmark,
+            source: 'gps',
+          };
+
+          if (import.meta.env.DEV) {
+            console.log('[GPS Debug: BigDataCloud Fallback]', {
+              latitude,
+              longitude,
+              cityName,
+              localityName,
+              stateName,
+            });
+          }
+
+          locationCache.setReverse(latitude, longitude, normalized);
+          return normalized;
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn('Tertiary BigDataCloud geocoder failed:', err);
       }
     }
 

@@ -13,12 +13,13 @@ import {
   Check,
   Ban,
 } from 'lucide-react';
-import { Property, PropertyImage } from '../types';
+import { Property } from '../types';
 import { useSaved } from '../context/SavedContext';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
 import { DistanceBadge } from '../components/property/DistanceBadge';
+import { WeatherBadge } from '../components/property/WeatherBadge';
 import { ContactRequestModal } from '../components/safety/ContactRequestModal';
 import { ReportModal } from '../components/safety/ReportModal';
 import { PropertyMap } from '../components/map/PropertyMap';
@@ -190,6 +191,15 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
               <MapPin className="w-4 h-4 text-[#F59E0B] shrink-0" />
               <span>{property.locality}{property.city ? ', ' + property.city : ''}</span>
               {property.landmark && <span>• Near {property.landmark}</span>}
+            </div>
+
+            {/* Local Climate & Season Advisory (Open-Meteo Public API) */}
+            <div className="mt-3">
+              <WeatherBadge
+                latitude={property.latitude}
+                longitude={property.longitude}
+                locality={property.locality}
+              />
             </div>
           </div>
 
