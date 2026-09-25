@@ -11,8 +11,12 @@ export interface NominatimAddress {
   street?: string;
   suburb?: string;
   neighbourhood?: string;
+  neighborhood?: string;
   residential?: string;
   quarter?: string;
+  locality?: string;
+  commercial?: string;
+  industrial?: string;
   city_district?: string;
   village?: string;
   hamlet?: string;
@@ -39,10 +43,134 @@ export interface NominatimPlace {
 }
 
 /**
- * Natural Indian Address Formatter
- * Priority: House/Building -> Road/Street -> Area/Colony -> Suburb/Locality -> City -> State -> PIN code
+ * Checks if a string represents a broad administrative zone, tehsil, ward or district
+ * that should not be confused with a specific residential locality/neighborhood.
  */
-export function formatIndianAddress(addr: NominatimAddress, fallbackDisplayName?: string): string {
+export function isAdministrativeOrBroadZone(
+  name?: string,
+  city?: string,
+  state?: string,
+  district?: string
+): boolean {
+  if (!name || !name.trim()) return true;
+  const lower = name.trim().toLowerCase();
+  if (city && lower === city.trim().toLowerCase()) return true;
+  if (state && lower === state.trim().toLowerCase()) return true;
+  if (district && lower === district.trim().toLowerCase()) return true;
+
+  // Administrative / territorial keywords in India
+  if (
+    /^(sadar|tehsil|taluk|district|ward|zone\s*\d+|corporation)\b/i.test(lower) ||
+    /\s+(tehsil|taluk|district|division|corporation|zone)$/i.test(lower) ||
+    /mumbai zone/i.test(lower) ||
+    /city corporation/i.test(lower) ||
+    /municipal corporation/i.test(lower) ||
+    /suburban district/i.test(lower) ||
+    /revenue division/i.test(lower)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Robust locality and city resolution strategy for India:
+ * Prioritizes specific neighborhood/colony/quarter over broad administrative zones.
+ */
+export function resolveLocalityAndCity(addr: NominatimAddress): {
+  locality: string;
+  localitySlug: string;
+  subLocality?: string;
+  city: string;
+  citySlug: string;
+  district: string;
+  state: string;
+} {
+  const district = (addr.state_district || addr.county || '').trim();
+  const state = (addr.state || '').trim();
+
+  // 1. Resolve City:
+  // Priority: addr.city -> addr.town -> addr.municipality -> district / county
+  let city = (addr.city || addr.town || addr.municipality || '').trim();
+  if (!city) {
+    if (district && !/district|division|zone|corporation|tehsil|taluk/i.test(district)) {
+      city = district;
+    } else if (addr.county && !/district|division|zone|corporation|tehsil|taluk|sadar/i.test(addr.county)) {
+      city = addr.county;
+    } else {
+      city = state || 'India';
+    }
+  }
+
+  // 2. Specific neighborhood / colony / quarter candidates:
+  const specificNeighborhood = [
+    addr.neighbourhood,
+    addr.neighborhood,
+    addr.residential,
+    addr.quarter,
+  ]
+    .map((s) => s?.trim())
+    .find((s) => s && !isAdministrativeOrBroadZone(s, city, state, district));
+
+  // 3. Suburb / Area candidates:
+  const suburbArea = [
+    addr.suburb,
+    addr.locality,
+    addr.commercial,
+    addr.industrial,
+  ]
+    .map((s) => s?.trim())
+    .find((s) => s && !isAdministrativeOrBroadZone(s, city, state, district));
+
+  // 4. Village / Rural locality candidates:
+  const villageArea = [
+    addr.village,
+    addr.hamlet,
+  ]
+    .map((s) => s?.trim())
+    .find((s) => s && !isAdministrativeOrBroadZone(s, city, state, district));
+
+  let locality = '';
+  let subLocality: string | undefined = undefined;
+
+  if (specificNeighborhood && suburbArea && specificNeighborhood.toLowerCase() !== suburbArea.toLowerCase()) {
+    locality = `${specificNeighborhood}, ${suburbArea}`;
+    subLocality = specificNeighborhood;
+  } else if (specificNeighborhood) {
+    locality = specificNeighborhood;
+  } else if (suburbArea) {
+    locality = suburbArea;
+  } else if (villageArea) {
+    locality = villageArea;
+  } else if (addr.city_district && !isAdministrativeOrBroadZone(addr.city_district, city, state, district)) {
+    locality = addr.city_district.trim();
+  } else if (addr.road && !isAdministrativeOrBroadZone(addr.road, city, state, district)) {
+    locality = addr.road.trim();
+  } else {
+    locality = city;
+  }
+
+  return {
+    locality,
+    localitySlug: locality.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+    subLocality,
+    city,
+    citySlug: city.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+    district,
+    state,
+  };
+}
+
+/**
+ * Natural Indian Address Formatter
+ * Priority: House/Building -> Road/Street -> Correct Locality -> City -> State -> PIN code
+ */
+export function formatIndianAddress(
+  addr: NominatimAddress,
+  resolvedLocality?: string,
+  resolvedCity?: string,
+  fallbackDisplayName?: string
+): string {
   const premiseParts: string[] = [];
   if (addr.house_number?.trim()) premiseParts.push(addr.house_number.trim());
   if (addr.house_name?.trim() && addr.house_name !== addr.house_number) premiseParts.push(addr.house_name.trim());
@@ -52,9 +180,8 @@ export function formatIndianAddress(addr: NominatimAddress, fallbackDisplayName?
   else if (addr.office?.trim() && !premiseParts.includes(addr.office.trim())) premiseParts.push(addr.office.trim());
 
   const road = addr.road?.trim() || addr.street?.trim();
-  const area = addr.neighbourhood?.trim() || addr.residential?.trim() || addr.quarter?.trim();
-  const locality = addr.suburb?.trim() || addr.city_district?.trim() || addr.village?.trim() || addr.hamlet?.trim();
-  const city = addr.city?.trim() || addr.town?.trim() || addr.municipality?.trim() || addr.county?.trim();
+  const locality = resolvedLocality?.trim();
+  const city = resolvedCity?.trim();
   const state = addr.state?.trim();
   const pin = addr.postcode?.trim();
 
@@ -73,10 +200,10 @@ export function formatIndianAddress(addr: NominatimAddress, fallbackDisplayName?
 
   if (premiseParts.length > 0) addSegment(premiseParts.join(', '));
   if (road) addSegment(road);
-  if (area) addSegment(area);
   if (locality) addSegment(locality);
-  if (city) addSegment(city);
-  if (state) addSegment(state);
+  if (city && locality && !locality.toLowerCase().includes(city.toLowerCase())) addSegment(city);
+  else if (city && !locality) addSegment(city);
+  if (state && (!city || !city.toLowerCase().includes(state.toLowerCase()))) addSegment(state);
 
   if (segments.length === 0) {
     return fallbackDisplayName || '';
@@ -103,57 +230,72 @@ export function normalizeNominatimPlace(
   const lat = typeof place.lat === 'string' ? parseFloat(place.lat) : place.lat;
   const lon = typeof place.lon === 'string' ? parseFloat(place.lon) : place.lon;
 
-  // Extract locality (neighborhood / suburb)
-  const locality =
-    addr.suburb ||
-    addr.neighbourhood ||
-    addr.residential ||
-    addr.quarter ||
-    addr.city_district ||
-    addr.village ||
-    addr.hamlet ||
-    addr.town ||
-    addr.city ||
-    '';
-
-  // Extract city
-  const city =
-    addr.city ||
-    addr.town ||
-    addr.municipality ||
-    addr.county ||
-    locality;
-
-  // Extract district
-  const district =
-    addr.state_district ||
-    addr.county ||
-    city;
-
-  const state = addr.state || '';
+  const resolved = resolveLocalityAndCity(addr);
   const country = addr.country || 'India';
   const countryCode = (addr.country_code || 'in').toUpperCase();
   const pincode = addr.postcode?.trim();
 
-  const formattedAddress = formatIndianAddress(addr, place.display_name);
+  const formattedAddress = formatIndianAddress(addr, resolved.locality, resolved.city, place.display_name);
 
   return {
     country,
     countryCode,
-    state,
+    state: resolved.state,
     stateCode: addr['ISO3166-2-lvl4']?.replace(/^IN-/, '') || undefined,
-    district,
-    city,
-    citySlug: city ? city.toLowerCase().replace(/\s+/g, '-') : undefined,
-    locality,
-    localitySlug: locality ? locality.toLowerCase().replace(/\s+/g, '-') : undefined,
-    subLocality: addr.neighbourhood && addr.suburb && addr.neighbourhood !== addr.suburb ? addr.neighbourhood : undefined,
+    district: resolved.district,
+    city: resolved.city,
+    citySlug: resolved.citySlug,
+    locality: resolved.locality,
+    localitySlug: resolved.localitySlug,
+    subLocality: resolved.subLocality,
     formattedAddress,
     pincode,
     latitude: lat,
     longitude: lon,
     source,
     placeId: place.place_id ? String(place.place_id) : undefined,
+  };
+}
+
+/**
+ * Normalizes Photon / Komoot OpenStreetMap GeoJSON feature into LocationData
+ */
+export function normalizePhotonFeature(
+  feature: any,
+  lat: number,
+  lon: number,
+  source: LocationSource = 'gps'
+): LocationData {
+  const props = feature?.properties || {};
+  const addr: NominatimAddress = {
+    road: props.street,
+    suburb: props.district,
+    city: props.city,
+    county: props.county,
+    state: props.state,
+    postcode: props.postcode,
+    country: props.country,
+    country_code: props.countrycode,
+  };
+
+  const resolved = resolveLocalityAndCity(addr);
+  const pincode = props.postcode?.trim();
+  const formattedAddress = formatIndianAddress(addr, resolved.locality, resolved.city);
+
+  return {
+    country: props.country || 'India',
+    countryCode: (props.countrycode || 'IN').toUpperCase(),
+    state: resolved.state,
+    district: resolved.district,
+    city: resolved.city,
+    citySlug: resolved.citySlug,
+    locality: resolved.locality,
+    localitySlug: resolved.localitySlug,
+    formattedAddress,
+    pincode,
+    latitude: lat,
+    longitude: lon,
+    source,
   };
 }
 

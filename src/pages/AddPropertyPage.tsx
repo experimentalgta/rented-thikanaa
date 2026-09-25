@@ -115,7 +115,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
     }
 
     setIsGpsDetecting(true);
-    setGpsStatusMessage('Getting your location…');
+    setGpsStatusMessage('Getting precise location...');
     setGpsError(null);
 
     navigator.geolocation.getCurrentPosition(
@@ -131,7 +131,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
         let revLocalitySlug = '';
         let revLandmark: string | undefined = undefined;
 
-        setGpsStatusMessage('Finding address…');
+        setGpsStatusMessage('Finding address...');
 
         try {
           const rev = await locationRepository.reverseGeocodeAsync(latitude, longitude);
@@ -199,7 +199,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
           setGpsError('Unable to determine location. Please try again.');
         }
       },
-      { timeout: 12000, enableHighAccuracy: true, maximumAge: 0 }
+      { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
     );
   };
 
@@ -233,18 +233,21 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const inputElement = e.currentTarget;
+    const files = inputElement.files ? Array.from(inputElement.files) : [];
+    if (files.length === 0) return;
+
+    // Reset input value immediately so re-selecting the same file reliably fires onChange
+    inputElement.value = '';
 
     setIsUploadingPhoto(true);
     setUploadError(null);
 
     try {
       const newImages: PropertyImage[] = [];
-      const fileList = Array.from(files);
 
-      for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         if (!file.type.startsWith('image/')) continue;
 
         const publicUrlOrDataUrl = await uploadPropertyImage(file, currentUser?.id);
@@ -258,14 +261,16 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       }
 
       if (newImages.length > 0) {
-        updateField('images', [...(formData.images || []), ...newImages]);
+        setFormData((prev) => ({
+          ...prev,
+          images: [...(prev.images || []), ...newImages],
+        }));
       }
     } catch (err: any) {
       console.error('Failed to process image:', err);
       setUploadError('Failed to process one or more images. Please try again.');
     } finally {
       setIsUploadingPhoto(false);
-      e.target.value = '';
     }
   };
 
@@ -590,10 +595,13 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                 </div>
 
                 {isLocationDetected && formData.latitude && formData.longitude && !isGpsDetecting && (
-                  <div className="mt-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs flex items-center justify-between gap-2">
+                  <div className="mt-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span className="font-bold">✓ Location detected</span>
+                      <span className="font-bold">✓ Location detected:</span>
+                      <span className="text-white font-semibold">
+                        {[formData.locality, formData.city, formData.state].filter(Boolean).join(', ')}{formData.pincode ? ` - ${formData.pincode}` : ''}
+                      </span>
                     </div>
                     <span className="text-[11px] text-emerald-300">
                       Address filled in form below
@@ -1048,22 +1056,30 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
         {/* STEP 6: PHOTOS */}
         {currentStep === 6 && (
           <div className="space-y-6">
-            {/* Hidden Native File Inputs */}
+            {/* Native Accessible File Inputs */}
             <input
+              id="listing-gallery-input"
               ref={galleryInputRef}
               type="file"
               accept="image/*"
               multiple
+              disabled={isUploadingPhoto}
               onChange={handleFileSelect}
-              className="hidden"
+              className="sr-only"
+              tabIndex={-1}
+              aria-label="Upload property photos from gallery"
             />
             <input
+              id="listing-camera-input"
               ref={cameraInputRef}
               type="file"
               accept="image/*"
               capture="environment"
+              disabled={isUploadingPhoto}
               onChange={handleFileSelect}
-              className="hidden"
+              className="sr-only"
+              tabIndex={-1}
+              aria-label="Capture property photo with camera"
             />
 
             <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#E5E7EB] shadow-xs space-y-4">
@@ -1077,37 +1093,53 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                 </p>
               </div>
 
-              {/* Dual Action Buttons: Gallery + Camera */}
+              {/* Dual Action Native Labels: Gallery + Camera */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => galleryInputRef.current?.click()}
-                  disabled={isUploadingPhoto}
-                  className="flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer disabled:opacity-60"
+                <label
+                  htmlFor="listing-gallery-input"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      galleryInputRef.current?.click();
+                    }
+                  }}
+                  className={`flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
+                    isUploadingPhoto ? 'pointer-events-none opacity-60' : ''
+                  }`}
                 >
-                  <div className="w-11 h-11 rounded-xl bg-amber-100/70 text-[#D97706] flex items-center justify-center shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-amber-100/70 text-[#D97706] flex items-center justify-center shrink-0 pointer-events-none">
                     <ImageIcon className="w-6 h-6" />
                   </div>
-                  <div className="text-left">
+                  <div className="text-left pointer-events-none">
                     <p className="font-bold text-sm text-[#101828]">Choose from Gallery</p>
                     <p className="text-[11px] text-[#667085]">Select existing device photos</p>
                   </div>
-                </button>
+                </label>
 
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  disabled={isUploadingPhoto}
-                  className="flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer disabled:opacity-60"
+                <label
+                  htmlFor="listing-camera-input"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      cameraInputRef.current?.click();
+                    }
+                  }}
+                  className={`flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
+                    isUploadingPhoto ? 'pointer-events-none opacity-60' : ''
+                  }`}
                 >
-                  <div className="w-11 h-11 rounded-xl bg-[#101828] text-[#F59E0B] flex items-center justify-center shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-[#101828] text-[#F59E0B] flex items-center justify-center shrink-0 pointer-events-none">
                     <Camera className="w-6 h-6" />
                   </div>
-                  <div className="text-left">
+                  <div className="text-left pointer-events-none">
                     <p className="font-bold text-sm text-[#101828]">Take Photo with Camera</p>
                     <p className="text-[11px] text-[#667085]">Capture new photo instantly</p>
                   </div>
-                </button>
+                </label>
               </div>
 
               {isUploadingPhoto && (
