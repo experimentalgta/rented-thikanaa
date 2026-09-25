@@ -57,6 +57,7 @@ export const ALL_INDIAN_DISTRICTS: District[] = [
   { id: 'dst-gautam-buddha-nagar', name: 'Gautam Buddha Nagar', slug: 'gautam-buddha-nagar', state_code: 'UP', state_name: 'Uttar Pradesh' },
   { id: 'dst-ghaziabad', name: 'Ghaziabad', slug: 'ghaziabad', state_code: 'UP', state_name: 'Uttar Pradesh' },
   { id: 'dst-agra', name: 'Agra', slug: 'agra', state_code: 'UP', state_name: 'Uttar Pradesh' },
+  { id: 'dst-raebareli', name: 'Raebareli', slug: 'raebareli', state_code: 'UP', state_name: 'Uttar Pradesh' },
 
   // Maharashtra
   { id: 'dst-mumbai-suburban', name: 'Mumbai Suburban', slug: 'mumbai-suburban', state_code: 'MH', state_name: 'Maharashtra' },
@@ -131,6 +132,20 @@ export const ALL_INDIAN_CITIES: City[] = [
     is_popular: true,
     popular_for: 'Allahabad University (AU), MNNIT, Civil Services Hub',
     active_listings_count: 8,
+  },
+  {
+    id: 'city-raebareli',
+    name: 'Raebareli',
+    slug: 'raebareli',
+    state_code: 'UP',
+    state_name: 'Uttar Pradesh',
+    district: 'Raebareli',
+    district_id: 'dst-raebareli',
+    latitude: 26.2294,
+    longitude: 81.2408,
+    is_popular: true,
+    popular_for: 'AIIMS Raebareli, NIFT, FDDI, ITI',
+    active_listings_count: 4,
   },
   {
     id: 'city-delhi',

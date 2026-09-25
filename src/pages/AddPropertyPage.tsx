@@ -9,7 +9,6 @@ import {
   X,
   Navigation,
   Loader2,
-  Search,
   AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -18,6 +17,7 @@ import { PropertyCard } from '../components/property/PropertyCard';
 import { Property, PropertyType, GenderPreference, RoomType, PhonePrivacy, PropertyImage } from '../types';
 import { locationRepository } from '../services/locationRepository';
 import { evaluateLocationAccuracy } from '../services/location/locationAccuracy';
+import { getSupportedCities, getCityConfig, getCityAreas } from '../data/cityAreas';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { propertyRepository } from '../services/propertyRepository';
 import { uploadPropertyImage } from '../utils/imageUpload';
@@ -52,10 +52,10 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       gender_preference: 'male',
       room_type: 'double',
       country: 'India',
-      state: '',
-      state_code: '',
-      city: '',
-      city_slug: '',
+      state: 'Uttar Pradesh',
+      state_code: 'UP',
+      city: 'Prayagraj',
+      city_slug: 'prayagraj',
       locality: '',
       locality_slug: '',
       sub_locality: '',
@@ -104,9 +104,23 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   const [gpsStatusMessage, setGpsStatusMessage] = useState<string | null>(null);
   const [isLocationDetected, setIsLocationDetected] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
-  const [locationMethod, setLocationMethod] = useState<'search' | 'gps'>('search');
   const [accuracyLabel, setAccuracyLabel] = useState<string>('Location set manually');
   const [searchLocationQuery, setSearchLocationQuery] = useState('');
+  const [isManualAreaEntry, setIsManualAreaEntry] = useState(false);
+
+  const watchIdRef = useRef<number | null>(null);
+  const timerIdRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null && typeof window !== 'undefined' && 'geolocation' in navigator) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+      if (timerIdRef.current) {
+        clearTimeout(timerIdRef.current);
+      }
+    };
+  }, []);
 
   const handleUseCurrentGps = () => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
@@ -114,93 +128,163 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       return;
     }
 
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    if (timerIdRef.current) {
+      clearTimeout(timerIdRef.current);
+      timerIdRef.current = null;
+    }
+
     setIsGpsDetecting(true);
-    setGpsStatusMessage('Getting precise location...');
+    setGpsStatusMessage('Getting precise location (locking GPS satellites)...');
     setGpsError(null);
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        let revAddress = '';
-        let revPincode = '';
-        let revState = '';
-        let revStateCode = '';
-        let revCity = '';
-        let revCitySlug = '';
-        let revLocality = '';
-        let revLocalitySlug = '';
-        let revLandmark: string | undefined = undefined;
+    let bestCoords: GeolocationCoordinates | null = null;
+    let sampleCount = 0;
+    const maxSamples = 3;
 
-        setGpsStatusMessage('Finding address...');
+    const finalizePosition = async (coords: GeolocationCoordinates) => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      if (timerIdRef.current) {
+        clearTimeout(timerIdRef.current);
+        timerIdRef.current = null;
+      }
 
-        try {
-          const rev = await locationRepository.reverseGeocodeAsync(latitude, longitude);
-          revAddress = rev.formattedAddress || '';
-          revPincode = rev.pincode || '';
-          revState = rev.state || '';
-          revStateCode = rev.stateCode || '';
-          revCity = rev.city || '';
-          revCitySlug = rev.citySlug || '';
-          revLocality = rev.locality || '';
-          revLocalitySlug = rev.localitySlug || '';
-          revLandmark = rev.landmark;
-        } catch {
-          const rev = locationRepository.reverseGeocode(latitude, longitude);
-          revAddress = rev.displayName;
-          revState = rev.stateName;
-          revStateCode = rev.stateCode;
-          revCity = rev.cityName;
-          revCitySlug = rev.citySlug;
-          revLocality = rev.localityName;
-          revLocalitySlug = rev.localitySlug || '';
-          revLandmark = rev.nearestLandmark;
+      const { latitude, longitude, accuracy } = coords;
+      setGpsStatusMessage('Finding address...');
+
+      let revAddress = '';
+      let revPincode = '';
+      let revState = '';
+      let revStateCode = '';
+      let revCity = '';
+      let revCitySlug = '';
+      let revLocality = '';
+      let revLocalitySlug = '';
+      let revLandmark: string | undefined = undefined;
+
+      try {
+        const rev = await locationRepository.reverseGeocodeAsync(latitude, longitude);
+        revAddress = rev.formattedAddress || '';
+        revPincode = rev.pincode || '';
+        revState = rev.state || '';
+        revStateCode = rev.stateCode || '';
+        revCity = rev.city || '';
+        revCitySlug = rev.citySlug || '';
+        revLocality = rev.locality || '';
+        revLocalitySlug = rev.localitySlug || '';
+        revLandmark = rev.landmark;
+      } catch {
+        const rev = locationRepository.reverseGeocode(latitude, longitude);
+        revAddress = rev.displayName;
+        revState = rev.stateName;
+        revStateCode = rev.stateCode;
+        revCity = rev.cityName;
+        revCitySlug = rev.citySlug;
+        revLocality = rev.localityName;
+        revLocalitySlug = rev.localitySlug || '';
+        revLandmark = rev.nearestLandmark;
+      }
+
+      const evalAcc = evaluateLocationAccuracy(accuracy, 'gps');
+
+      // Check if detected locality is in predefined areas of the city
+      const cityAreas = getCityAreas(revCitySlug || 'prayagraj');
+      const matchedArea = cityAreas.find(
+        (a) => a.toLowerCase() === revLocality.toLowerCase()
+      );
+      if (!matchedArea && revLocality) {
+        setIsManualAreaEntry(true);
+      } else if (matchedArea) {
+        setIsManualAreaEntry(false);
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        country: 'India',
+        address: revAddress || prev.address,
+        pincode: revPincode || prev.pincode,
+        state: revState || prev.state || 'Uttar Pradesh',
+        state_code: revStateCode || prev.state_code || 'UP',
+        city: revCity || prev.city || 'Prayagraj',
+        city_slug: revCitySlug || prev.city_slug || 'prayagraj',
+        locality: revLocality || prev.locality,
+        locality_slug: revLocalitySlug || prev.locality_slug,
+        landmark: revLandmark ? `Near ${revLandmark}` : prev.landmark,
+        latitude,
+        longitude,
+      }));
+
+      setIsGpsDetecting(false);
+      setGpsStatusMessage('Location detected');
+      setIsLocationDetected(true);
+      setAccuracyLabel(`GPS accuracy: ±${Math.round(accuracy)} m`);
+
+      if (evalAcc.isLowAccuracy && evalAcc.warningMessage) {
+        setGpsError(evalAcc.warningMessage);
+      } else {
+        setGpsError(null);
+      }
+    };
+
+    try {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          sampleCount++;
+          const coords = pos.coords;
+          if (!bestCoords || coords.accuracy < bestCoords.accuracy) {
+            bestCoords = coords;
+          }
+
+          // If accuracy is high (<= 35m) or reached 3 samples, lock in
+          if (coords.accuracy <= 35 || sampleCount >= maxSamples) {
+            finalizePosition(bestCoords || coords);
+          }
+        },
+        (err) => {
+          if (bestCoords) {
+            finalizePosition(bestCoords);
+            return;
+          }
+          if (watchIdRef.current !== null) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+            watchIdRef.current = null;
+          }
+          if (timerIdRef.current) {
+            clearTimeout(timerIdRef.current);
+            timerIdRef.current = null;
+          }
+          setIsGpsDetecting(false);
+          setGpsStatusMessage(null);
+          if (err.code === 1) {
+            setGpsError('Location permission denied. Please allow location access in your browser or select your area manually.');
+          } else if (err.code === 2) {
+            setGpsError('Unable to determine location. Please try again or select your area manually.');
+          } else if (err.code === 3) {
+            setGpsError('Location request timed out. Please try again or select your area manually.');
+          } else {
+            setGpsError('Unable to determine location. Please try again.');
+          }
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+      );
+
+      // Fallback timer after 5.5s
+      timerIdRef.current = setTimeout(() => {
+        if (bestCoords) {
+          finalizePosition(bestCoords);
         }
-
-        const evalAcc = evaluateLocationAccuracy(accuracy, 'gps');
-
-        setFormData((prev) => ({
-          ...prev,
-          country: 'India',
-          address: revAddress || prev.address,
-          pincode: revPincode || prev.pincode,
-          state: revState || prev.state,
-          state_code: revStateCode || prev.state_code,
-          city: revCity || prev.city,
-          city_slug: revCitySlug || prev.city_slug,
-          locality: revLocality || prev.locality,
-          locality_slug: revLocalitySlug || prev.locality_slug,
-          landmark: revLandmark ? `Near ${revLandmark}` : prev.landmark,
-          latitude,
-          longitude,
-        }));
-
-        setIsGpsDetecting(false);
-        setGpsStatusMessage('Location detected');
-        setIsLocationDetected(true);
-        setLocationMethod('gps');
-        setAccuracyLabel(`Approximate GPS accuracy: ${Math.round(accuracy)} m`);
-
-        if (evalAcc.isLowAccuracy && evalAcc.warningMessage) {
-          setGpsError(evalAcc.warningMessage);
-        } else {
-          setGpsError(null);
-        }
-      },
-      (err) => {
-        setIsGpsDetecting(false);
-        setGpsStatusMessage(null);
-        if (err.code === 1) {
-          setGpsError('Location access was denied. Please allow location permissions in your browser or select your area manually.');
-        } else if (err.code === 2) {
-          setGpsError('Unable to determine location. Please try again or select your area manually.');
-        } else if (err.code === 3) {
-          setGpsError('Location request timed out. Please try again or select your area manually.');
-        } else {
-          setGpsError('Unable to determine location. Please try again.');
-        }
-      },
-      { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
-    );
+      }, 5500);
+    } catch {
+      setIsGpsDetecting(false);
+      setGpsStatusMessage(null);
+      setGpsError('Could not start location sensor. Please select your area manually.');
+    }
   };
 
   // Auto-save draft on form changes
@@ -403,7 +487,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
             </span>
             <h1 className="text-xl sm:text-2xl font-bold text-[#101828] font-heading">
               {currentStep === 1 && 'Basic Property Information'}
-              {currentStep === 2 && 'Location & Landmarks in Prayagraj'}
+              {currentStep === 2 && `Location & Landmarks in ${formData.city || 'Prayagraj'}`}
               {currentStep === 3 && 'Rent, Deposit & Billing'}
               {currentStep === 4 && 'Room Specs & Amenities'}
               {currentStep === 5 && 'House & Gate Rules'}
@@ -520,269 +604,230 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
         {/* STEP 2: LOCATION */}
         {currentStep === 2 && (
           <div className="space-y-6">
-            {/* Location Setting Method Selector */}
-            <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-2xl">
-              <div className="text-xs font-bold text-[#101828] mb-2 flex items-center justify-between">
-                <span>Choose How to Set Location:</span>
-                <span className="text-[11px] font-semibold text-[#D97706] bg-[#FEF3C7] px-2.5 py-0.5 rounded-full border border-[#FDE68A]">
-                  ✓ {accuracyLabel}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setLocationMethod('search')}
-                  className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer ${
-                    locationMethod === 'search'
-                      ? 'bg-[#101828] text-[#F59E0B] border-[#101828] shadow-xs'
-                      : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#CBD5E1]'
-                  }`}
-                >
-                  <Search className="w-4 h-4" />
-                  <span>Option A: Search Area</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLocationMethod('gps');
-                    handleUseCurrentGps();
-                  }}
-                  className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer ${
-                    locationMethod === 'gps'
-                      ? 'bg-[#101828] text-[#F59E0B] border-[#101828] shadow-xs'
-                      : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#CBD5E1]'
-                  }`}
-                >
-                  <Navigation className="w-4 h-4" />
-                  <span>Option B: Use Current Location</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Quick GPS Capture Card */}
-            {locationMethod === 'gps' && (
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#101828] to-[#1E293B] text-white p-4 sm:p-5 shadow-sm border border-white/10">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#F59E0B]/20 text-[#F59E0B] flex items-center justify-center shrink-0 border border-[#F59E0B]/30">
-                      <Navigation className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-white font-heading flex items-center gap-2">
-                        <span>Standing at the property right now?</span>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#F59E0B] bg-[#F59E0B]/15 px-2 py-0.5 rounded-full border border-[#F59E0B]/20">
-                          Recommended
-                        </span>
-                      </h4>
-                      <p className="text-xs text-[#94A3B8] mt-0.5 max-w-md">
-                        Automatically captures high-precision GPS coordinates and fills your complete street address.
-                      </p>
-                    </div>
+            {/* Quick GPS Capture Card (High Accuracy Satellite Lock) */}
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#101828] to-[#1E293B] text-white p-4 sm:p-5 shadow-sm border border-white/10">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#F59E0B]/20 text-[#F59E0B] flex items-center justify-center shrink-0 border border-[#F59E0B]/30">
+                    <Navigation className="w-5 h-5" />
                   </div>
-
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="md"
-                    onClick={handleUseCurrentGps}
-                    disabled={isGpsDetecting}
-                    loading={isGpsDetecting}
-                    icon={isGpsDetecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
-                    className="shrink-0 font-bold text-xs w-full sm:w-auto"
-                  >
-                    {isGpsDetecting ? (gpsStatusMessage || 'Detecting...') : '📍 Use Current Location'}
-                  </Button>
+                  <div>
+                    <h4 className="font-bold text-sm text-white font-heading flex items-center gap-2">
+                      <span>Standing at the property right now?</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#F59E0B] bg-[#F59E0B]/15 px-2 py-0.5 rounded-full border border-[#F59E0B]/20">
+                        Doorstep GPS
+                      </span>
+                    </h4>
+                    <p className="text-xs text-[#94A3B8] mt-0.5 max-w-md">
+                      Locks onto high-accuracy GPS satellites to attach exact doorstep coordinates and auto-detect your neighborhood.
+                    </p>
+                  </div>
                 </div>
 
-                {isLocationDetected && formData.latitude && formData.longitude && !isGpsDetecting && (
-                  <div className="mt-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span className="font-bold">✓ Location detected:</span>
-                      <span className="text-white font-semibold">
-                        {[formData.locality, formData.city, formData.state].filter(Boolean).join(', ')}{formData.pincode ? ` - ${formData.pincode}` : ''}
-                      </span>
-                    </div>
-                    <span className="text-[11px] text-emerald-300">
-                      Address filled in form below
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="md"
+                  onClick={handleUseCurrentGps}
+                  disabled={isGpsDetecting}
+                  loading={isGpsDetecting}
+                  icon={isGpsDetecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+                  className="shrink-0 font-bold text-xs w-full sm:w-auto"
+                >
+                  {isGpsDetecting ? (gpsStatusMessage || 'Detecting...') : '📍 Use Current Location'}
+                </Button>
+              </div>
+
+              {isLocationDetected && formData.latitude && formData.longitude && !isGpsDetecting && (
+                <div className="mt-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-bold">✓ Location detected:</span>
+                    <span className="text-white font-semibold">
+                      {[formData.locality, formData.city, formData.state].filter(Boolean).join(', ')}{formData.pincode ? ` - ${formData.pincode}` : ''}
                     </span>
                   </div>
-                )}
-
-                {gpsError && (
-                  <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>{gpsError}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Option A: Search Bar for Quick Locality Selection */}
-            {locationMethod === 'search' && (
-              <div className="p-3 bg-white border border-[#E2E8F0] rounded-2xl space-y-2">
-                <label className="block text-xs font-bold text-[#101828]">
-                  Search Area, Locality or Landmark across India:
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchLocationQuery}
-                    onChange={(e) => {
-                      setSearchLocationQuery(e.target.value);
-                    }}
-                    placeholder="e.g. Andheri West, Koramangala, Laxmi Nagar, Katra..."
-                    className="w-full p-3 rounded-xl border border-[#E5E7EB] text-sm focus:outline-none focus:border-[#F59E0B]"
-                  />
-                  {searchLocationQuery.trim().length >= 2 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto p-1">
-                      {locationRepository.searchLocations(searchLocationQuery).slice(0, 6).map((res) => (
-                        <button
-                          key={res.id}
-                          type="button"
-                          onClick={() => {
-                            updateField('state', res.state);
-                            updateField('state_code', res.state_code);
-                            updateField('city', res.city);
-                            updateField('city_slug', res.city_slug);
-                            updateField('locality', res.locality || res.city);
-                            updateField('locality_slug', res.locality_slug);
-                            updateField('latitude', res.latitude);
-                            updateField('longitude', res.longitude);
-                            setAccuracyLabel('Location selected from search');
-                            setSearchLocationQuery('');
-                          }}
-                          className="w-full text-left p-2 rounded-lg hover:bg-[#F8FAFC] text-xs font-semibold text-[#101828] flex items-center justify-between"
-                        >
-                          <span>{res.title}</span>
-                          <span className="text-[10px] text-[#64748B]">{res.subtitle}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <span className="text-[11px] text-emerald-300 font-medium">
+                    {accuracyLabel}
+                  </span>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Manual Form Inputs with State -> City -> Locality Hierarchy */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                  State / UT *
-                </label>
-                <select
-                  value={formData.state_code || ''}
-                  onChange={(e) => {
-                    const st = locationRepository.getStateByCode(e.target.value);
-                    const cities = locationRepository.getCities(e.target.value);
-                    const firstCity = cities[0];
-                    updateField('state', st?.name || e.target.value);
-                    updateField('state_code', e.target.value);
-                    if (firstCity) {
-                      updateField('city', firstCity.name);
-                      updateField('city_slug', firstCity.slug);
-                      const locs = locationRepository.getLocalities(firstCity.slug);
-                      if (locs.length > 0) {
-                        updateField('locality', locs[0].name);
-                        updateField('locality_slug', locs[0].slug);
-                        updateField('latitude', locs[0].latitude);
-                        updateField('longitude', locs[0].longitude);
-                      } else {
-                        updateField('locality', '');
-                        updateField('locality_slug', '');
-                        updateField('latitude', firstCity.latitude);
-                        updateField('longitude', firstCity.longitude);
-                      }
-                    } else {
-                      updateField('city', '');
-                      updateField('city_slug', '');
-                      updateField('locality', '');
-                      updateField('locality_slug', '');
-                    }
-                  }}
-                  className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
-                >
-                  <option value="">-- Select State / UT --</option>
-                  {locationRepository.getStates().map((st) => (
-                    <option key={st.id} value={st.code}>
-                      {st.name} ({st.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {gpsError && (
+                <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>{gpsError}</span>
+                </div>
+              )}
+            </div>
 
+            {/* City & Predefined / Manual Area Selection */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
                   City *
                 </label>
                 <select
-                  value={formData.city_slug || ''}
+                  value={formData.city_slug || 'prayagraj'}
                   onChange={(e) => {
-                    const ct = locationRepository.getCityBySlugOrName(e.target.value);
-                    if (ct) {
-                      updateField('city', ct.name);
-                      updateField('city_slug', ct.slug);
-                      const locs = locationRepository.getLocalities(ct.slug);
-                      if (locs.length > 0) {
-                        updateField('locality', locs[0].name);
-                        updateField('locality_slug', locs[0].slug);
-                        updateField('latitude', locs[0].latitude);
-                        updateField('longitude', locs[0].longitude);
-                      } else {
+                    const selectedSlug = e.target.value;
+                    const cfg = getCityConfig(selectedSlug);
+                    if (cfg) {
+                      updateField('city', cfg.name);
+                      updateField('city_slug', cfg.slug);
+                      updateField('state', cfg.state);
+                      updateField('state_code', cfg.stateCode);
+                      // Only set default coordinates if GPS was not already captured
+                      if (!formData.latitude || !formData.longitude) {
+                        updateField('latitude', cfg.defaultLat);
+                        updateField('longitude', cfg.defaultLon);
+                      }
+                      // Reset locality if not in the new city's area list
+                      const newCityAreas = cfg.areas;
+                      if (!newCityAreas.includes(formData.locality || '')) {
                         updateField('locality', '');
                         updateField('locality_slug', '');
-                        updateField('latitude', ct.latitude);
-                        updateField('longitude', ct.longitude);
                       }
                     }
                   }}
                   className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
                 >
-                  <option value="">-- Select City --</option>
-                  {locationRepository.getCities(formData.state_code).map((ct) => (
-                    <option key={ct.id} value={ct.slug}>
-                      {ct.name}
+                  {getSupportedCities().map((c) => (
+                    <option key={c.id} value={c.slug}>
+                      {c.name} ({c.state})
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                  Area / Locality *
-                </label>
-                <input
-                  type="text"
-                  list="locality-suggestions"
-                  value={formData.locality || ''}
-                  onChange={(e) => {
-                    const selectedVal = e.target.value;
-                    updateField('locality', selectedVal);
-                    const loc = locationRepository.getLocalityBySlugOrName(selectedVal, formData.city_slug);
-                    if (loc) {
-                      updateField('locality_slug', loc.slug);
-                      updateField('latitude', loc.latitude);
-                      updateField('longitude', loc.longitude);
-                    } else {
-                      updateField('locality_slug', selectedVal.toLowerCase().replace(/\s+/g, '-'));
-                    }
-                  }}
-                  placeholder="e.g. Andheri West, Koramangala, Sector 62, Katra..."
-                  className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
-                />
-                <datalist id="locality-suggestions">
-                  {locationRepository.getLocalities(formData.city_slug).map((loc) => (
-                    <option key={loc.id} value={loc.name}>
-                      {loc.name}{loc.hindi_name ? ` (${loc.hindi_name})` : ''}
-                    </option>
-                  ))}
-                </datalist>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#667085]">
+                    Area / Locality *
+                  </label>
+                  {!isManualAreaEntry ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsManualAreaEntry(true)}
+                      className="text-xs text-[#D97706] hover:underline font-semibold cursor-pointer"
+                    >
+                      ✏️ Enter manually
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsManualAreaEntry(false)}
+                      className="text-xs text-[#2563EB] hover:underline font-semibold cursor-pointer"
+                    >
+                      ← Choose from list
+                    </button>
+                  )}
+                </div>
+
+                {!isManualAreaEntry ? (
+                  <select
+                    value={formData.locality || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__manual__') {
+                        setIsManualAreaEntry(true);
+                        return;
+                      }
+                      updateField('locality', val);
+                      updateField('locality_slug', val.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                      // Preserve exact GPS latitude/longitude if already captured!
+                      if (!formData.latitude || !formData.longitude) {
+                        const cfg = getCityConfig(formData.city_slug);
+                        if (cfg) {
+                          updateField('latitude', cfg.defaultLat);
+                          updateField('longitude', cfg.defaultLon);
+                        }
+                      }
+                    }}
+                    className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
+                  >
+                    <option value="">-- Select Area in {formData.city || 'Prayagraj'} --</option>
+                    {getCityAreas(formData.city_slug || 'prayagraj').map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                    <option value="__manual__">+ Can't find your area? Type manually...</option>
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={formData.locality || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateField('locality', val);
+                      updateField('locality_slug', val.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                      // Preserve exact GPS latitude/longitude if already captured!
+                      if (!formData.latitude || !formData.longitude) {
+                        const cfg = getCityConfig(formData.city_slug);
+                        if (cfg) {
+                          updateField('latitude', cfg.defaultLat);
+                          updateField('longitude', cfg.defaultLon);
+                        }
+                      }
+                    }}
+                    placeholder="e.g. Civil Lines, Katra, Salori, Indira Nagar..."
+                    className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
+                  />
+                )}
                 <p className="text-[11px] text-[#94A3B8] mt-1">
-                  Type your area or pick from suggestions. Custom localities are supported.
+                  {!isManualAreaEntry
+                    ? `Showing ${getCityAreas(formData.city_slug || 'prayagraj').length} verified localities in ${formData.city || 'Prayagraj'}.`
+                    : 'Type your exact mohalla, colony, or sector name.'}
                 </p>
               </div>
             </div>
 
+            {/* Optional Search Bar for Quick Locality Autocomplete across India */}
+            <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl space-y-2">
+              <label className="block text-xs font-bold text-[#101828]">
+                Or Search Any Indian Area / Locality:
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchLocationQuery}
+                  onChange={(e) => {
+                    setSearchLocationQuery(e.target.value);
+                  }}
+                  placeholder="e.g. Civil Lines, Katra, Koramangala, Mukherjee Nagar..."
+                  className="w-full p-3 rounded-xl border border-[#E5E7EB] bg-white text-sm focus:outline-none focus:border-[#F59E0B]"
+                />
+                {searchLocationQuery.trim().length >= 2 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto p-1">
+                    {locationRepository.searchLocations(searchLocationQuery).slice(0, 6).map((res) => (
+                      <button
+                        key={res.id}
+                        type="button"
+                        onClick={() => {
+                          updateField('state', res.state);
+                          updateField('state_code', res.state_code);
+                          updateField('city', res.city);
+                          updateField('city_slug', res.city_slug);
+                          updateField('locality', res.locality || res.city);
+                          updateField('locality_slug', res.locality_slug);
+                          updateField('latitude', res.latitude);
+                          updateField('longitude', res.longitude);
+                          setAccuracyLabel('Location selected from search');
+                          setSearchLocationQuery('');
+                        }}
+                        className="w-full text-left p-2 rounded-lg hover:bg-[#F8FAFC] text-xs font-semibold text-[#101828] flex items-center justify-between cursor-pointer"
+                      >
+                        <span>{res.title}</span>
+                        <span className="text-[10px] text-[#64748B]">{res.subtitle}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Landmarks and Pincode */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
@@ -792,7 +837,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   type="text"
                   value={formData.landmark || ''}
                   onChange={(e) => updateField('landmark', e.target.value)}
-                  placeholder="e.g. 200m to Metro Gate, Behind Coaching Complex"
+                  placeholder="e.g. 200m to Metro Gate, Behind Allahabad University Library"
                   className="w-full p-3.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-sm"
                 />
               </div>
@@ -805,15 +850,16 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   type="text"
                   value={formData.pincode || ''}
                   onChange={(e) => updateField('pincode', e.target.value)}
-                  placeholder="e.g. 211002, 110092, 400053"
+                  placeholder="e.g. 211002, 229001, 110092"
                   className="w-full p-3.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-sm"
                 />
               </div>
             </div>
 
+            {/* Address Line */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                Address Line / House Number
+                Address Line / House / Building Number
               </label>
               <input
                 type="text"
@@ -827,7 +873,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
               </p>
             </div>
 
-            {/* GPS Coordinates & Doorstep Accuracy (No Map) */}
+            {/* Doorstep GPS Precision Badge (No Map) */}
             {formData.latitude && formData.longitude && (
               <div className="border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 flex items-center justify-between gap-3 shadow-xs">
                 <div className="flex items-center gap-3">
@@ -837,12 +883,12 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   <div>
                     <h5 className="font-bold text-xs text-emerald-950">GPS Coordinates Attached</h5>
                     <p className="text-[11px] text-emerald-800">
-                      Latitude: {Number(formData.latitude).toFixed(5)}, Longitude: {Number(formData.longitude).toFixed(5)} • Accurate doorstep walking distance enabled
+                      Latitude: {Number(formData.latitude).toFixed(6)}, Longitude: {Number(formData.longitude).toFixed(6)} • Doorstep precision walking distance active
                     </p>
                   </div>
                 </div>
                 <span className="text-[10px] font-bold text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
-                  Doorstep Precision
+                  Doorstep Precision Active
                 </span>
               </div>
             )}
@@ -1056,32 +1102,6 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
         {/* STEP 6: PHOTOS */}
         {currentStep === 6 && (
           <div className="space-y-6">
-            {/* Native Accessible File Inputs */}
-            <input
-              id="listing-gallery-input"
-              ref={galleryInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              disabled={isUploadingPhoto}
-              onChange={handleFileSelect}
-              className="sr-only"
-              tabIndex={-1}
-              aria-label="Upload property photos from gallery"
-            />
-            <input
-              id="listing-camera-input"
-              ref={cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              disabled={isUploadingPhoto}
-              onChange={handleFileSelect}
-              className="sr-only"
-              tabIndex={-1}
-              aria-label="Capture property photo with camera"
-            />
-
             <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#E5E7EB] shadow-xs space-y-4">
               <div>
                 <h3 className="text-base font-bold text-[#101828] font-heading flex items-center gap-2">
@@ -1093,22 +1113,24 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                 </p>
               </div>
 
-              {/* Dual Action Native Labels: Gallery + Camera */}
+              {/* Dual Action Native Inputs: Gallery + Camera */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* 1. Choose from Gallery */}
                 <label
-                  htmlFor="listing-gallery-input"
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      galleryInputRef.current?.click();
-                    }
-                  }}
-                  className={`flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
+                  className={`relative overflow-hidden flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
                     isUploadingPhoto ? 'pointer-events-none opacity-60' : ''
                   }`}
                 >
+                  <input
+                    ref={galleryInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={isUploadingPhoto}
+                    onChange={handleFileSelect}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    aria-label="Choose from Gallery"
+                  />
                   <div className="w-11 h-11 rounded-xl bg-amber-100/70 text-[#D97706] flex items-center justify-center shrink-0 pointer-events-none">
                     <ImageIcon className="w-6 h-6" />
                   </div>
@@ -1118,20 +1140,22 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   </div>
                 </label>
 
+                {/* 2. Take Photo with Camera */}
                 <label
-                  htmlFor="listing-camera-input"
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      cameraInputRef.current?.click();
-                    }
-                  }}
-                  className={`flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
+                  className={`relative overflow-hidden flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
                     isUploadingPhoto ? 'pointer-events-none opacity-60' : ''
                   }`}
                 >
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    disabled={isUploadingPhoto}
+                    onChange={handleFileSelect}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    aria-label="Take Photo with Camera"
+                  />
                   <div className="w-11 h-11 rounded-xl bg-[#101828] text-[#F59E0B] flex items-center justify-center shrink-0 pointer-events-none">
                     <Camera className="w-6 h-6" />
                   </div>
