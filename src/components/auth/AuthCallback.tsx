@@ -35,8 +35,8 @@ export const AuthCallback: React.FC<AuthCallbackProps> = ({ onAuthComplete }) =>
           setStatus('success');
           // Retrieve and consume pending action
           const pending = consumePendingAction();
-          // Clean up URL hash / search params without refreshing
-          window.history.replaceState({}, document.title, window.location.pathname);
+          // Clean up URL hash / search params and callback path back to root without refreshing
+          window.history.replaceState({}, document.title, '/');
           timer = setTimeout(() => {
             onAuthComplete(pending);
           }, 800);
@@ -47,7 +47,7 @@ export const AuthCallback: React.FC<AuthCallbackProps> = ({ onAuthComplete }) =>
               subscription.unsubscribe();
               setStatus('success');
               const pending = consumePendingAction();
-              window.history.replaceState({}, document.title, window.location.pathname);
+              window.history.replaceState({}, document.title, '/');
               timer = setTimeout(() => {
                 onAuthComplete(pending);
               }, 800);
