@@ -30,7 +30,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
     currentView === 'list-room';
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E5E7EB] lg:hidden safe-area-pb">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E5E7EB] block md:hidden safe-area-pb">
       <div className="flex items-center justify-around h-16 max-w-md mx-auto px-2 relative">
         {/* 1. Home */}
         <button

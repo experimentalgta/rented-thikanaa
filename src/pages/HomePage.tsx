@@ -4,10 +4,6 @@ import {
   MapPin,
   ShieldCheck,
   Users,
-  Building2,
-  BedDouble,
-  Home,
-  CheckCircle2,
   Lock,
   ArrowRight,
   PlusCircle,
@@ -56,7 +52,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   ];
 
   return (
-    <div className="space-y-16 sm:space-y-24 pb-20">
+    <div className="space-y-16 sm:space-y-24 pb-28 md:pb-20">
       {/* 1. HERO SECTION */}
       <section className="relative overflow-hidden bg-gradient-to-b from-[#101828] via-[#172554] to-[#101828] text-white pt-12 sm:pt-20 pb-20 sm:pb-28 px-4 sm:px-6 lg:px-8">
         {/* Subtle decorative grid */}
@@ -65,19 +61,26 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div className="max-w-4xl mx-auto text-center relative z-10">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-semibold text-[#F59E0B] mb-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse" />
-            <span>India's Privacy-First Housing Network • Find Rooms &amp; Compatible Roommates</span>
+            <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse shrink-0" />
+            <span className="md:hidden">✓ Verified Homes • Zero Brokerage</span>
+            <span className="hidden md:inline">India's Privacy-First Housing Network • Find Rooms &amp; Compatible Roommates</span>
           </div>
 
           {/* Core Headline */}
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight font-heading leading-tight sm:leading-none text-white mb-6">
-            Find Your Perfect Thikan. <br className="hidden sm:inline" />
-            <span className="text-[#F59E0B]">Across All of India.</span>
+            <span className="md:hidden">Find Your Perfect Thikana.</span>
+            <span className="hidden md:inline">
+              Find Your Perfect Thikan. <br className="hidden sm:inline" />
+              <span className="text-[#F59E0B]">Across All of India.</span>
+            </span>
           </h1>
 
           {/* Subheading */}
           <p className="text-sm sm:text-lg text-[#CBD5E1] max-w-2xl mx-auto mb-8 leading-relaxed">
-            Discover verified rooms, PGs, hostels, flats, and compatible roommates across Indian cities with transparent rent and zero broker hassle.
+            <span className="md:hidden">Verified rooms, PGs, and flatmates across India.</span>
+            <span className="hidden md:inline">
+              Discover verified rooms, PGs, hostels, flats, and compatible roommates across Indian cities with transparent rent and zero broker hassle.
+            </span>
           </p>
 
           {/* Geolocation Prompt Banner */}
@@ -91,8 +94,8 @@ export const HomePage: React.FC<HomePageProps> = ({
           />
 
           {/* Main Search Component */}
-          <div className="bg-white rounded-3xl p-3 sm:p-4 shadow-2xl border border-white/20 text-[#111827] max-w-3xl mx-auto text-left">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] mb-2 px-1">
+          <div className="bg-slate-800 md:bg-white rounded-3xl p-3 sm:p-4 shadow-2xl border border-slate-700 md:border-white/20 text-white md:text-[#111827] max-w-3xl mx-auto text-left">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-300 md:text-[#64748B] mb-2 px-1">
               Where do you want to stay in India?
             </div>
             <div className="flex flex-col sm:flex-row gap-2.5">
@@ -116,23 +119,27 @@ export const HomePage: React.FC<HomePageProps> = ({
             </div>
 
             {/* Quick area suggestions */}
-            <div className="mt-3 pt-3 border-t border-[#F1F5F9] flex flex-wrap items-center gap-1.5 text-xs text-[#64748B]">
-              <span className="font-semibold text-[#111827]">Quick hubs:</span>
-              {['Prayagraj', 'Lucknow', 'Delhi / NCR', 'Mumbai', 'Bengaluru', 'Pune'].map(
-                (city) => (
-                  <button
-                    key={city}
-                    type="button"
-                    onClick={() => {
-                      setSelectedLocality(city);
-                      onSearch(city);
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#334155] border border-[#E2E8F0] transition-colors"
-                  >
-                    {city}
-                  </button>
-                )
-              )}
+            <div className="mt-3 pt-3 border-t border-slate-700 md:border-[#F1F5F9] flex flex-col md:flex-row md:items-center gap-2 text-xs">
+              <div className="flex md:flex-wrap items-center overflow-x-auto no-scrollbar gap-2 py-1">
+                <span className="font-semibold text-slate-300 md:text-[#111827] shrink-0 mr-0.5">
+                  Quick hubs:
+                </span>
+                {['Prayagraj', 'Lucknow', 'Delhi / NCR', 'Mumbai', 'Bengaluru', 'Pune'].map(
+                  (city) => (
+                    <button
+                      key={city}
+                      type="button"
+                      onClick={() => {
+                        setSelectedLocality(city);
+                        onSearch(city);
+                      }}
+                      className="shrink-0 whitespace-nowrap px-3 py-1.5 md:py-1 rounded-lg bg-slate-700/80 md:bg-[#F8FAFC] hover:bg-slate-700 md:hover:bg-[#F1F5F9] text-slate-200 md:text-[#334155] border border-slate-600 md:border-[#E2E8F0] transition-colors font-medium cursor-pointer"
+                    >
+                      {city}
+                    </button>
+                  )
+                )}
+              </div>
             </div>
           </div>
 

@@ -278,7 +278,7 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
     <div ref={dropdownRef} className={`relative ${className}`}>
       {/* Search Input Box */}
       <div
-        className={`flex items-center gap-3 bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-[#F59E0B]/20 rounded-2xl shadow-xs transition-all cursor-pointer ${sizeStyles[size]}`}
+        className={`flex items-center gap-3 bg-slate-900/90 md:bg-white border border-slate-700 md:border-[#E5E7EB] hover:border-slate-600 md:hover:border-[#CBD5E1] focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-[#F59E0B]/20 rounded-2xl shadow-xs transition-all cursor-pointer ${sizeStyles[size]}`}
         onClick={() => setIsOpen(true)}
       >
         {isDetecting ? (
@@ -303,7 +303,7 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
               ? 'Detecting your location in India...'
               : 'Search City, Area, Locality or Landmark across India...'
           }
-          className="w-full bg-transparent border-none text-[#111827] placeholder:text-[#94A3B8] focus:outline-none font-medium truncate text-sm sm:text-base"
+          className="w-full bg-transparent border-none text-white md:text-[#111827] placeholder:text-slate-400 md:placeholder:text-[#94A3B8] focus:outline-none font-medium truncate text-sm sm:text-base"
         />
 
         {isGpsActive && (
@@ -316,7 +316,7 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
           <button
             type="button"
             onClick={handleClear}
-            className="p-1 text-[#94A3B8] hover:text-[#111827] rounded-full transition-colors"
+            className="p-1 text-slate-400 hover:text-white md:text-[#94A3B8] md:hover:text-[#111827] rounded-full transition-colors"
             title="Clear location"
           >
             <X className="w-4 h-4" />

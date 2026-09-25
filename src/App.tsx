@@ -214,7 +214,7 @@ const MainApp: React.FC = () => {
       <Header currentView={currentView} onNavigate={handleNavigate} />
 
       {/* Main Routed Content */}
-      <main className="flex-1">
+      <main className="flex-1 pb-28 md:pb-0">
         {isCallbackRoute ? (
           <AuthCallback onAuthComplete={handleAuthComplete} />
         ) : (

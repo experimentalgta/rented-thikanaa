@@ -1,12 +1,8 @@
 import React from 'react';
 import {
-  Home,
-  Users,
   Heart,
   MessageSquare,
   PlusCircle,
-  ShieldCheck,
-  Building2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useSaved } from '../../context/SavedContext';
@@ -31,21 +27,21 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
           <div className="flex items-center gap-6">
             <button
               onClick={() => onNavigate('home')}
-              className="flex items-center gap-2.5 text-left focus:outline-none group"
+              className="flex items-center gap-2.5 text-left focus:outline-none group shrink-0"
             >
-              <div className="w-10 h-10 rounded-xl bg-[#101828] flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+              <div className="w-10 h-10 rounded-xl bg-[#101828] flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform shrink-0">
                 <span className="text-base font-black text-[#F59E0B] font-heading tracking-tighter">RT</span>
               </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-lg font-bold text-[#101828] font-heading tracking-tight">
-                    Rented Thikan
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="text-base sm:text-lg font-bold text-[#101828] font-heading tracking-tight whitespace-nowrap">
+                    Rented Thikana
                   </span>
                   <span className="hidden sm:inline-block text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]">
                     India
                   </span>
                 </div>
-                <p className="text-[11px] text-[#667085] hidden md:block">
+                <p className="text-[11px] text-[#667085] hidden md:block whitespace-nowrap">
                   Room &amp; Roommate Marketplace
                 </p>
               </div>
@@ -83,20 +79,21 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
           </div>
 
           {/* Right Action Elements */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-3 sm:gap-3 shrink-0">
             {/* Saved Rooms Button (All Members) */}
             <button
+              type="button"
               onClick={() => {
                 if (requireAuth('Sign in with Google to view your saved accommodations.', { type: 'saved' })) {
                   onNavigate('member-dashboard', 'saved');
                 }
               }}
-              className="relative p-2.5 text-[#667085] hover:text-[#101828] hover:bg-[#F8FAFC] rounded-xl transition-colors cursor-pointer"
+              className="relative p-2 sm:p-2.5 text-[#667085] hover:text-[#101828] hover:bg-[#F8FAFC] rounded-xl transition-colors cursor-pointer min-w-[40px] min-h-[40px] flex items-center justify-center"
               title="Saved Properties"
             >
               <Heart className="w-5 h-5" />
               {savedCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-[#F59E0B] text-[#101828] font-bold text-[10px] rounded-full flex items-center justify-center shadow-xs">
+                <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-4 h-4 bg-[#F59E0B] text-[#101828] font-bold text-[10px] rounded-full flex items-center justify-center shadow-xs">
                   {savedCount}
                 </span>
               )}
@@ -104,17 +101,18 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
 
             {/* In-App Messaging Button (All Members) */}
             <button
+              type="button"
               onClick={() => {
                 if (requireAuth('Sign in with Google to access your in-app messages and conversations.', { type: 'chat' })) {
                   setIsChatModalOpen(true);
                 }
               }}
-              className="relative p-2.5 text-[#667085] hover:text-[#101828] hover:bg-[#F8FAFC] rounded-xl transition-colors cursor-pointer"
+              className="relative p-2 sm:p-2.5 text-[#667085] hover:text-[#101828] hover:bg-[#F8FAFC] rounded-xl transition-colors cursor-pointer min-w-[40px] min-h-[40px] flex items-center justify-center"
               title="In-App Messages"
             >
               <MessageSquare className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#F97316] rounded-full ring-2 ring-white" />
+                <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-2 h-2 bg-[#F97316] rounded-full ring-2 ring-white" />
               )}
             </button>
 
