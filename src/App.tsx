@@ -144,7 +144,7 @@ const MainApp: React.FC = () => {
       return;
     }
 
-    if (view === 'owner-add' || view === 'add-property') {
+    if (view === 'owner-add' || view === 'add-property' || view === 'list-room') {
       if (
         !requireAuth(
           'Sign in with Google to create and publish your room or PG listing.',
