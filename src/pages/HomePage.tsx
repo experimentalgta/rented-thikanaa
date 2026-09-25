@@ -52,15 +52,15 @@ export const HomePage: React.FC<HomePageProps> = ({
   ];
 
   return (
-    <div className="space-y-16 sm:space-y-24 pb-28 md:pb-20">
+    <div className="space-y-16 sm:space-y-24 pb-28 md:pb-20 w-full max-w-[100vw] overflow-x-hidden relative">
       {/* 1. HERO SECTION */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-[#101828] via-[#172554] to-[#101828] text-white pt-12 sm:pt-20 pb-20 sm:pb-28 px-4 sm:px-6 lg:px-8">
+      <section className="relative overflow-hidden bg-gradient-to-b from-[#101828] via-[#172554] to-[#101828] text-white pt-12 sm:pt-20 pb-20 sm:pb-28 px-4 sm:px-6 lg:px-8 w-full max-w-full">
         {/* Subtle decorative grid */}
-        <div className="absolute inset-0 opacity-5 pointer-events-none bg-[radial-gradient(#F59E0B_1px,transparent_1px)] [background-size:16px_16px]" />
+        <div className="absolute inset-0 opacity-5 pointer-events-none bg-[radial-gradient(#F59E0B_1px,transparent_1px)] [background-size:16px_16px] max-w-full overflow-hidden" />
 
-        <div className="max-w-4xl mx-auto text-center relative z-10">
+        <div className="max-w-4xl mx-auto text-center relative z-10 w-full min-w-0">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-semibold text-[#F59E0B] mb-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-semibold text-[#F59E0B] mb-6 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full">
             <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse shrink-0" />
             <span className="md:hidden">✓ Verified Homes • Zero Brokerage</span>
             <span className="hidden md:inline">India's Privacy-First Housing Network • Find Rooms &amp; Compatible Roommates</span>
@@ -85,7 +85,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
           {/* Geolocation Prompt Banner */}
           <LocationPromptBanner
-            className="mb-5 max-w-3xl mx-auto text-left"
+            className="mb-5 w-full max-w-full md:max-w-3xl mx-auto text-left"
             onSuccess={() => {
               if (userLocation.locality) {
                 onSearch(userLocation.locality);
@@ -94,16 +94,17 @@ export const HomePage: React.FC<HomePageProps> = ({
           />
 
           {/* Main Search Component */}
-          <div className="bg-slate-800 md:bg-white rounded-3xl p-3 sm:p-4 shadow-2xl border border-slate-700 md:border-white/20 text-white md:text-[#111827] max-w-3xl mx-auto text-left">
+          <div className="bg-slate-800 md:bg-white rounded-3xl p-3 sm:p-4 shadow-2xl border border-slate-700 md:border-white/20 text-white md:text-[#111827] w-full max-w-full md:max-w-3xl mx-auto text-left">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-300 md:text-[#64748B] mb-2 px-1">
               Where do you want to stay in India?
             </div>
-            <div className="flex flex-col sm:flex-row gap-2.5">
-              <div className="flex-1">
+            <div className="flex flex-col sm:flex-row gap-2.5 w-full min-w-0">
+              <div className="flex-1 w-full min-w-0">
                 <LocationSelector
                   selectedLocality={selectedLocality}
                   onSelect={(loc) => setSelectedLocality(loc)}
                   size="lg"
+                  className="w-full min-w-0 max-w-full"
                 />
               </div>
 
@@ -112,15 +113,15 @@ export const HomePage: React.FC<HomePageProps> = ({
                 size="lg"
                 onClick={() => onSearch(selectedLocality)}
                 icon={<Search className="w-5 h-5" />}
-                className="font-bold sm:w-44 text-base"
+                className="font-bold w-full sm:w-44 text-base shrink-0"
               >
                 Find My Place
               </Button>
             </div>
 
             {/* Quick area suggestions */}
-            <div className="mt-3 pt-3 border-t border-slate-700 md:border-[#F1F5F9] flex flex-col md:flex-row md:items-center gap-2 text-xs">
-              <div className="flex md:flex-wrap items-center overflow-x-auto no-scrollbar gap-2 py-1">
+            <div className="mt-3 pt-3 border-t border-slate-700 md:border-[#F1F5F9] flex flex-col md:flex-row md:items-center gap-2 text-xs w-full max-w-full overflow-hidden">
+              <div className="w-full max-w-full overflow-x-auto overflow-y-hidden no-scrollbar flex md:flex-wrap items-center gap-2 py-1">
                 <span className="font-semibold text-slate-300 md:text-[#111827] shrink-0 mr-0.5">
                   Quick hubs:
                 </span>
@@ -144,16 +145,16 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
 
           {/* Trust Guarantees Row */}
-          <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-8 mt-10 text-xs text-[#94A3B8]">
-            <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-8 mt-10 text-xs text-[#94A3B8] w-full max-w-full overflow-hidden px-1">
+            <div className="flex items-center gap-1.5 shrink-0">
               <ShieldCheck className="w-4 h-4 text-[#F59E0B]" />
               <span>Mobile &amp; Platform Verified</span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               <Lock className="w-4 h-4 text-[#F59E0B]" />
               <span>Phone Numbers Private by Default</span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               <MapPin className="w-4 h-4 text-[#F59E0B]" />
               <span>Continuous Proximity Ranking</span>
             </div>

@@ -9,8 +9,8 @@ interface FooterProps {
 
 export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) => {
   return (
-    <footer className="bg-[#101828] text-white pt-14 pb-20 lg:pb-12 border-t border-[#1E293B]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <footer className="bg-[#101828] text-white pt-14 pb-20 lg:pb-12 border-t border-[#1E293B] w-full max-w-full overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-10 pb-12 border-b border-[#1E293B]">
           {/* Col 1 & 2: Brand & Proposition */}
           <div className="lg:col-span-2">
@@ -19,7 +19,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) 
                 <span className="text-base font-black text-[#101828] font-heading">RT</span>
               </div>
               <span className="text-xl font-bold tracking-tight font-heading text-white">
-                Rented Thikan
+                Rented Thikana
               </span>
             </div>
             <p className="text-sm text-[#94A3B8] leading-relaxed mb-4 max-w-sm">

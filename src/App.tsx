@@ -209,12 +209,12 @@ const MainApp: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#111827]">
+    <div className="w-full max-w-full overflow-x-hidden relative min-h-screen flex flex-col bg-[#F8FAFC] text-[#111827]">
       {/* Universal Desktop & Mobile Header */}
       <Header currentView={currentView} onNavigate={handleNavigate} />
 
       {/* Main Routed Content */}
-      <main className="flex-1 pb-28 md:pb-0">
+      <main className="w-full max-w-full overflow-x-hidden md:overflow-x-visible flex-1 pb-28 md:pb-0">
         {isCallbackRoute ? (
           <AuthCallback onAuthComplete={handleAuthComplete} />
         ) : (
