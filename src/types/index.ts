@@ -176,6 +176,7 @@ export interface LocationData {
   subLocality?: string;
   landmark?: string;
   formattedAddress?: string;
+  pincode?: string;
 
   latitude: number;
   longitude: number;

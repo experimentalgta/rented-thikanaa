@@ -1,32 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  Building2,
-  MapPin,
-  IndianRupee,
-  Sparkles,
   Camera,
-  ShieldCheck,
+  Image as ImageIcon,
   Eye,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
-  UploadCloud,
   X,
-  Lock,
-  Phone,
   Navigation,
   Loader2,
-  Search
+  Search,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
 import { PropertyCard } from '../components/property/PropertyCard';
-import { Property, PropertyType, GenderPreference, RoomType, PhonePrivacy } from '../types';
+import { Property, PropertyType, GenderPreference, RoomType, PhonePrivacy, PropertyImage } from '../types';
 import { locationRepository } from '../services/locationRepository';
 import { evaluateLocationAccuracy } from '../services/location/locationAccuracy';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { propertyRepository } from '../services/propertyRepository';
-import { LocationPickerMap } from '../components/map/LocationPickerMap';
+import { uploadPropertyImage } from '../utils/imageUpload';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 
 interface AddPropertyPageProps {
@@ -49,7 +43,9 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
     try {
       const draft = localStorage.getItem(DRAFT_STORAGE_KEY);
       if (draft) return JSON.parse(draft);
-    } catch (e) {}
+    } catch {
+      // Ignore corrupted local storage
+    }
     return {
       title: '',
       property_type: 'pg',
@@ -96,28 +92,37 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Lister Location Intelligence & Adjustment State
+  // Photo Upload States & Refs
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+
+  // Lister Location Intelligence & GPS State
   const [isGpsDetecting, setIsGpsDetecting] = useState(false);
+  const [gpsStatusMessage, setGpsStatusMessage] = useState<string | null>(null);
+  const [isLocationDetected, setIsLocationDetected] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
-  const [showMapAdjustment, setShowMapAdjustment] = useState(true);
-  const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
-  const [locationMethod, setLocationMethod] = useState<'search' | 'gps' | 'map'>('search');
+  const [locationMethod, setLocationMethod] = useState<'search' | 'gps'>('search');
   const [accuracyLabel, setAccuracyLabel] = useState<string>('Location set manually');
   const [searchLocationQuery, setSearchLocationQuery] = useState('');
-  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
 
   const handleUseCurrentGps = () => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
-      setGpsError('Geolocation is not supported on this device/browser.');
+      setGpsError('Geolocation is not supported on this device or browser.');
       return;
     }
 
     setIsGpsDetecting(true);
+    setGpsStatusMessage('Getting your location…');
     setGpsError(null);
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
+        let revAddress = '';
+        let revPincode = '';
         let revState = '';
         let revStateCode = '';
         let revCity = '';
@@ -126,8 +131,12 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
         let revLocalitySlug = '';
         let revLandmark: string | undefined = undefined;
 
+        setGpsStatusMessage('Finding address…');
+
         try {
           const rev = await locationRepository.reverseGeocodeAsync(latitude, longitude);
+          revAddress = rev.formattedAddress || '';
+          revPincode = rev.pincode || '';
           revState = rev.state || '';
           revStateCode = rev.stateCode || '';
           revCity = rev.city || '';
@@ -137,6 +146,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
           revLandmark = rev.landmark;
         } catch {
           const rev = locationRepository.reverseGeocode(latitude, longitude);
+          revAddress = rev.displayName;
           revState = rev.stateName;
           revStateCode = rev.stateCode;
           revCity = rev.cityName;
@@ -151,6 +161,8 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
         setFormData((prev) => ({
           ...prev,
           country: 'India',
+          address: revAddress || prev.address,
+          pincode: revPincode || prev.pincode,
           state: revState || prev.state,
           state_code: revStateCode || prev.state_code,
           city: revCity || prev.city,
@@ -163,8 +175,8 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
         }));
 
         setIsGpsDetecting(false);
-        setShowMapAdjustment(true);
-        setIsLocationConfirmed(false);
+        setGpsStatusMessage('Location detected');
+        setIsLocationDetected(true);
         setLocationMethod('gps');
         setAccuracyLabel(`Approximate GPS accuracy: ${Math.round(accuracy)} m`);
 
@@ -176,17 +188,18 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       },
       (err) => {
         setIsGpsDetecting(false);
+        setGpsStatusMessage(null);
         if (err.code === 1) {
-          setGpsError('Location access was denied. You can select your state, city, and area manually below.');
+          setGpsError('Location access was denied. Please allow location permissions in your browser or select your area manually.');
         } else if (err.code === 2) {
-          setGpsError("Could not detect GPS location. Please select your area or adjust on map.");
+          setGpsError('Unable to determine location. Please try again or select your area manually.');
         } else if (err.code === 3) {
-          setGpsError('Location request timed out. Please select your area manually.');
+          setGpsError('Location request timed out. Please try again or select your area manually.');
         } else {
-          setGpsError("Could not detect GPS location. Please select your area manually.");
+          setGpsError('Unable to determine location. Please try again.');
         }
       },
-      { timeout: 10000, enableHighAccuracy: true, maximumAge: 60000 }
+      { timeout: 12000, enableHighAccuracy: true, maximumAge: 0 }
     );
   };
 
@@ -194,7 +207,9 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   useEffect(() => {
     try {
       localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(formData));
-    } catch (e) {}
+    } catch {
+      // Storage quota or private browsing restriction
+    }
   }, [formData]);
 
   const updateField = (field: keyof Property, val: any) => {
@@ -217,9 +232,54 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
     updateField('rules', next);
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploadingPhoto(true);
+    setUploadError(null);
+
+    try {
+      const newImages: PropertyImage[] = [];
+      const fileList = Array.from(files);
+
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        if (!file.type.startsWith('image/')) continue;
+
+        const publicUrlOrDataUrl = await uploadPropertyImage(file, currentUser?.id);
+        const existingCount = (formData.images || []).length + newImages.length;
+        newImages.push({
+          id: `img-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+          url: publicUrlOrDataUrl,
+          caption: `Photo ${existingCount + 1}`,
+          is_cover: existingCount === 0,
+        });
+      }
+
+      if (newImages.length > 0) {
+        updateField('images', [...(formData.images || []), ...newImages]);
+      }
+    } catch (err: any) {
+      console.error('Failed to process image:', err);
+      setUploadError('Failed to process one or more images. Please try again.');
+    } finally {
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleSetCover = (imgId: string) => {
+    const next = (formData.images || []).map((img) => ({
+      ...img,
+      is_cover: img.id === imgId,
+    }));
+    updateField('images', next);
+  };
+
   const handleAddImage = () => {
     if (!imageUrlInput.trim()) return;
-    const newImg = {
+    const newImg: PropertyImage = {
       id: `img-${Date.now()}`,
       url: imageUrlInput.trim(),
       caption: 'Room Photo',
@@ -231,6 +291,9 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
 
   const handleRemoveImage = (imgId: string) => {
     const next = (formData.images || []).filter((i) => i.id !== imgId);
+    if (next.length > 0 && !next.some((i) => i.is_cover)) {
+      next[0].is_cover = true;
+    }
     updateField('images', next);
   };
 
@@ -460,18 +523,18 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   ✓ {accuracyLabel}
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setLocationMethod('search')}
-                  className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer ${
                     locationMethod === 'search'
                       ? 'bg-[#101828] text-[#F59E0B] border-[#101828] shadow-xs'
                       : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#CBD5E1]'
                   }`}
                 >
                   <Search className="w-4 h-4" />
-                  <span>Option A: Search</span>
+                  <span>Option A: Search Area</span>
                 </button>
                 <button
                   type="button"
@@ -479,26 +542,14 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                     setLocationMethod('gps');
                     handleUseCurrentGps();
                   }}
-                  className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 cursor-pointer ${
                     locationMethod === 'gps'
                       ? 'bg-[#101828] text-[#F59E0B] border-[#101828] shadow-xs'
                       : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#CBD5E1]'
                   }`}
                 >
                   <Navigation className="w-4 h-4" />
-                  <span>Option B: Use GPS</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLocationMethod('map')}
-                  className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
-                    locationMethod === 'map'
-                      ? 'bg-[#101828] text-[#F59E0B] border-[#101828] shadow-xs'
-                      : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#CBD5E1]'
-                  }`}
-                >
-                  <MapPin className="w-4 h-4" />
-                  <span>Option C: Pick on Map</span>
+                  <span>Option B: Use Current Location</span>
                 </button>
               </div>
             </div>
@@ -515,11 +566,11 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                       <h4 className="font-bold text-sm text-white font-heading flex items-center gap-2">
                         <span>Standing at the property right now?</span>
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-[#F59E0B] bg-[#F59E0B]/15 px-2 py-0.5 rounded-full border border-[#F59E0B]/20">
-                          Fastest
+                          Recommended
                         </span>
                       </h4>
                       <p className="text-xs text-[#94A3B8] mt-0.5 max-w-md">
-                        Capture high-precision coordinates with one tap. Helps members find your property by exact walking distance.
+                        Automatically captures high-precision GPS coordinates and fills your complete street address.
                       </p>
                     </div>
                   </div>
@@ -527,20 +578,32 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   <Button
                     type="button"
                     variant="primary"
-                    size="sm"
+                    size="md"
                     onClick={handleUseCurrentGps}
                     disabled={isGpsDetecting}
                     loading={isGpsDetecting}
-                    icon={isGpsDetecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-                    className="shrink-0 font-semibold text-xs w-full sm:w-auto"
+                    icon={isGpsDetecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+                    className="shrink-0 font-bold text-xs w-full sm:w-auto"
                   >
-                    {isGpsDetecting ? 'Detecting coordinates...' : '📍 Use My Current Location'}
+                    {isGpsDetecting ? (gpsStatusMessage || 'Detecting...') : '📍 Use Current Location'}
                   </Button>
                 </div>
 
+                {isLocationDetected && formData.latitude && formData.longitude && !isGpsDetecting && (
+                  <div className="mt-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="font-bold">✓ Location detected</span>
+                    </div>
+                    <span className="text-[11px] text-emerald-300">
+                      Address filled in form below
+                    </span>
+                  </div>
+                )}
+
                 {gpsError && (
                   <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
                     <span>{gpsError}</span>
                   </div>
                 )}
@@ -559,7 +622,6 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                     value={searchLocationQuery}
                     onChange={(e) => {
                       setSearchLocationQuery(e.target.value);
-                      setIsSearchingLocation(true);
                     }}
                     placeholder="e.g. Andheri West, Koramangala, Laxmi Nagar, Katra..."
                     className="w-full p-3 rounded-xl border border-[#E5E7EB] text-sm focus:outline-none focus:border-[#F59E0B]"
@@ -581,8 +643,6 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                             updateField('longitude', res.longitude);
                             setAccuracyLabel('Location selected from search');
                             setSearchLocationQuery('');
-                            setIsSearchingLocation(false);
-                            setIsLocationConfirmed(false);
                           }}
                           className="w-full text-left p-2 rounded-lg hover:bg-[#F8FAFC] text-xs font-semibold text-[#101828] flex items-center justify-between"
                         >
@@ -631,7 +691,6 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                       updateField('locality', '');
                       updateField('locality_slug', '');
                     }
-                    setIsLocationConfirmed(false);
                   }}
                   className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
                 >
@@ -667,7 +726,6 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                         updateField('latitude', ct.latitude);
                         updateField('longitude', ct.longitude);
                       }
-                      setIsLocationConfirmed(false);
                     }
                   }}
                   className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
@@ -697,10 +755,8 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                       updateField('locality_slug', loc.slug);
                       updateField('latitude', loc.latitude);
                       updateField('longitude', loc.longitude);
-                      setIsLocationConfirmed(false);
                     } else {
                       updateField('locality_slug', selectedVal.toLowerCase().replace(/\s+/g, '-'));
-                      setIsLocationConfirmed(false);
                     }
                   }}
                   placeholder="e.g. Andheri West, Koramangala, Sector 62, Katra..."
@@ -763,77 +819,25 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
               </p>
             </div>
 
-            {/* Interactive Location Confirmation & Map Pin Adjustment */}
-            <div className="border border-[#E2E8F0] rounded-2xl p-4 bg-white space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <h4 className="font-bold text-sm text-[#101828] font-heading flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-[#F59E0B]" />
-                    <span>Is this your property location?</span>
-                  </h4>
-                  <p className="text-xs text-[#64748B]">
-                    Drag the pin or click on the map to pinpoint your exact gate/doorstep for accurate walking distance.
-                  </p>
+            {/* GPS Coordinates & Doorstep Accuracy (No Map) */}
+            {formData.latitude && formData.longitude && (
+              <div className="border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs text-emerald-950">GPS Coordinates Attached</h5>
+                    <p className="text-[11px] text-emerald-800">
+                      Latitude: {Number(formData.latitude).toFixed(5)}, Longitude: {Number(formData.longitude).toFixed(5)} • Accurate doorstep walking distance enabled
+                    </p>
+                  </div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  {isLocationConfirmed ? (
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#101828] text-[#F59E0B] border border-[#F59E0B]/30 text-xs font-bold">
-                      <CheckCircle2 className="w-4 h-4 text-[#F59E0B]" />
-                      <span>Location Confirmed</span>
-                    </div>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      onClick={() => setIsLocationConfirmed(true)}
-                      icon={<CheckCircle2 className="w-4 h-4" />}
-                      className="text-xs font-bold"
-                    >
-                      Confirm Location
-                    </Button>
-                  )}
-                </div>
+                <span className="text-[10px] font-bold text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
+                  Doorstep Precision
+                </span>
               </div>
-
-              {/* Map Preview */}
-              <LocationPickerMap
-                latitude={
-                  formData.latitude ??
-                  locationRepository.getCityBySlugOrName(formData.city_slug || '')?.latitude ??
-                  20.5937
-                }
-                longitude={
-                  formData.longitude ??
-                  locationRepository.getCityBySlugOrName(formData.city_slug || '')?.longitude ??
-                  78.9629
-                }
-                localityName={formData.locality}
-                onLocationChange={async (lat, lng) => {
-                  updateField('latitude', lat);
-                  updateField('longitude', lng);
-                  setAccuracyLabel('Location set manually');
-                  setIsLocationConfirmed(false);
-                  setLocationMethod('map');
-
-                  try {
-                    const rev = await locationRepository.reverseGeocodeAsync(lat, lng);
-                    if (rev.city) updateField('city', rev.city);
-                    if (rev.citySlug) updateField('city_slug', rev.citySlug);
-                    if (rev.state) updateField('state', rev.state);
-                    if (rev.stateCode) updateField('state_code', rev.stateCode);
-                    if (rev.locality) {
-                      updateField('locality', rev.locality);
-                      updateField('locality_slug', rev.localitySlug || rev.locality.toLowerCase().replace(/\s+/g, '-'));
-                    }
-                    if (rev.landmark) updateField('landmark', `Near ${rev.landmark}`);
-                  } catch {
-                    // Ignore reverse geocode failure
-                  }
-                }}
-              />
-            </div>
+            )}
           </div>
         )}
 
@@ -1043,46 +1047,149 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
 
         {/* STEP 6: PHOTOS */}
         {currentStep === 6 && (
-          <div className="space-y-5">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                Add Photo URL / Image Link
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={imageUrlInput}
-                  onChange={(e) => setImageUrlInput(e.target.value)}
-                  placeholder="Paste direct image URL (or use default student room photo)..."
-                  className="flex-1 p-3 rounded-xl border border-[#E5E7EB] text-xs"
-                />
-                <Button variant="primary" size="md" onClick={handleAddImage}>
-                  Add Image
-                </Button>
+          <div className="space-y-6">
+            {/* Hidden Native File Inputs */}
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#E5E7EB] shadow-xs space-y-4">
+              <div>
+                <h3 className="text-base font-bold text-[#101828] font-heading flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-[#F59E0B]" />
+                  <span>Property Photos</span>
+                </h3>
+                <p className="text-xs text-[#667085] mt-1">
+                  Add clear, well-lit photos of the room, bed, bathroom, and building entrance.
+                </p>
+              </div>
+
+              {/* Dual Action Buttons: Gallery + Camera */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  disabled={isUploadingPhoto}
+                  className="flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer disabled:opacity-60"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-amber-100/70 text-[#D97706] flex items-center justify-center shrink-0">
+                    <ImageIcon className="w-6 h-6" />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-sm text-[#101828]">Choose from Gallery</p>
+                    <p className="text-[11px] text-[#667085]">Select existing device photos</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={isUploadingPhoto}
+                  className="flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer disabled:opacity-60"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-[#101828] text-[#F59E0B] flex items-center justify-center shrink-0">
+                    <Camera className="w-6 h-6" />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-sm text-[#101828]">Take Photo with Camera</p>
+                    <p className="text-[11px] text-[#667085]">Capture new photo instantly</p>
+                  </div>
+                </button>
+              </div>
+
+              {isUploadingPhoto && (
+                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#F59E0B] shrink-0" />
+                  <span>Processing, optimizing and saving photos...</span>
+                </div>
+              )}
+
+              {uploadError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{uploadError}</span>
+                </div>
+              )}
+
+              {/* Optional URL input fallback */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowUrlInput(!showUrlInput)}
+                  className="text-xs font-semibold text-[#667085] hover:text-[#101828] underline cursor-pointer"
+                >
+                  {showUrlInput ? 'Hide photo URL input' : '+ Or paste a direct image URL'}
+                </button>
+                {showUrlInput && (
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      type="text"
+                      value={imageUrlInput}
+                      onChange={(e) => setImageUrlInput(e.target.value)}
+                      placeholder="Paste direct image URL..."
+                      className="flex-1 p-3 rounded-xl border border-[#E5E7EB] text-xs"
+                    />
+                    <Button variant="primary" size="sm" onClick={handleAddImage}>
+                      Add URL
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {(formData.images || []).map((img, idx) => (
-                <div
-                  key={img.id}
-                  className="relative rounded-xl overflow-hidden border border-[#E5E7EB] group h-36 bg-[#F8FAFC]"
-                >
-                  <img src={img.url} alt="" className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveImage(img.id)}
-                    className="absolute top-1.5 right-1.5 p-1 bg-black/60 text-white rounded-full hover:bg-rose-600"
+            {/* Photo Previews Grid */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold uppercase tracking-wider text-[#667085]">
+                  Selected Photos ({formData.images?.length || 0})
+                </label>
+                <span className="text-[11px] text-[#667085]">First photo will be the cover photo</span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {(formData.images || []).map((img) => (
+                  <div
+                    key={img.id}
+                    className="relative rounded-2xl overflow-hidden border border-[#E5E7EB] group aspect-4/3 bg-[#F8FAFC] shadow-xs"
                   >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                  {img.is_cover && (
-                    <span className="absolute bottom-1.5 left-1.5 text-[9px] bg-[#101828] text-white px-1.5 py-0.5 rounded font-bold">
-                      Cover Photo
-                    </span>
-                  )}
-                </div>
-              ))}
+                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(img.id)}
+                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition-colors cursor-pointer"
+                      title="Remove photo"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                    {img.is_cover ? (
+                      <span className="absolute bottom-2 left-2 text-[10px] bg-[#101828] text-[#F59E0B] px-2 py-0.5 rounded-md font-bold shadow-xs">
+                        Cover Photo
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleSetCover(img.id)}
+                        className="absolute bottom-2 left-2 text-[10px] bg-black/70 hover:bg-[#101828] text-white px-2 py-0.5 rounded-md font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      >
+                        Set as Cover
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}

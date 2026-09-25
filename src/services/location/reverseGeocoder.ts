@@ -19,8 +19,52 @@ export class ReverseGeocoder {
       return cached;
     }
 
-    // 2. Offline Nearest-Neighbor Proximity Match
-    // Find closest city
+    // 2. Determine nearest landmark if available (< 2.5km)
+    let nearestLandmark: string | undefined = undefined;
+    for (const lm of ALL_INDIAN_LANDMARKS) {
+      const dist = calculateHaversineDistanceKm(latitude, longitude, lm.latitude, lm.longitude);
+      if (dist < 2.5) {
+        nearestLandmark = lm.short_name || lm.name;
+        break;
+      }
+    }
+
+    // 3. Primary: High-Accuracy Reverse Geocode via OpenStreetMap Nominatim (zoom=18 for house/street level)
+    try {
+      const now = Date.now();
+      const timeSinceLastCall = now - lastReverseCallTime;
+      if (timeSinceLastCall < 800) {
+        await new Promise((resolve) => setTimeout(resolve, 800 - timeSinceLastCall));
+      }
+      lastReverseCallTime = Date.now();
+
+      const url = `${NOMINATIM_REVERSE_URL}?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'RentedThikan/1.0 (contact@rentedthikan.in)',
+        },
+        signal,
+      });
+
+      if (response.ok) {
+        const data: NominatimPlace = await response.json();
+        const normalized = normalizeNominatimPlace(data, 'gps');
+        normalized.latitude = latitude;
+        normalized.longitude = longitude;
+        if (nearestLandmark && !normalized.landmark) {
+          normalized.landmark = nearestLandmark;
+        }
+        locationCache.setReverse(latitude, longitude, normalized);
+        return normalized;
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.warn('Live reverse geocoding failed, falling back to local catalog:', e);
+      }
+    }
+
+    // 4. Offline Fallback: Nearest-Neighbor Proximity Match from static catalog
     let closestCity = ALL_INDIAN_CITIES[0];
     let minCityDist = calculateHaversineDistanceKm(
       latitude,
@@ -42,7 +86,6 @@ export class ReverseGeocoder {
       }
     }
 
-    // Find closest locality
     let closestLocality = ALL_INDIAN_LOCALITIES[0];
     let minLocDist = calculateHaversineDistanceKm(
       latitude,
@@ -64,80 +107,8 @@ export class ReverseGeocoder {
       }
     }
 
-    // Check for nearby landmark (< 2.5km)
-    let nearestLandmark: string | undefined = undefined;
-    const cityLandmarks = ALL_INDIAN_LANDMARKS.filter(
-      (lm) => lm.city_slug === closestLocality.city_slug
-    );
-    for (const lm of cityLandmarks) {
-      const dist = calculateHaversineDistanceKm(latitude, longitude, lm.latitude, lm.longitude);
-      if (dist < 2.5) {
-        nearestLandmark = lm.short_name || lm.name;
-        break;
-      }
-    }
-
-    // If coordinates are within close range of a known locality (< 8km), build high-confidence local result
-    if (minLocDist < 8.0) {
-      const displayName = `Near ${closestLocality.name}, ${closestLocality.city_name}`;
-      const result: LocationData = {
-        country: 'India',
-        countryCode: 'IN',
-        state: closestLocality.state_name,
-        stateCode: closestLocality.state_code,
-        district: closestLocality.district || closestLocality.city_name,
-        city: closestLocality.city_name,
-        citySlug: closestLocality.city_slug,
-        locality: closestLocality.name,
-        localitySlug: closestLocality.slug,
-        landmark: nearestLandmark,
-        formattedAddress: `${closestLocality.name}, ${closestLocality.city_name}, ${closestLocality.state_code}`,
-        latitude,
-        longitude,
-        source: 'gps',
-      };
-      locationCache.setReverse(latitude, longitude, result);
-      return result;
-    }
-
-    // 3. If outside close catalog locality bounds, attempt OpenStreetMap Nominatim reverse geocode
-    try {
-      const now = Date.now();
-      const timeSinceLastCall = now - lastReverseCallTime;
-      if (timeSinceLastCall < 800) {
-        await new Promise((resolve) => setTimeout(resolve, 800 - timeSinceLastCall));
-      }
-      lastReverseCallTime = Date.now();
-
-      const url = `${NOMINATIM_REVERSE_URL}?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`;
-      const response = await fetch(url, {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'RentedThikan/1.0 (contact@rentedthikan.in)',
-        },
-        signal,
-      });
-
-      if (response.ok) {
-        const data: NominatimPlace = await response.json();
-        const normalized = normalizeNominatimPlace(data, 'gps');
-        normalized.latitude = latitude;
-        normalized.longitude = longitude;
-        normalized.landmark = nearestLandmark;
-        locationCache.setReverse(latitude, longitude, normalized);
-        return normalized;
-      }
-    } catch (e: any) {
-      if (e.name !== 'AbortError') {
-        console.warn('Nominatim reverse geocode fallback:', e);
-      }
-    }
-
-    // 4. Graceful Fallback using closest catalog City/Locality
-    const fallbackDisplayName =
-      minLocDist < 20
-        ? `Near ${closestLocality.name}, ${closestLocality.city_name}`
-        : `${closestCity.name} Region, ${closestCity.state_name}`;
+    const fallbackLocality = minLocDist < 20 ? closestLocality.name : closestCity.name;
+    const fallbackDisplayName = `${fallbackLocality}, ${closestCity.name}, ${closestCity.state_name}`;
 
     const fallbackResult: LocationData = {
       country: 'India',
@@ -147,7 +118,7 @@ export class ReverseGeocoder {
       district: closestCity.district || closestCity.name,
       city: closestCity.name,
       citySlug: closestCity.slug,
-      locality: minLocDist < 20 ? closestLocality.name : closestCity.name,
+      locality: fallbackLocality,
       localitySlug: minLocDist < 20 ? closestLocality.slug : closestCity.slug,
       landmark: nearestLandmark,
       formattedAddress: fallbackDisplayName,
