@@ -16,6 +16,8 @@ import {
 import { serverAuth } from './serverAuth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
+export const DEFAULT_SEARCH_RADIUS_KM = 5;
+
 export class PropertyRepository implements IPropertyRepository {
   private assertSupabaseClient() {
     if (!isSupabaseConfigured || !supabase) {
@@ -390,6 +392,25 @@ export class PropertyRepository implements IPropertyRepository {
       if (params.amenities && params.amenities.length > 0) {
         const hasAllAmenities = params.amenities.every((a) => prop.amenities?.includes(a));
         if (!hasAllAmenities) continue;
+      }
+
+      // Filter by search radius (km) if specified
+      if (params.radius_km && params.radius_km > 0) {
+        const hasCoordinates = (row.latitude !== null && row.latitude !== undefined) || (row.distance_meters !== null && row.distance_meters !== undefined);
+        if (hasCoordinates) {
+          if (distanceKm > params.radius_km) {
+            continue;
+          }
+        } else {
+          // Compatibility fallback: if listing lacks coordinates, check city or locality match
+          const cityMatches = !refCity || !prop.city || prop.city.toLowerCase() === refCity.toLowerCase();
+          const localityMatches = !refLocalityName || !prop.locality ||
+            prop.locality.toLowerCase().includes(refLocalityName.toLowerCase()) ||
+            refLocalityName.toLowerCase().includes(prop.locality.toLowerCase());
+          if (!cityMatches && !localityMatches) {
+            continue;
+          }
+        }
       }
 
       // Privacy enforcement

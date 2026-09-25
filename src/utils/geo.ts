@@ -38,14 +38,14 @@ function toRad(degrees: number): number {
 }
 
 /**
- * Formats a distance in kilometers to user-friendly Indian-English format:
- * - "< 1 km" -> "450 m away"
- * - ">= 1 km" -> "1.8 km away"
+ * Formats a distance in kilometers to user-friendly format:
+ * - "0.4 km away"
+ * - "1.2 km away"
+ * - "3.5 km away"
  */
 export function formatDistance(distanceKm: number): string {
-  if (distanceKm < 1) {
-    const meters = Math.max(50, Math.round((distanceKm * 1000) / 50) * 50);
-    return `${meters} m away`;
+  if (distanceKm < 0.1) {
+    return '0.1 km away';
   }
   return `${distanceKm.toFixed(1)} km away`;
 }

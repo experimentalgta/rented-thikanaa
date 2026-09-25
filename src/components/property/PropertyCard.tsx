@@ -126,7 +126,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <span className="text-xs font-semibold text-[#667085] flex items-center gap-1 truncate">
               <MapPin className="w-3.5 h-3.5 text-[#F59E0B] shrink-0" />
-              {property.locality}, Prayagraj
+              {property.locality}, {property.city || 'Prayagraj'}
             </span>
             <DistanceBadge distanceFormatted={property.distance_formatted} />
           </div>

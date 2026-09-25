@@ -398,6 +398,7 @@ export interface PropertySearchParams {
   amenities?: string[];
   verified_only?: boolean;
   sort_by?: 'nearest' | 'price_low' | 'price_high' | 'newest';
+  radius_km?: number;
 }
 
 export interface SearchResultSummary {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { UserLocationState, LocationSource } from '../types';
 import { locationRepository } from '../services/locationRepository';
 import { evaluateLocationAccuracy } from '../services/location/locationAccuracy';
+import { locationService } from '../services/location/locationService';
 
 interface LocationContextType {
   userLocation: UserLocationState;
@@ -112,97 +113,38 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsDetecting(true);
     setError(null);
 
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const { latitude, longitude, accuracy } = pos.coords;
-          const evalAccuracy = evaluateLocationAccuracy(accuracy, 'gps');
+    try {
+      const detected = await locationService.detectLocation();
+      const detectedLoc = locationService.toUserLocationState(detected);
 
-          let detectedLoc: UserLocationState;
+      setUserLocation(detectedLoc);
+      try {
+        localStorage.setItem(SAVED_LOCATION_KEY, JSON.stringify(detectedLoc));
+      } catch {}
 
-          try {
-            const rev = await locationRepository.reverseGeocodeAsync(latitude, longitude);
-            detectedLoc = {
-              latitude,
-              longitude,
-              country: rev.country || 'India',
-              countryCode: rev.countryCode || 'IN',
-              state: rev.state,
-              stateCode: rev.stateCode,
-              district: rev.district,
-              city: rev.city,
-              citySlug: rev.citySlug,
-              locality: rev.locality || '',
-              localitySlug: rev.localitySlug,
-              displayName: rev.formattedAddress || (rev.locality ? `${rev.locality}, ${rev.city}` : rev.city || 'My Location'),
-              landmark: rev.landmark,
-              formattedAddress: rev.formattedAddress,
-              source: 'gps',
-              accuracy,
-              isLowAccuracy: evalAccuracy.isLowAccuracy,
-              accuracyLabel: evalAccuracy.accuracyLabel,
-              timestamp: Date.now(),
-            };
-          } catch {
-            const rev = locationRepository.reverseGeocode(latitude, longitude);
-            detectedLoc = {
-              latitude,
-              longitude,
-              country: 'India',
-              countryCode: 'IN',
-              state: rev.stateName,
-              stateCode: rev.stateCode,
-              district: rev.districtName,
-              city: rev.cityName,
-              citySlug: rev.citySlug,
-              locality: rev.localityName,
-              localitySlug: rev.localitySlug,
-              displayName: rev.displayName,
-              landmark: rev.nearestLandmark,
-              formattedAddress: `${rev.localityName}, ${rev.cityName}, ${rev.stateCode}`,
-              source: 'gps',
-              accuracy,
-              isLowAccuracy: evalAccuracy.isLowAccuracy,
-              accuracyLabel: evalAccuracy.accuracyLabel,
-              timestamp: Date.now(),
-            };
-          }
+      setPermissionState('granted');
+      setIsDetecting(false);
 
-          setUserLocation(detectedLoc);
-          try {
-            localStorage.setItem(SAVED_LOCATION_KEY, JSON.stringify(detectedLoc));
-          } catch {}
-
-          setPermissionState('granted');
-          setIsDetecting(false);
-          if (evalAccuracy.isLowAccuracy && evalAccuracy.warningMessage) {
-            setError(evalAccuracy.warningMessage);
-          } else {
-            setError(null);
-          }
-          resolve(detectedLoc);
-        },
-        (err) => {
-          setIsDetecting(false);
-          if (err.code === 1) {
-            setPermissionState('denied');
-            setError('Location access was denied. You can search for your location manually.');
-          } else if (err.code === 2) {
-            setError("We couldn't detect your location. Try searching your area or selecting it on the map.");
-          } else if (err.code === 3) {
-            setError('Location detection is taking too long. Try again or choose your location manually.');
-          } else {
-            setError("We couldn't detect your location. Try searching your area or selecting it on the map.");
-          }
-          resolve(null);
-        },
-        {
-          timeout: 10000,
-          enableHighAccuracy: true,
-          maximumAge: 60000,
-        }
-      );
-    });
+      if (detected.isLowAccuracy) {
+        setError(`GPS accuracy is low (~${Math.round(detected.accuracy)}m). Double-check your area.`);
+      } else {
+        setError(null);
+      }
+      return detectedLoc;
+    } catch (err: any) {
+      setIsDetecting(false);
+      if (err.code === 1) {
+        setPermissionState('denied');
+        setError('Location access was denied. You can search for your location manually.');
+      } else if (err.code === 2) {
+        setError("We couldn't detect your location. Try searching your area manually.");
+      } else if (err.code === 3) {
+        setError('Location request timed out. Try again or choose your location manually.');
+      } else {
+        setError(err.message || "We couldn't detect your location. Try choosing your location manually.");
+      }
+      return null;
+    }
   }, []);
 
   const setManualLocation = useCallback(

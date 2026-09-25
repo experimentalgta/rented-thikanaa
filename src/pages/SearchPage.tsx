@@ -1,18 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   SlidersHorizontal,
   Map,
   List,
   MapPin,
-  ShieldCheck,
-  RotateCcw,
-  Sparkles,
-  Info,
+  RotateCw,
   Navigation,
   AlertTriangle,
-  RotateCw
+  Compass,
+  ChevronRight,
+  Maximize2
 } from 'lucide-react';
-import { LocationSelector } from '../components/search/LocationSelector';
+import { ChangeLocationModal } from '../components/search/ChangeLocationModal';
 import { FilterSidebar } from '../components/search/FilterSidebar';
 import { PropertyCard } from '../components/property/PropertyCard';
 import { PropertyMap } from '../components/map/PropertyMap';
@@ -24,7 +23,9 @@ import {
   SearchResultSummary,
   ProximityBucket
 } from '../types';
-import { propertyRepository } from '../services/propertyRepository';
+import { propertyRepository, DEFAULT_SEARCH_RADIUS_KM } from '../services/propertyRepository';
+import { locationService } from '../services/location/locationService';
+import { locationRepository } from '../services/locationRepository';
 import { PROXIMITY_BUCKET_LABELS } from '../utils/geo';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from '../context/LocationContext';
@@ -43,21 +44,44 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   onNavigate,
 }) => {
   const { currentUser } = useAuth();
-  const { userLocation, clearLocation } = useLocation();
-  const [selectedLocality, setSelectedLocality] = useState(() => {
-    if (userLocation.source === 'gps' && userLocation.locality) {
-      return userLocation.locality;
-    }
-    return initialLocality;
+  const { userLocation, setManualLocation } = useLocation();
+
+  // Location search mode: 'gps' (automatic discovery) or 'manual' (user chosen)
+  const [locationMode, setLocationMode] = useState<'gps' | 'manual'>(() => {
+    return initialLocality ? 'manual' : 'gps';
   });
+
+  // Current target location state
+  const [currentCity, setCurrentCity] = useState<string>(() => {
+    return userLocation.city || 'Prayagraj';
+  });
+  const [currentLocality, setCurrentLocality] = useState<string>(() => {
+    return initialLocality || userLocation.locality || 'Civil Lines';
+  });
+  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(() => {
+    if (userLocation.latitude && userLocation.longitude) {
+      return { lat: userLocation.latitude, lng: userLocation.longitude };
+    }
+    return null;
+  });
+
+  // GPS Telemetry & Status
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(userLocation.accuracy || null);
+  const [isLowAccuracy, setIsLowAccuracy] = useState<boolean>(Boolean(userLocation.isLowAccuracy));
+  const [gpsError, setGpsError] = useState<string | null>(null);
+
+  // Proximity Search Radius (Default 5 km, expandable to 10 km -> 15 km)
+  const [searchRadius, setSearchRadius] = useState<number>(DEFAULT_SEARCH_RADIUS_KM);
+
+  // Modal State
+  const [isChangeLocationOpen, setIsChangeLocationOpen] = useState(false);
+
+  // Layout & Filter states
   const [viewMode, setViewMode] = useState<'split' | 'list' | 'map'>('list');
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
-  const [filters, setFilters] = useState<PropertySearchParams>(() => ({
-    locality: userLocation.source === 'gps' && userLocation.locality ? userLocation.locality : initialLocality,
-    reference_lat: userLocation.source === 'gps' ? userLocation.latitude : undefined,
-    reference_lng: userLocation.source === 'gps' ? userLocation.longitude : undefined,
-    location_source: userLocation.source,
+  const [filters, setFilters] = useState<PropertySearchParams>({
     property_type: (initialPropertyType as any) || 'all',
     gender: 'any',
     room_type: 'all',
@@ -65,61 +89,166 @@ export const SearchPage: React.FC<SearchPageProps> = ({
     sort_by: 'nearest',
     amenities: [],
     verified_only: false,
-  }));
-
-  // Sync when userLocation updates (e.g. GPS detected or cleared)
-  useEffect(() => {
-    if (userLocation.source === 'gps' && userLocation.latitude && userLocation.longitude) {
-      setFilters((prev) => ({
-        ...prev,
-        locality: userLocation.locality || prev.locality,
-        reference_lat: userLocation.latitude,
-        reference_lng: userLocation.longitude,
-        location_source: 'gps',
-      }));
-      if (userLocation.locality) {
-        setSelectedLocality(userLocation.locality);
-      }
-    } else if (userLocation.source === 'none') {
-      setFilters((prev) => ({
-        ...prev,
-        reference_lat: undefined,
-        reference_lng: undefined,
-        location_source: 'none',
-      }));
-    }
-  }, [userLocation.source, userLocation.latitude, userLocation.longitude, userLocation.locality]);
+  });
 
   const [searchResult, setSearchResult] = useState<SearchResultSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Perform search whenever filters or target locality changes
-  const executeSearch = async () => {
-    setLoading(true);
-    setError(null);
+  // Ref to track if GPS has already run on initial mount
+  const hasTriggeredInitialGpsRef = useRef(false);
+
+  /**
+   * Request fresh GPS coordinates and perform reverse geocoding.
+   * Uses high accuracy, timeout: 20000, maximumAge: 0.
+   */
+  const triggerGpsDiscovery = useCallback(async () => {
+    setIsDetectingLocation(true);
+    setGpsError(null);
+    setLocationMode('gps');
+    setSearchRadius(DEFAULT_SEARCH_RADIUS_KM);
+
     try {
+      const detected = await locationService.detectLocation();
+      setCurrentCity(detected.city);
+      setCurrentLocality(detected.locality);
+      setCurrentCoords({ lat: detected.latitude, lng: detected.longitude });
+      setGpsAccuracy(detected.accuracy);
+      setIsLowAccuracy(detected.isLowAccuracy);
+      setLocationMode('gps');
+
+      // Update location context
+      setManualLocation(
+        detected.locality,
+        detected.latitude,
+        detected.longitude,
+        detected.city,
+        detected.state,
+        'gps',
+        detected.district
+      );
+    } catch (err: any) {
+      console.warn('GPS detection failed, falling back to default location:', err);
+      setGpsError(err.message || "We couldn't detect your location.");
+
+      // Gracefully fall back to Prayagraj / Civil Lines if no coordinates exist
+      setCurrentCity((prev) => prev || 'Prayagraj');
+      setCurrentLocality((prev) => prev || 'Civil Lines');
+      setCurrentCoords((prev) => prev || { lat: 25.4563, lng: 81.8546 });
+      setLocationMode('manual');
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  }, [setManualLocation]);
+
+  /**
+   * Initial Mount Flow:
+   * - If an explicit initialLocality was passed in, respect it (manual mode).
+   * - Otherwise, AUTOMATIC GPS DISCOVERY on Search Page open!
+   */
+  useEffect(() => {
+    if (initialLocality) {
+      setLocationMode('manual');
+      setCurrentLocality(initialLocality);
+      const found = locationRepository.getLocalityBySlugOrName(initialLocality);
+      if (found) {
+        setCurrentCity(found.city_name);
+        setCurrentCoords({ lat: found.latitude, lng: found.longitude });
+      }
+      setIsDetectingLocation(false);
+      return;
+    }
+
+    if (!hasTriggeredInitialGpsRef.current) {
+      hasTriggeredInitialGpsRef.current = true;
+      triggerGpsDiscovery();
+    }
+  }, [initialLocality, triggerGpsDiscovery]);
+
+  /**
+   * Perform room search whenever target location, radius, or filters change.
+   */
+  const executeSearch = useCallback(async () => {
+    setLoading(true);
+    setSearchError(null);
+
+    try {
+      const searchParams: PropertySearchParams = {
+        ...filters,
+        city: currentCity,
+        locality: currentLocality,
+        reference_lat: currentCoords?.lat,
+        reference_lng: currentCoords?.lng,
+        radius_km: searchRadius,
+        location_source: locationMode === 'gps' ? 'gps' : 'manual',
+        sort_by: filters.sort_by || 'nearest',
+      };
+
       const summary = await propertyRepository.searchProperties(
-        { ...filters, locality: selectedLocality },
+        searchParams,
         currentUser?.id
       );
+
       setSearchResult(summary);
     } catch (e: any) {
       console.error('Search query failed:', e);
-      setError(e.message || 'We could not load rooms right now. Please try again.');
+      setSearchError(e.message || 'We could not load rooms right now. Please try again.');
       setSearchResult(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, currentCity, currentLocality, currentCoords, searchRadius, locationMode, currentUser]);
 
   useEffect(() => {
-    executeSearch();
-  }, [filters, selectedLocality, currentUser?.id]);
+    // Only execute if not actively waiting on initial GPS detection
+    if (!isDetectingLocation) {
+      executeSearch();
+    }
+  }, [executeSearch, isDetectingLocation]);
+
+  /**
+   * Handle user manual location change from ChangeLocationModal.
+   * Strict Rule: Manual search overrides GPS and is never auto-overwritten by GPS.
+   */
+  const handleApplyManualLocation = (selected: {
+    city: string;
+    locality: string;
+    lat?: number;
+    lng?: number;
+  }) => {
+    setLocationMode('manual');
+    setCurrentCity(selected.city);
+    setCurrentLocality(selected.locality);
+    if (selected.lat && selected.lng) {
+      setCurrentCoords({ lat: selected.lat, lng: selected.lng });
+    }
+    setGpsError(null);
+    setSearchRadius(DEFAULT_SEARCH_RADIUS_KM);
+
+    // Update location context as manual
+    setManualLocation(
+      selected.locality,
+      selected.lat,
+      selected.lng,
+      selected.city,
+      undefined,
+      'manual'
+    );
+  };
+
+  /**
+   * Handle Radius Expansion when zero rooms are found in 5 km.
+   */
+  const handleExpandRadius = () => {
+    setSearchRadius((prev) => {
+      if (prev <= 5) return 10;
+      if (prev <= 10) return 15;
+      return 25;
+    });
+  };
 
   const handleResetFilters = () => {
     setFilters({
-      locality: selectedLocality,
       property_type: 'all',
       gender: 'any',
       room_type: 'all',
@@ -128,78 +257,168 @@ export const SearchPage: React.FC<SearchPageProps> = ({
       amenities: [],
       verified_only: false,
     });
+    setSearchRadius(DEFAULT_SEARCH_RADIUS_KM);
   };
 
   const bucketKeys: ProximityBucket[] = ['very_near', 'nearby', 'nearby_areas', 'more_options'];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
-      {/* Top Search & Filter Bar */}
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] p-3 sm:p-4 mb-6 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="w-full sm:max-w-md">
-          <LocationSelector
-            selectedLocality={selectedLocality}
-            onSelect={(loc, lat, lng, cityName) => {
-              setSelectedLocality(loc);
-              setFilters((prev) => ({
-                ...prev,
-                locality: loc,
-                city: cityName,
-                reference_lat: lat,
-                reference_lng: lng,
-              }));
-            }}
-            size="md"
-          />
+      {/* ========================================================================= */}
+      {/* 1. TOP LOCATION & NAVIGATION BAR                                          */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 p-4 sm:p-5 mb-6 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        {/* Left: Location Banner & Title */}
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div
+            className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border transition-all ${
+              isDetectingLocation
+                ? 'bg-amber-500/10 text-amber-600 border-amber-500/20 animate-pulse'
+                : locationMode === 'gps'
+                ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                : 'bg-slate-100 text-slate-700 border-slate-200'
+            }`}
+          >
+            {isDetectingLocation ? (
+              <Navigation className="w-5 h-5 animate-spin" />
+            ) : locationMode === 'gps' ? (
+              <Navigation className="w-5 h-5" />
+            ) : (
+              <MapPin className="w-5 h-5 text-amber-600" />
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            {isDetectingLocation ? (
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-heading font-bold text-base text-slate-900">
+                    Finding rooms near you...
+                  </span>
+                  <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 animate-pulse">
+                    GPS Requesting
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Requesting precise GPS coordinates to show nearest rooms
+                </p>
+              </div>
+            ) : (
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-heading font-bold text-base sm:text-lg text-slate-900 leading-tight">
+                    Rooms near{' '}
+                    <span className="text-amber-700 underline decoration-amber-400 decoration-2 underline-offset-2">
+                      {currentLocality}
+                    </span>
+                    {currentCity && currentCity !== currentLocality ? `, ${currentCity}` : ''}
+                  </h1>
+
+                  {locationMode === 'gps' ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                      GPS Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      Manual Area
+                    </span>
+                  )}
+
+                  {searchRadius > 5 && (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                      Expanded to {searchRadius} km
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+                  <span>
+                    {searchResult
+                      ? `${searchResult.total_found} available room${searchResult.total_found === 1 ? '' : 's'} found within ${searchRadius} km`
+                      : 'Searching nearby properties...'}
+                  </span>
+                  <span>•</span>
+                  <span>Nearest to farthest</span>
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* View Mode & Filter Triggers */}
-        <div className="flex items-center justify-between w-full sm:w-auto gap-2">
+        {/* Right: Actions ([ Change Location ], [ Use My Location ], View Modes) */}
+        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto shrink-0">
+          {/* Change Location Action */}
+          <button
+            type="button"
+            onClick={() => setIsChangeLocationOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-800 transition-all cursor-pointer border border-slate-200"
+          >
+            <MapPin className="w-3.5 h-3.5 text-amber-600" />
+            <span>Change Location</span>
+          </button>
+
+          {/* Restore GPS Discovery button (visible when in manual mode or if GPS errored) */}
+          {locationMode === 'manual' && (
+            <button
+              type="button"
+              onClick={triggerGpsDiscovery}
+              disabled={isDetectingLocation}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 active:scale-98 text-amber-900 border border-amber-300 transition-all cursor-pointer disabled:opacity-60"
+            >
+              <Navigation className="w-3.5 h-3.5 text-amber-600" />
+              <span>📍 Use My Location</span>
+            </button>
+          )}
+
           {/* Mobile Filter Button */}
           <button
             type="button"
             onClick={() => setIsFilterSheetOpen(true)}
-            className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#F8FAFC] border border-[#E2E8F0] text-[#101828]"
+            className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 border border-slate-200 text-slate-800"
           >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-[#F59E0B]" />
+            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-600" />
             <span>Filters</span>
             {filters.amenities && filters.amenities.length > 0 && (
-              <span className="w-4 h-4 rounded-full bg-[#101828] text-white text-[10px] flex items-center justify-center">
+              <span className="w-4 h-4 rounded-full bg-slate-900 text-white text-[10px] flex items-center justify-center">
                 {filters.amenities.length}
               </span>
             )}
           </button>
 
-          {/* Desktop View Switcher */}
-          <div className="flex items-center bg-[#F8FAFC] p-1 rounded-xl border border-[#E2E8F0] text-xs">
+          {/* Desktop View Switcher (List / Split / Map) */}
+          <div className="hidden sm:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
             <button
+              type="button"
               onClick={() => setViewMode('list')}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-medium transition-all ${
                 viewMode === 'list'
-                  ? 'bg-white text-[#101828] font-bold shadow-xs'
-                  : 'text-[#667085] hover:text-[#101828]'
+                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <List className="w-4 h-4" />
               <span>List</span>
             </button>
             <button
+              type="button"
               onClick={() => setViewMode('split')}
               className={`hidden md:flex items-center gap-1 px-3 py-1.5 rounded-lg font-medium transition-all ${
                 viewMode === 'split'
-                  ? 'bg-white text-[#101828] font-bold shadow-xs'
-                  : 'text-[#667085] hover:text-[#101828]'
+                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <MapPin className="w-4 h-4" />
-              <span>Split Map</span>
+              <span>Split</span>
             </button>
             <button
+              type="button"
               onClick={() => setViewMode('map')}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-medium transition-all ${
                 viewMode === 'map'
-                  ? 'bg-white text-[#101828] font-bold shadow-xs'
-                  : 'text-[#667085] hover:text-[#101828]'
+                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <Map className="w-4 h-4" />
@@ -209,41 +428,65 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         </div>
       </div>
 
-      {/* GPS Active Proximity Notice */}
-      {userLocation.source === 'gps' && (
-        <div className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-[#101828] text-white border border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs animate-in fade-in-50">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-[#F59E0B]/20 text-[#F59E0B] flex items-center justify-center shrink-0 border border-[#F59E0B]/30">
-              <Navigation className="w-4 h-4" />
-            </div>
+      {/* ========================================================================= */}
+      {/* 2. ADVISORY / FALLBACK BANNERS                                            */}
+      {/* ========================================================================= */}
+
+      {/* GPS Error / Denial Fallback Banner */}
+      {gpsError && !isDetectingLocation && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs leading-relaxed animate-in fade-in-50">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
             <div>
-              <div className="font-bold text-sm text-white flex items-center gap-2">
-                <span>Showing the closest options to your location</span>
-                <span className="text-[10px] font-semibold text-[#F59E0B] bg-[#F59E0B]/15 px-2 py-0.5 rounded-full border border-[#F59E0B]/20">
-                  GPS Active
-                </span>
-              </div>
-              <p className="text-[#94A3B8] text-xs mt-0.5">
-                {userLocation.displayName || `Near ${selectedLocality}, Prayagraj`} • Ranked by true walking distance without hard cutoffs
+              <span className="font-bold text-sm block">We couldn't detect your exact location</span>
+              <p className="mt-0.5 text-amber-800">
+                {gpsError} Showing default rooms in {currentLocality}, {currentCity}. You can choose your location manually or try again.
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setIsChangeLocationOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              Choose Location Manually
+            </button>
+            <button
+              type="button"
+              onClick={triggerGpsDiscovery}
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-amber-900 font-semibold border border-amber-300 transition-colors cursor-pointer"
+            >
+              Retry GPS
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Low Accuracy Warning (accuracy > 300m) */}
+      {isLowAccuracy && !gpsError && locationMode === 'gps' && (
+        <div className="mb-6 p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-900 flex items-center justify-between gap-3 text-xs animate-in fade-in-50">
+          <div className="flex items-center gap-2.5">
+            <Compass className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>
+              Low GPS accuracy (~{Math.round(gpsAccuracy || 0)}m). If the detected neighborhood isn't exact, you can tap{' '}
+              <strong>Change Location</strong>.
+            </span>
+          </div>
           <button
             type="button"
-            onClick={() => {
-              clearLocation();
-            }}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#94A3B8] hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+            onClick={() => setIsChangeLocationOpen(true)}
+            className="text-blue-700 font-bold hover:underline shrink-0 cursor-pointer"
           >
-            Clear GPS
+            Refine Area →
           </button>
         </div>
       )}
 
       {/* Low-Inventory Auto-Expansion Banner */}
       {searchResult?.is_expanded && searchResult.expanded_message && (
-        <div className="mb-6 p-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] flex items-start gap-3 text-xs leading-relaxed animate-in fade-in-50">
-          <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#D97706]" />
+        <div className="mb-6 p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 text-amber-900 flex items-start gap-3 text-xs leading-relaxed animate-in fade-in-50">
+          <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
           <div>
             <span className="font-bold">Proximity Search Auto-Expansion</span>
             <p className="mt-0.5">{searchResult.expanded_message}</p>
@@ -251,7 +494,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         </div>
       )}
 
-      {/* Main Content Layout */}
+      {/* ========================================================================= */}
+      {/* 3. MAIN CONTENT LAYOUT                                                    */}
+      {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left Desktop Filter Sidebar */}
         <div className="hidden lg:block lg:col-span-1">
@@ -264,10 +509,20 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         </div>
 
         {/* Right Listings / Map Area */}
-        <div className={`${viewMode === 'split' ? 'lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6' : 'lg:col-span-3'}`}>
+        <div
+          className={`${
+            viewMode === 'split'
+              ? 'lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6'
+              : 'lg:col-span-3'
+          }`}
+        >
           {/* MAP CONTAINER (If Split or Full Map mode) */}
           {(viewMode === 'split' || viewMode === 'map') && (
-            <div className={`${viewMode === 'split' ? 'sticky top-24 h-[600px]' : 'h-[650px] mb-6'}`}>
+            <div
+              className={`${
+                viewMode === 'split' ? 'sticky top-24 h-[600px]' : 'h-[650px] mb-6'
+              }`}
+            >
               <PropertyMap
                 properties={searchResult?.properties || []}
                 centerCoordinates={searchResult?.reference_coordinates}
@@ -280,14 +535,31 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           {/* LISTINGS CONTAINER */}
           {viewMode !== 'map' && (
             <div className="space-y-8">
-              {loading ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 animate-pulse">
-                  {[1, 2, 3, 4].map((n) => (
-                    <div key={n} className="h-64 bg-slate-200 rounded-2xl" />
-                  ))}
+              {/* Subtle Loading Skeletons */}
+              {isDetectingLocation || loading ? (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/60 flex items-center justify-between text-xs text-slate-500 animate-pulse">
+                    <div className="flex items-center gap-2">
+                      <Navigation className="w-4 h-4 text-amber-600 animate-spin" />
+                      <span className="font-semibold text-slate-800">
+                        {isDetectingLocation ? 'Detecting your location...' : 'Searching rooms nearby...'}
+                      </span>
+                    </div>
+                    <span>Checking rooms within {searchRadius} km</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 animate-pulse">
+                    {[1, 2, 3, 4, 5, 6].map((n) => (
+                      <div
+                        key={n}
+                        className="h-72 bg-slate-100 rounded-3xl border border-slate-200/60"
+                      />
+                    ))}
+                  </div>
                 </div>
-              ) : error ? (
-                <div className="bg-red-50/80 border border-red-200 rounded-2xl p-8 text-center max-w-lg mx-auto">
+              ) : searchError ? (
+                /* Search Error State */
+                <div className="bg-red-50/80 border border-red-200 rounded-3xl p-8 text-center max-w-lg mx-auto">
                   <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-3">
                     <AlertTriangle className="w-6 h-6" />
                   </div>
@@ -295,7 +567,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                     We couldn't load rooms right now
                   </h4>
                   <p className="text-xs text-red-700 max-w-sm mx-auto mb-5 leading-relaxed">
-                    {error}
+                    {searchError}
                   </p>
                   <div className="flex items-center justify-center gap-2">
                     <Button
@@ -304,12 +576,12 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                       onClick={executeSearch}
                       icon={<RotateCw className="w-4 h-4" />}
                     >
-                      Retry Connection
+                      Retry Search
                     </Button>
                   </div>
                 </div>
               ) : searchResult && searchResult.properties.length > 0 ? (
-                // Group by continuous proximity presentation buckets
+                /* Group by Proximity Presentation Buckets (Nearest -> Farthest) */
                 bucketKeys.map((bucketKey) => {
                   const bucketProperties = searchResult.buckets[bucketKey];
                   if (!bucketProperties || bucketProperties.length === 0) return null;
@@ -318,16 +590,16 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                   return (
                     <div key={bucketKey} className="space-y-4">
                       {/* Bucket Section Header */}
-                      <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                         <div>
-                          <h3 className="font-bold text-base text-[#101828] font-heading flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-[#F59E0B]" />
+                          <h3 className="font-bold text-base text-slate-900 font-heading flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                             {bucketMeta.title}
                           </h3>
-                          <p className="text-xs text-[#667085]">{bucketMeta.subtitle}</p>
+                          <p className="text-xs text-slate-500">{bucketMeta.subtitle}</p>
                         </div>
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#F1F5F9] text-[#334155]">
-                          {bucketProperties.length} options
+                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                          {bucketProperties.length} room{bucketProperties.length === 1 ? '' : 's'}
                         </span>
                       </div>
 
@@ -351,38 +623,80 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                   );
                 })
               ) : (
-                /* Empty state with listing prompt */
-                <div className="bg-white rounded-2xl border border-[#E5E7EB] p-8 text-center max-w-lg mx-auto">
-                  <div className="w-12 h-12 rounded-full bg-[#FFFBEB] text-[#D97706] flex items-center justify-center mx-auto mb-3">
-                    <MapPin className="w-6 h-6" />
+                /* Empty state with Radius Expansion action */
+                <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center max-w-lg mx-auto shadow-xs">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4 border border-amber-200/60">
+                    <MapPin className="w-7 h-7" />
                   </div>
-                  <h4 className="text-base font-bold text-[#111827] font-heading mb-1">
-                    No rooms listed in {selectedLocality || 'this location'} yet
+                  <h4 className="text-lg font-bold text-slate-900 font-heading mb-1.5">
+                    No rooms found within {searchRadius} km
                   </h4>
-                  <p className="text-xs text-[#667085] max-w-sm mx-auto mb-5">
-                    {searchResult?.expanded_message ||
-                      'Be the first member to list a room, PG, flat, or hostel here. You can also reset filters to explore more areas.'}
+                  <p className="text-xs text-slate-600 max-w-sm mx-auto mb-6 leading-relaxed">
+                    There are currently no active listings within {searchRadius} km of{' '}
+                    <strong>{currentLocality}, {currentCity}</strong>. You can expand your search radius to find nearby properties in neighboring sectors.
                   </p>
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <Button variant="primary" size="sm" onClick={handleResetFilters}>
-                      Reset Search Filters
-                    </Button>
-                    {onNavigate && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onNavigate('add-property')}
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                    {searchRadius < 25 && (
+                      <button
+                        type="button"
+                        onClick={handleExpandRadius}
+                        className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
                       >
-                        + List a Property Here
-                      </Button>
+                        <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Expand Search to {searchRadius <= 5 ? '10 km' : searchRadius <= 10 ? '15 km' : '25 km'}</span>
+                      </button>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => setIsChangeLocationOpen(true)}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs border border-slate-200 transition-all cursor-pointer"
+                    >
+                      Change Area
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs border border-slate-200 transition-all cursor-pointer"
+                    >
+                      Reset Filters
+                    </button>
                   </div>
+
+                  {onNavigate && (
+                    <div className="mt-6 pt-5 border-t border-slate-100">
+                      <p className="text-xs text-slate-500 mb-2">Are you a property owner in this area?</p>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('add-property')}
+                        className="text-xs font-bold text-amber-700 hover:text-amber-800 inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>List your room or hostel here</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* 4. MODALS & BOTTOM SHEETS                                                 */}
+      {/* ========================================================================= */}
+
+      {/* Change Location Modal (Select City + Predefined Area or Custom Input + Search Here) */}
+      <ChangeLocationModal
+        isOpen={isChangeLocationOpen}
+        onClose={() => setIsChangeLocationOpen(false)}
+        currentCity={currentCity}
+        currentLocality={currentLocality}
+        onApplyLocation={handleApplyManualLocation}
+      />
 
       {/* Mobile Filters Bottom Sheet */}
       <BottomSheet
@@ -396,7 +710,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           onReset={handleResetFilters}
           totalResults={searchResult?.total_found || 0}
         />
-        <div className="pt-4 mt-4 border-t border-[#F1F5F9]">
+        <div className="pt-4 mt-4 border-t border-slate-100">
           <Button
             variant="primary"
             fullWidth
