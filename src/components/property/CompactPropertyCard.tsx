@@ -15,7 +15,7 @@ interface CompactPropertyCardProps {
   onSelect: (property: Property) => void;
 }
 
-export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = ({
+export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = React.memo(({
   property,
   onSelect,
 }) => {
@@ -64,12 +64,12 @@ export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = ({
         {/* Top-Left Badge (Verified or Gender) */}
         <div className="absolute top-2 left-2 pointer-events-none">
           {property.is_verified ? (
-            <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/90 text-white font-medium shadow-xs backdrop-blur-xs">
+            <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-emerald-600 md:bg-emerald-500/90 text-white font-medium shadow-xs max-md:backdrop-blur-none md:backdrop-blur-xs">
               <ShieldCheck className="w-3 h-3 text-white" />
               Verified
             </span>
           ) : (
-            <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-slate-800/90 text-slate-200 font-medium shadow-xs backdrop-blur-xs">
+            <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 font-medium shadow-xs max-md:backdrop-blur-none md:backdrop-blur-xs">
               {genderTag}
             </span>
           )}
@@ -82,7 +82,7 @@ export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = ({
             e.stopPropagation();
             toggleSave(property);
           }}
-          className="absolute top-2 right-2 p-1.5 rounded-full bg-black/40 backdrop-blur-sm text-white hover:bg-black/60 transition active:scale-90 pointer-events-auto"
+          className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 md:bg-black/40 text-white hover:bg-black/80 transition active:scale-90 pointer-events-auto max-md:backdrop-blur-none md:backdrop-blur-sm"
           title={saved ? 'Remove from saved' : 'Save property'}
           aria-label={saved ? 'Remove from saved' : 'Save property'}
         >
@@ -160,4 +160,4 @@ export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = ({
       </div>
     </div>
   );
-};
+});

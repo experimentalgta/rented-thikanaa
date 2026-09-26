@@ -15,7 +15,7 @@ interface MobileNavProps {
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate }) => {
-  const { unreadCount, setIsChatModalOpen } = useChat();
+  const { unreadCount, isChatModalOpen, setIsChatModalOpen } = useChat();
   const { requireAuth } = useAuth();
 
   const isDashboard =
@@ -35,24 +35,30 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
         {/* 1. Home */}
         <button
           type="button"
-          onClick={() => onNavigate('home')}
+          onClick={() => {
+            setIsChatModalOpen(false);
+            onNavigate('home');
+          }}
           className={`flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
-            currentView === 'home' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            !isChatModalOpen && currentView === 'home' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Home className={`w-5 h-5 ${currentView === 'home' ? 'text-[#F59E0B]' : ''}`} />
+          <Home className={`w-5 h-5 ${!isChatModalOpen && currentView === 'home' ? 'text-[#F59E0B]' : ''}`} />
           <span className="text-[10px] mt-0.5">Home</span>
         </button>
 
         {/* 2. Search */}
         <button
           type="button"
-          onClick={() => onNavigate('search')}
+          onClick={() => {
+            setIsChatModalOpen(false);
+            onNavigate('search');
+          }}
           className={`flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
-            currentView === 'search' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            !isChatModalOpen && currentView === 'search' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Search className={`w-5 h-5 ${currentView === 'search' ? 'text-[#F59E0B]' : ''}`} />
+          <Search className={`w-5 h-5 ${!isChatModalOpen && currentView === 'search' ? 'text-[#F59E0B]' : ''}`} />
           <span className="text-[10px] mt-0.5">Search</span>
         </button>
 
@@ -61,6 +67,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
           <button
             type="button"
             onClick={() => {
+              setIsChatModalOpen(false);
               if (
                 requireAuth('Sign in with Google to create and publish your room or PG listing.', {
                   type: 'add-property',
@@ -72,14 +79,14 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
             aria-label="List a Room"
             title="List a Room"
             className={`w-12 h-12 rounded-full bg-[#F59E0B] hover:bg-[#D97706] active:scale-95 text-[#101828] flex items-center justify-center shadow-lg shadow-amber-500/30 border-4 border-slate-900 transition-all duration-200 cursor-pointer ${
-              isListingActive ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''
+              !isChatModalOpen && isListingActive ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''
             }`}
           >
             <Plus className="w-6 h-6 stroke-[3]" />
           </button>
           <span
             className={`text-[10px] mt-0.5 font-bold transition-colors ${
-              isListingActive ? 'text-amber-400' : 'text-slate-300'
+              !isChatModalOpen && isListingActive ? 'text-amber-400' : 'text-slate-300'
             }`}
           >
             List
@@ -98,9 +105,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
               setIsChatModalOpen(true);
             }
           }}
-          className="relative flex flex-col items-center justify-center w-14 h-full text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+          className={`relative flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
+            isChatModalOpen ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+          }`}
         >
-          <MessageSquare className="w-5 h-5" />
+          <MessageSquare className={`w-5 h-5 ${isChatModalOpen ? 'text-[#F59E0B]' : ''}`} />
           {unreadCount > 0 && (
             <span className="absolute top-1 right-3 w-2 h-2 bg-[#F97316] rounded-full ring-2 ring-slate-900" />
           )}
@@ -111,6 +120,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
         <button
           type="button"
           onClick={() => {
+            setIsChatModalOpen(false);
             if (
               requireAuth('Sign in with Google to view your profile and student dashboard.', {
                 type: 'dashboard',
@@ -120,10 +130,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
             }
           }}
           className={`flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${
-            isDashboard ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            !isChatModalOpen && isDashboard ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <User className={`w-5 h-5 ${isDashboard ? 'text-[#F59E0B]' : ''}`} />
+          <User className={`w-5 h-5 ${!isChatModalOpen && isDashboard ? 'text-[#F59E0B]' : ''}`} />
           <span className="text-[10px] mt-0.5">Dashboard</span>
         </button>
       </div>

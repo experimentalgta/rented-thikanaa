@@ -43,6 +43,15 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
+
+  // Defer heavy Leaflet map instantiation until after initial transition settles (preserves 60 FPS)
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsMapReady(true);
+    }, 280);
+    return () => clearTimeout(timer);
+  }, []);
 
   const saved = isSaved(property.id);
 
@@ -144,18 +153,18 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
               />
               <div className="absolute top-3 left-3 flex items-center gap-2">
                 {property.is_verified && (
-                  <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-white/95 text-[#101828] shadow-xs backdrop-blur-xs">
+                  <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-white/95 text-[#101828] shadow-xs max-md:bg-white md:backdrop-blur-xs">
                     <ShieldCheck className="w-4 h-4 text-[#F59E0B]" />
                     Platform Verified
                   </span>
                 )}
                 {property.is_demo && (
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-900/80 text-white backdrop-blur-xs">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-900/90 text-white max-md:bg-slate-900 md:backdrop-blur-xs">
                     Demo Fictional Record
                   </span>
                 )}
               </div>
-              <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-xs text-white text-xs px-2.5 py-1 rounded-lg">
+              <div className="absolute bottom-3 right-3 bg-black/75 max-md:bg-black/85 md:backdrop-blur-xs text-white text-xs px-2.5 py-1 rounded-lg">
                 {activeImageIndex + 1} / {images.length} Photos
               </div>
             </div>
@@ -417,14 +426,21 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
               </div>
             )}
 
-            <PropertyMap
-              properties={[property]}
-              centerCoordinates={{
-                latitude: property.display_latitude || 25.4563,
-                longitude: property.display_longitude || 81.8546,
-              }}
-              className="h-64 w-full rounded-2xl"
-            />
+            {isMapReady ? (
+              <PropertyMap
+                properties={[property]}
+                centerCoordinates={{
+                  latitude: property.display_latitude || 25.4563,
+                  longitude: property.display_longitude || 81.8546,
+                }}
+                className="h-64 w-full rounded-2xl"
+              />
+            ) : (
+              <div className="h-64 w-full rounded-2xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center text-slate-400 text-xs gap-2">
+                <MapPin className="w-5 h-5 text-amber-500 animate-pulse" />
+                <span>Loading vicinity map...</span>
+              </div>
+            )}
           </div>
         </div>
 

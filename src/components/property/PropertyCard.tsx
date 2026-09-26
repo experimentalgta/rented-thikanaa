@@ -21,7 +21,7 @@ interface PropertyCardProps {
   layout?: 'grid' | 'horizontal';
 }
 
-export const PropertyCard: React.FC<PropertyCardProps> = ({
+export const PropertyCard: React.FC<PropertyCardProps> = React.memo(({
   property,
   onSelect,
   layout = 'grid',
@@ -73,7 +73,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
         <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
           <div className="flex flex-wrap items-center gap-1.5">
             {property.is_verified && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white/95 text-[#101828] shadow-xs backdrop-blur-xs">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white text-[#101828] shadow-xs max-md:backdrop-blur-none md:bg-white/95 md:backdrop-blur-xs">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#F59E0B]" />
                 Verified
               </span>
@@ -84,7 +84,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
               </span>
             )}
             {property.is_demo && (
-              <span className="inline-flex items-center text-[9px] font-medium px-1.5 py-0.5 rounded bg-slate-800/80 text-white backdrop-blur-xs">
+              <span className="inline-flex items-center text-[9px] font-medium px-1.5 py-0.5 rounded bg-slate-800 text-white max-md:backdrop-blur-none md:bg-slate-800/80 md:backdrop-blur-xs">
                 Demo
               </span>
             )}
@@ -189,4 +189,4 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
       </div>
     </div>
   );
-};
+});

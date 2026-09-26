@@ -24,7 +24,12 @@ import { roommateRepository } from './services/roommateRepository';
 
 const MainApp: React.FC = () => {
   const { isAuthenticated, requireAuth, isSuperAdmin, consumePendingAction } = useAuth();
-  const { openChatWithContext } = useChat();
+  const { openChatWithContext, isChatModalOpen, setIsChatModalOpen } = useChat();
+
+  const isChatModalOpenRef = useRef(isChatModalOpen);
+  useEffect(() => {
+    isChatModalOpenRef.current = isChatModalOpen;
+  }, [isChatModalOpen]);
 
   const [isCallbackRoute, setIsCallbackRoute] = useState(() => {
     return (
@@ -121,6 +126,12 @@ const MainApp: React.FC = () => {
 
       if (isMobile) {
         // --- MOBILE POPSTATE INTERCEPTION (< md) ---
+        // If chat modal is open on mobile, close chat modal first
+        if (isChatModalOpenRef.current) {
+          setIsChatModalOpen(false);
+          return;
+        }
+
         // When user presses phone physical back or gesture swipes back:
         setIsMobileDetailOpen(false);
         setSelectedProperty(null);
@@ -248,6 +259,7 @@ const MainApp: React.FC = () => {
   }, []);
 
   const handleNavigate = (view: string, param?: any) => {
+    setIsChatModalOpen(false);
     if (isMobileDetailOpen) {
       setIsMobileDetailOpen(false);
       document.body.style.overflow = '';
@@ -347,7 +359,7 @@ const MainApp: React.FC = () => {
     setCurrentView('search');
   };
 
-  const handleSelectProperty = (property: Property) => {
+  const handleSelectProperty = useCallback((property: Property) => {
     setSelectedProperty(property);
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
@@ -369,21 +381,23 @@ const MainApp: React.FC = () => {
       setIsMobileDetailOpen(true);
     } else {
       // --- DESKTOP ROUTE FLOW (>= md) ---
-      const previousView = currentView !== 'property-detail' ? currentView : 'home';
-      sessionStorage.setItem(`scroll_${previousView}`, String(window.scrollY));
+      setCurrentView((prevView) => {
+        const previousView = prevView !== 'property-detail' ? prevView : 'home';
+        sessionStorage.setItem(`scroll_${previousView}`, String(window.scrollY));
 
-      const url = new URL(window.location.href);
-      url.searchParams.set('roomId', property.id);
-      window.history.pushState(
-        { view: 'property-detail', roomId: property.id, fromView: previousView },
-        '',
-        url.toString()
-      );
+        const url = new URL(window.location.href);
+        url.searchParams.set('roomId', property.id);
+        window.history.pushState(
+          { view: 'property-detail', roomId: property.id, fromView: previousView },
+          '',
+          url.toString()
+        );
 
-      setCurrentView('property-detail');
-      window.scrollTo({ top: 0, behavior: 'instant' });
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        return 'property-detail';
+      });
     }
-  };
+  }, []);
 
   return (
     <div className="w-full max-w-full overflow-x-hidden relative min-h-screen flex flex-col bg-[#F8FAFC] text-[#111827]">
@@ -459,7 +473,7 @@ const MainApp: React.FC = () => {
       {/* MOBILE-ONLY FULL-SCREEN ROOM DETAIL SHEET (< md) */}
       {isMobileDetailOpen && selectedProperty && (
         <div
-          className="md:hidden fixed inset-0 z-[60] bg-[#F8FAFC] overflow-y-auto overscroll-contain flex flex-col"
+          className="md:hidden fixed inset-0 z-[60] bg-[#F8FAFC] overflow-y-auto overscroll-contain flex flex-col animate-sheet-slide-in transform-gpu will-change-[transform,opacity]"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           <PropertyDetailPage
