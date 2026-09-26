@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { SavedProvider } from './context/SavedContext';
 import { ChatProvider, useChat } from './context/ChatContext';
 import { LocationProvider } from './context/LocationContext';
+import { NearbyRoomsProvider } from './context/NearbyRoomsContext';
 import { Header } from './components/layout/Header';
 import { MobileNav } from './components/layout/MobileNav';
 import { Footer } from './components/layout/Footer';
@@ -525,7 +526,9 @@ export default function App() {
       <SavedProvider>
         <ChatProvider>
           <LocationProvider>
-            <MainApp />
+            <NearbyRoomsProvider>
+              <MainApp />
+            </NearbyRoomsProvider>
           </LocationProvider>
         </ChatProvider>
       </SavedProvider>

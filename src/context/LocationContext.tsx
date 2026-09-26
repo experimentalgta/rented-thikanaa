@@ -110,6 +110,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return null;
     }
 
+    if (import.meta.env.DEV) {
+      console.log('[Location] GPS request');
+    }
+
     setIsDetecting(true);
     setError(null);
 
@@ -154,6 +158,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.latitude && parsed.longitude) {
+          if (import.meta.env.DEV) {
+            console.log('[Location] Using cached location', parsed.locality || parsed.city);
+          }
           return;
         }
       }

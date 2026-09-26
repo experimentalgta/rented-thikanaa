@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   SlidersHorizontal,
   Map,
@@ -24,12 +24,12 @@ import {
   SearchResultSummary,
   ProximityBucket
 } from '../types';
-import { propertyRepository, DEFAULT_SEARCH_RADIUS_KM } from '../services/propertyRepository';
-import { locationService } from '../services/location/locationService';
+import { DEFAULT_SEARCH_RADIUS_KM } from '../services/propertyRepository';
 import { locationRepository } from '../services/locationRepository';
 import { PROXIMITY_BUCKET_LABELS } from '../utils/geo';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from '../context/LocationContext';
+import { useNearbyRooms } from '../context/NearbyRoomsContext';
 
 interface SearchPageProps {
   initialLocality?: string;
@@ -45,7 +45,15 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   onNavigate,
 }) => {
   const { currentUser } = useAuth();
-  const { userLocation, setManualLocation, isDetecting: isContextDetecting } = useLocation();
+  const { userLocation, setManualLocation, isDetecting: isContextDetecting, detectCurrentLocation } = useLocation();
+  const {
+    cachedSummary,
+    isLoadingRooms,
+    roomsError,
+    fetchNearbyRooms,
+    refreshNearbyRooms,
+    getFilteredRooms,
+  } = useNearbyRooms();
 
   // Location search mode: 'gps' (automatic discovery) or 'manual' (user chosen)
   const [locationMode, setLocationMode] = useState<'gps' | 'manual'>(() => {
@@ -69,11 +77,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   });
 
   // GPS Telemetry & Status
-  const [isDetectingLocation, setIsDetectingLocation] = useState<boolean>(() => {
-    if (initialLocality) return false;
-    if (userLocation.latitude && userLocation.longitude) return false;
-    return Boolean(isContextDetecting);
-  });
+  const [isDetectingLocation, setIsDetectingLocation] = useState<boolean>(false);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(userLocation.accuracy || null);
   const [isLowAccuracy, setIsLowAccuracy] = useState<boolean>(Boolean(userLocation.isLowAccuracy));
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -98,149 +102,16 @@ export const SearchPage: React.FC<SearchPageProps> = ({
     verified_only: false,
   });
 
-  const [searchResult, setSearchResult] = useState<SearchResultSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [searchError, setSearchError] = useState<string | null>(null);
-
-  // Ref to track if GPS has already run on initial mount
-  const hasTriggeredInitialGpsRef = useRef(false);
-
   /**
-   * Request fresh GPS coordinates and perform reverse geocoding.
-   * Uses high accuracy, timeout: 20000, maximumAge: 0.
+   * Synchronous, instant in-memory computation of filtered rooms from cache.
+   * Frame-0 rendering on navigation: 0ms delay, 0 network requests!
    */
-  const triggerGpsDiscovery = useCallback(async () => {
-    setIsDetectingLocation(true);
-    setGpsError(null);
-    setLocationMode('gps');
-    setSearchRadius(DEFAULT_SEARCH_RADIUS_KM);
+  const searchResult = useMemo(() => {
+    return getFilteredRooms(filters, searchRadius);
+  }, [getFilteredRooms, filters, searchRadius]);
 
-    try {
-      const detected = await locationService.detectLocation();
-      setCurrentCity(detected.city);
-      setCurrentLocality(detected.locality);
-      setCurrentCoords({ lat: detected.latitude, lng: detected.longitude });
-      setGpsAccuracy(detected.accuracy);
-      setIsLowAccuracy(detected.isLowAccuracy);
-      setLocationMode('gps');
-
-      // Update location context
-      setManualLocation(
-        detected.locality,
-        detected.latitude,
-        detected.longitude,
-        detected.city,
-        detected.state,
-        'gps',
-        detected.district
-      );
-    } catch (err: any) {
-      console.warn('GPS detection failed, falling back to default location:', err);
-      setGpsError(err.message || "We couldn't detect your location.");
-
-      // Gracefully fall back to Prayagraj / Civil Lines if no coordinates exist
-      setCurrentCity((prev) => prev || 'Prayagraj');
-      setCurrentLocality((prev) => prev || 'Civil Lines');
-      setCurrentCoords((prev) => prev || { lat: 25.4563, lng: 81.8546 });
-      setLocationMode('manual');
-    } finally {
-      setIsDetectingLocation(false);
-    }
-  }, [setManualLocation]);
-
-  /**
-   * Initial Mount & Context Location Sync Flow:
-   * - If an explicit initialLocality was passed in, respect it (manual mode).
-   * - If userLocation is already available (from LocationContext / auto-detect on site load), USE IT directly! Do NOT re-trigger GPS.
-   * - Only if no location exists in context AND context is not actively detecting, trigger GPS discovery once.
-   */
-  useEffect(() => {
-    if (initialLocality) {
-      setLocationMode('manual');
-      setCurrentLocality(initialLocality);
-      const found = locationRepository.getLocalityBySlugOrName(initialLocality);
-      if (found) {
-        setCurrentCity(found.city_name);
-        setCurrentCoords({ lat: found.latitude, lng: found.longitude });
-      }
-      setIsDetectingLocation(false);
-      return;
-    }
-
-    if (userLocation.latitude && userLocation.longitude && userLocation.locality) {
-      setLocationMode(userLocation.source === 'manual' ? 'manual' : 'gps');
-      setCurrentCity(userLocation.city || 'Prayagraj');
-      setCurrentLocality(userLocation.locality);
-      setCurrentCoords({ lat: userLocation.latitude, lng: userLocation.longitude });
-      setGpsAccuracy(userLocation.accuracy || null);
-      setIsLowAccuracy(Boolean(userLocation.isLowAccuracy));
-      setIsDetectingLocation(false);
-      return;
-    }
-
-    if (isContextDetecting) {
-      setIsDetectingLocation(true);
-      return;
-    }
-
-    // Only if context has no location at all and is not actively detecting, trigger GPS discovery once
-    if (!hasTriggeredInitialGpsRef.current) {
-      hasTriggeredInitialGpsRef.current = true;
-      triggerGpsDiscovery();
-    }
-  }, [
-    initialLocality,
-    userLocation.latitude,
-    userLocation.longitude,
-    userLocation.locality,
-    userLocation.city,
-    userLocation.source,
-    userLocation.accuracy,
-    userLocation.isLowAccuracy,
-    isContextDetecting,
-    triggerGpsDiscovery,
-  ]);
-
-  /**
-   * Perform room search whenever target location, radius, or filters change.
-   */
-  const executeSearch = useCallback(async () => {
-    setLoading(true);
-    setSearchError(null);
-
-    try {
-      const searchParams: PropertySearchParams = {
-        ...filters,
-        city: currentCity,
-        locality: currentLocality,
-        reference_lat: currentCoords?.lat,
-        reference_lng: currentCoords?.lng,
-        radius_km: searchRadius,
-        location_source: locationMode === 'gps' ? 'gps' : 'manual',
-        sort_by: filters.sort_by || 'nearest',
-      };
-
-      const summary = await propertyRepository.searchProperties(
-        searchParams,
-        currentUser?.id
-      );
-
-      setSearchResult(summary);
-    } catch (e: any) {
-      console.error('Search query failed:', e);
-      setSearchError(e.message || 'We could not load rooms right now. Please try again.');
-      setSearchResult(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, currentCity, currentLocality, currentCoords, searchRadius, locationMode, currentUser]);
-
-  useEffect(() => {
-    // Only execute if not actively waiting on initial GPS detection
-    if (!isDetectingLocation) {
-      executeSearch();
-    }
-  }, [executeSearch, isDetectingLocation]);
+  const loading = isLoadingRooms && !searchResult;
+  const searchError = roomsError;
 
   /**
    * Handle user manual location change from ChangeLocationModal.
@@ -270,16 +141,116 @@ export const SearchPage: React.FC<SearchPageProps> = ({
       undefined,
       'manual'
     );
+
+    // Fetch rooms for this new manual locality
+    fetchNearbyRooms({
+      force: true,
+      locality: selected.locality,
+      city: selected.city,
+      lat: selected.lat,
+      lng: selected.lng,
+      radius_km: DEFAULT_SEARCH_RADIUS_KM,
+    });
   };
+
+  /**
+   * Explicit GPS Discovery & Re-trace trigger:
+   * Called ONLY when user explicitly taps "📍 My Location" or "Retry GPS".
+   */
+  const handleTriggerGpsDiscovery = async () => {
+    setIsDetectingLocation(true);
+    setGpsError(null);
+    try {
+      await refreshNearbyRooms({ forceGps: true });
+      setLocationMode('gps');
+    } catch (err: any) {
+      console.warn('GPS detection failed, falling back to default location:', err);
+      setGpsError(err.message || "We couldn't detect your location.");
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  };
+
+  /**
+   * Initial Mount & Context Location Sync Flow:
+   * - If an explicit initialLocality was passed in, respect it (manual mode).
+   * - If userLocation is already available, sync local labels and check cache.
+   * - DOES NOT request GPS if cached location exists!
+   */
+  useEffect(() => {
+    if (initialLocality) {
+      setLocationMode('manual');
+      setCurrentLocality(initialLocality);
+      const found = locationRepository.getLocalityBySlugOrName(initialLocality);
+      if (found) {
+        setCurrentCity(found.city_name);
+        setCurrentCoords({ lat: found.latitude, lng: found.longitude });
+      }
+      fetchNearbyRooms({
+        force: true,
+        locality: initialLocality,
+        city: found?.city_name || currentCity,
+        lat: found?.latitude,
+        lng: found?.longitude,
+      });
+      return;
+    }
+
+    if (userLocation.latitude && userLocation.longitude && userLocation.locality) {
+      setCurrentCity(userLocation.city || 'Prayagraj');
+      setCurrentLocality(userLocation.locality);
+      setCurrentCoords({ lat: userLocation.latitude, lng: userLocation.longitude });
+      setLocationMode(userLocation.source === 'manual' ? 'manual' : 'gps');
+      setGpsAccuracy(userLocation.accuracy || null);
+      setIsLowAccuracy(Boolean(userLocation.isLowAccuracy));
+
+      // If no rooms are in cache yet, fetch once!
+      if (!cachedSummary && !isLoadingRooms) {
+        fetchNearbyRooms({
+          lat: userLocation.latitude,
+          lng: userLocation.longitude,
+          locality: userLocation.locality,
+          city: userLocation.city,
+        });
+      }
+      return;
+    }
+
+    // Only if context has no coordinates and is not detecting, trigger cold-start discovery
+    if (!userLocation.latitude && !isContextDetecting) {
+      detectCurrentLocation().catch((err) => {
+        console.warn('Initial GPS detection failed:', err);
+      });
+    }
+  }, [
+    initialLocality,
+    userLocation.latitude,
+    userLocation.longitude,
+    userLocation.locality,
+    userLocation.city,
+    userLocation.source,
+    userLocation.accuracy,
+    userLocation.isLowAccuracy,
+    isContextDetecting,
+    cachedSummary,
+    isLoadingRooms,
+    fetchNearbyRooms,
+    detectCurrentLocation,
+  ]);
 
   /**
    * Handle Radius Expansion when zero rooms are found in 5 km.
    */
   const handleExpandRadius = () => {
-    setSearchRadius((prev) => {
-      if (prev <= 5) return 10;
-      if (prev <= 10) return 15;
-      return 25;
+    const nextRadius = searchRadius <= 5 ? 10 : searchRadius <= 10 ? 15 : 25;
+    setSearchRadius(nextRadius);
+    fetchNearbyRooms({
+      force: true,
+      locality: currentLocality,
+      city: currentCity,
+      lat: currentCoords?.lat,
+      lng: currentCoords?.lng,
+      radius_km: nextRadius,
     });
   };
 
@@ -398,7 +369,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
             {/* Re-trace GPS Discovery button (allows user to re-trace GPS location anytime) */}
             <button
               type="button"
-              onClick={triggerGpsDiscovery}
+              onClick={handleTriggerGpsDiscovery}
               disabled={isDetectingLocation}
               title="Trace current GPS location"
               className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 active:scale-98 text-amber-900 border border-amber-300 transition-all cursor-pointer disabled:opacity-60 shrink-0"
@@ -492,7 +463,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
             </button>
             <button
               type="button"
-              onClick={triggerGpsDiscovery}
+              onClick={handleTriggerGpsDiscovery}
               className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-amber-900 font-semibold border border-amber-300 transition-colors cursor-pointer"
             >
               Retry GPS
@@ -611,7 +582,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={executeSearch}
+                      onClick={() => refreshNearbyRooms()}
                       icon={<RotateCw className="w-4 h-4" />}
                     >
                       Retry Search
@@ -763,7 +734,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         currentCity={currentCity}
         currentLocality={currentLocality}
         onApplyLocation={handleApplyManualLocation}
-        onUseGps={triggerGpsDiscovery}
+        onUseGps={handleTriggerGpsDiscovery}
       />
 
       {/* Mobile Filters Bottom Sheet */}
