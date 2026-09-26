@@ -16,6 +16,7 @@ import { LocationSelector } from '../components/search/LocationSelector';
 import { LocationPromptBanner } from '../components/search/LocationPromptBanner';
 import { useLocation } from '../context/LocationContext';
 import { PropertyCard } from '../components/property/PropertyCard';
+import { CompactPropertyCard } from '../components/property/CompactPropertyCard';
 import { Property, StudentProfile } from '../types';
 import { INDIAN_CITIES } from '../config/locations';
 import { Button } from '../components/common/Button';
@@ -321,28 +322,40 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       {/* 4. FEATURED / VERIFIED PROPERTIES */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-3 md:order-4 w-full">
-        <div className="flex items-end justify-between mb-4 sm:mb-8">
+      <section className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 order-3 md:order-4 w-full bg-slate-950 md:bg-transparent rounded-2xl md:rounded-none p-3 sm:p-4 md:p-0 border border-slate-800 md:border-transparent">
+        <div className="flex items-center justify-between mb-2.5 sm:mb-8">
           <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-1">
-              <span className="md:hidden">Recommended Near You</span>
-              <span className="hidden md:inline">Handpicked Accommodations</span>
+            <div className="hidden md:block text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-1">
+              Handpicked Accommodations
             </div>
-            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#101828] font-heading">
+            <h2 className="text-base sm:text-2xl lg:text-3xl font-bold text-slate-100 md:text-[#101828] font-heading">
               <span className="md:hidden">Trending Places &amp; Rooms</span>
               <span className="hidden md:inline">Featured Verified Properties</span>
             </h2>
           </div>
           <button
             onClick={() => onNavigate('search')}
-            className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#101828] hover:text-[#F59E0B] transition-colors cursor-pointer"
+            className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-amber-400 hover:text-amber-300 md:text-[#101828] md:hover:text-[#F59E0B] transition-colors cursor-pointer"
           >
-            <span>Explore All</span>
-            <ArrowRight className="w-4 h-4" />
+            <span className="md:hidden">View All →</span>
+            <span className="hidden md:inline">Explore All</span>
+            <ArrowRight className="hidden md:inline w-4 h-4" />
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Mobile: Compact 2-column Grid (< md) */}
+        <div className="grid grid-cols-2 gap-2.5 md:hidden">
+          {featuredProperties.slice(0, 6).map((property) => (
+            <CompactPropertyCard
+              key={property.id}
+              property={property}
+              onSelect={onSelectProperty}
+            />
+          ))}
+        </div>
+
+        {/* Desktop: Original Grid (>= md) */}
+        <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {featuredProperties.slice(0, 6).map((property) => (
             <PropertyCard
               key={property.id}
