@@ -6,7 +6,7 @@ interface DistanceBadgeProps {
   className?: string;
 }
 
-export const DistanceBadge: React.FC<DistanceBadgeProps> = ({
+export const DistanceBadge: React.FC<DistanceBadgeProps> = React.memo(({
   distanceFormatted,
   className = '',
 }) => {
@@ -20,4 +20,4 @@ export const DistanceBadge: React.FC<DistanceBadgeProps> = ({
       <span>{distanceFormatted}</span>
     </span>
   );
-};
+});

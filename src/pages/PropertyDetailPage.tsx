@@ -45,6 +45,16 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
 
+  // Memoize map data to prevent Leaflet re-rendering cycles during scroll
+  const mapProperties = React.useMemo(() => [property], [property]);
+  const mapCenter = React.useMemo(
+    () => ({
+      latitude: property.display_latitude || 25.4563,
+      longitude: property.display_longitude || 81.8546,
+    }),
+    [property.display_latitude, property.display_longitude]
+  );
+
   // Defer heavy Leaflet map instantiation until after initial transition settles (preserves 60 FPS)
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -149,7 +159,8 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
               <img
                 src={images[activeImageIndex]?.url}
                 alt={property.title}
-                className="w-full h-full object-cover transition-all duration-300"
+                decoding="async"
+                className="w-full h-full object-cover transition-opacity duration-200"
               />
               <div className="absolute top-3 left-3 flex items-center gap-2">
                 {property.is_verified && (
@@ -182,7 +193,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                         : 'border-transparent opacity-70 hover:opacity-100'
                     }`}
                   >
-                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    <img src={img.url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -428,11 +439,8 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 
             {isMapReady ? (
               <PropertyMap
-                properties={[property]}
-                centerCoordinates={{
-                  latitude: property.display_latitude || 25.4563,
-                  longitude: property.display_longitude || 81.8546,
-                }}
+                properties={mapProperties}
+                centerCoordinates={mapCenter}
                 className="h-64 w-full rounded-2xl"
               />
             ) : (
@@ -446,7 +454,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 
         {/* Right 1 Column: Sticky Contact & Safety Card */}
         <div className="lg:col-span-1">
-          <div className="sticky top-24 bg-white rounded-3xl border border-[#E5E7EB] p-6 shadow-lg space-y-6">
+          <div className="lg:sticky lg:top-24 relative bg-white rounded-3xl border border-[#E5E7EB] p-6 shadow-md space-y-6">
             {/* Price Header */}
             <div className="pb-4 border-b border-[#F1F5F9]">
               <div className="text-xs text-[#667085]">Total Rent</div>

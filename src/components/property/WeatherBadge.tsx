@@ -8,7 +8,7 @@ interface WeatherBadgeProps {
   locality?: string;
 }
 
-export const WeatherBadge: React.FC<WeatherBadgeProps> = ({
+export const WeatherBadge: React.FC<WeatherBadgeProps> = React.memo(({
   latitude,
   longitude,
   locality,
@@ -86,4 +86,4 @@ export const WeatherBadge: React.FC<WeatherBadgeProps> = ({
       </div>
     </div>
   );
-};
+});

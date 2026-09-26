@@ -473,7 +473,7 @@ const MainApp: React.FC = () => {
       {/* MOBILE-ONLY FULL-SCREEN ROOM DETAIL SHEET (< md) */}
       {isMobileDetailOpen && selectedProperty && (
         <div
-          className="md:hidden fixed inset-0 z-[60] bg-[#F8FAFC] overflow-y-auto overscroll-contain flex flex-col animate-sheet-slide-in transform-gpu will-change-[transform,opacity]"
+          className="md:hidden fixed inset-0 z-[60] bg-[#F8FAFC] overflow-y-auto overscroll-y-contain flex flex-col animate-sheet-enter"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           <PropertyDetailPage
