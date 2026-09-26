@@ -13,11 +13,13 @@ import { useAuth } from '../../context/AuthContext';
 interface CompactPropertyCardProps {
   property: Property;
   onSelect: (property: Property) => void;
+  singleAction?: boolean;
 }
 
 export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = React.memo(({
   property,
   onSelect,
+  singleAction = false,
 }) => {
   const { isSaved, toggleSave } = useSaved();
   const { setIsChatModalOpen } = useChat();
@@ -58,6 +60,7 @@ export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = React.mem
           src={coverImage}
           alt={property.title}
           loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
         />
 
@@ -125,38 +128,53 @@ export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = React.mem
           </div>
         </div>
 
-        {/* 3. Card Action Buttons (Dual Mini-Buttons: Chat + Details) */}
-        <div className="grid grid-cols-2 gap-1.5 mt-2.5 pt-2 border-t border-slate-800">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (
-                requireAuth('Sign in with Google to chat with the property owner.', {
-                  type: 'chat',
-                  propertyId: property.id,
-                })
-              ) {
-                setIsChatModalOpen(true);
-              }
-            }}
-            className="py-1 px-1.5 text-[11px] font-medium rounded-lg border border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-700 hover:text-white text-center transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
-          >
-            <MessageSquare className="w-3 h-3 text-amber-400 shrink-0" />
-            <span>Chat</span>
-          </button>
+        {/* 3. Card Action Button (Single CTA or Dual Mini-Buttons) */}
+        {singleAction ? (
+          <div className="mt-2.5 pt-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(property);
+              }}
+              className="w-full py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-center transition shadow-xs cursor-pointer"
+            >
+              Details
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-1.5 mt-2.5 pt-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (
+                  requireAuth('Sign in with Google to chat with the property owner.', {
+                    type: 'chat',
+                    propertyId: property.id,
+                  })
+                ) {
+                  setIsChatModalOpen(true);
+                }
+              }}
+              className="py-1 px-1.5 text-[11px] font-medium rounded-lg border border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-700 hover:text-white text-center transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <MessageSquare className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>Chat</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect(property);
-            }}
-            className="py-1 px-1.5 text-[11px] font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-center transition shadow-xs cursor-pointer truncate"
-          >
-            Details
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(property);
+              }}
+              className="py-1 px-1.5 text-[11px] font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 text-center transition shadow-xs cursor-pointer truncate"
+            >
+              Details
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

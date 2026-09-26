@@ -14,6 +14,7 @@ import {
 import { ChangeLocationModal } from '../components/search/ChangeLocationModal';
 import { FilterSidebar } from '../components/search/FilterSidebar';
 import { PropertyCard } from '../components/property/PropertyCard';
+import { CompactPropertyCard } from '../components/property/CompactPropertyCard';
 import { PropertyMap } from '../components/map/PropertyMap';
 import { BottomSheet } from '../components/common/BottomSheet';
 import { Button } from '../components/common/Button';
@@ -263,15 +264,15 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   const bucketKeys: ProximityBucket[] = ['very_near', 'nearby', 'nearby_areas', 'more_options'];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24">
       {/* ========================================================================= */}
       {/* 1. TOP LOCATION & NAVIGATION BAR                                          */}
       {/* ========================================================================= */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 p-4 sm:p-5 mb-6 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200/80 p-3 sm:p-5 mb-4 sm:mb-6 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 sm:gap-4">
         {/* Left: Location Banner & Title */}
-        <div className="flex items-start sm:items-center gap-3.5">
+        <div className="flex items-center gap-2.5 sm:gap-3.5">
           <div
-            className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border transition-all ${
+            className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 border transition-all ${
               isDetectingLocation
                 ? 'bg-amber-500/10 text-amber-600 border-amber-500/20 animate-pulse'
                 : locationMode === 'gps'
@@ -280,33 +281,33 @@ export const SearchPage: React.FC<SearchPageProps> = ({
             }`}
           >
             {isDetectingLocation ? (
-              <Navigation className="w-5 h-5 animate-spin" />
+              <Navigation className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
             ) : locationMode === 'gps' ? (
-              <Navigation className="w-5 h-5" />
+              <Navigation className="w-4 h-4 sm:w-5 sm:h-5" />
             ) : (
-              <MapPin className="w-5 h-5 text-amber-600" />
+              <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
             )}
           </div>
 
           <div className="flex-1 min-w-0">
             {isDetectingLocation ? (
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-heading font-bold text-base text-slate-900">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <span className="font-heading font-bold text-sm sm:text-base text-slate-900 truncate">
                     Finding rooms near you...
                   </span>
-                  <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 animate-pulse">
-                    GPS Requesting
+                  <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 animate-pulse">
+                    GPS
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Requesting precise GPS coordinates to show nearest rooms
+                <p className="text-[11px] sm:text-xs text-slate-500 truncate">
+                  Requesting precise GPS coordinates...
                 </p>
               </div>
             ) : (
               <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="font-heading font-bold text-base sm:text-lg text-slate-900 leading-tight">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <h1 className="font-heading font-bold text-sm sm:text-lg text-slate-900 leading-snug">
                     Rooms near{' '}
                     <span className="text-amber-700 underline decoration-amber-400 decoration-2 underline-offset-2">
                       {currentLocality}
@@ -315,31 +316,31 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                   </h1>
 
                   {locationMode === 'gps' ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                      GPS Active
+                      GPS
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                      Manual Area
+                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      Area
                     </span>
                   )}
 
                   {searchRadius > 5 && (
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-                      Expanded to {searchRadius} km
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                      {searchRadius} km
                     </span>
                   )}
                 </div>
 
-                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-                  <span>
+                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+                  <span className="truncate">
                     {searchResult
-                      ? `${searchResult.total_found} available room${searchResult.total_found === 1 ? '' : 's'} sorted by proximity`
+                      ? `${searchResult.total_found} room${searchResult.total_found === 1 ? '' : 's'} available`
                       : 'Searching nearby properties...'}
                   </span>
                   <span>•</span>
-                  <span>Nearest to farthest</span>
+                  <span className="shrink-0">Nearest first</span>
                 </p>
               </div>
             )}
@@ -347,37 +348,39 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         </div>
 
         {/* Right: Actions ([ Change Location ], [ Use My Location ], View Modes) */}
-        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto shrink-0">
-          {/* Change Location Action */}
-          <button
-            type="button"
-            onClick={() => setIsChangeLocationOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-800 transition-all cursor-pointer border border-slate-200"
-          >
-            <MapPin className="w-3.5 h-3.5 text-amber-600" />
-            <span>Change Location</span>
-          </button>
-
-          {/* Restore GPS Discovery button (visible when in manual mode or if GPS errored) */}
-          {locationMode === 'manual' && (
+        <div className="flex items-center justify-between sm:justify-end gap-2 self-stretch md:self-auto shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+          <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+            {/* Change Location Action */}
             <button
               type="button"
-              onClick={triggerGpsDiscovery}
-              disabled={isDetectingLocation}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 active:scale-98 text-amber-900 border border-amber-300 transition-all cursor-pointer disabled:opacity-60"
+              onClick={() => setIsChangeLocationOpen(true)}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-800 transition-all cursor-pointer border border-slate-200"
             >
-              <Navigation className="w-3.5 h-3.5 text-amber-600" />
-              <span>📍 Use My Location</span>
+              <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>Change Location</span>
             </button>
-          )}
+
+            {/* Restore GPS Discovery button (visible when in manual mode or if GPS errored) */}
+            {locationMode === 'manual' && (
+              <button
+                type="button"
+                onClick={triggerGpsDiscovery}
+                disabled={isDetectingLocation}
+                className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 active:scale-98 text-amber-900 border border-amber-300 transition-all cursor-pointer disabled:opacity-60"
+              >
+                <Navigation className="w-3.5 h-3.5 text-amber-600" />
+                <span>📍 My Location</span>
+              </button>
+            )}
+          </div>
 
           {/* Mobile Filter Button */}
           <button
             type="button"
             onClick={() => setIsFilterSheetOpen(true)}
-            className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 border border-slate-200 text-slate-800"
+            className="lg:hidden flex items-center justify-center gap-1.5 px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold bg-slate-100 border border-slate-200 text-slate-800 cursor-pointer"
           >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-600" />
+            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-600 shrink-0" />
             <span>Filters</span>
             {filters.amenities && filters.amenities.length > 0 && (
               <span className="w-4 h-4 rounded-full bg-slate-900 text-white text-[10px] flex items-center justify-center">
@@ -548,11 +551,11 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                     <span>Checking rooms within {searchRadius} km</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 animate-pulse">
+                  <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-5 animate-pulse">
                     {[1, 2, 3, 4, 5, 6].map((n) => (
                       <div
                         key={n}
-                        className="h-72 bg-slate-100 rounded-3xl border border-slate-200/60"
+                        className="h-56 sm:h-72 bg-slate-100 rounded-xl sm:rounded-3xl border border-slate-200/60"
                       />
                     ))}
                   </div>
@@ -588,9 +591,26 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                   const bucketMeta = PROXIMITY_BUCKET_LABELS[bucketKey];
 
                   return (
-                    <div key={bucketKey} className="space-y-4">
-                      {/* Bucket Section Header */}
-                      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <div
+                      key={bucketKey}
+                      className="space-y-3 sm:space-y-4 bg-slate-950 md:bg-transparent rounded-2xl md:rounded-none p-2.5 sm:p-0 border border-slate-800 md:border-transparent"
+                    >
+                      {/* Mobile Header (< md): Neat, small heading */}
+                      <div className="md:hidden flex items-center justify-between px-1.5 pt-1 pb-0.5">
+                        <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                          <span className="truncate">{bucketMeta.title}</span>
+                          <span className="text-[11px] text-slate-400 font-normal shrink-0">
+                            • {bucketProperties.length} room{bucketProperties.length === 1 ? '' : 's'}
+                          </span>
+                        </h3>
+                        <span className="text-[10px] text-amber-400/90 font-medium bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 shrink-0">
+                          {bucketMeta.subtitle}
+                        </span>
+                      </div>
+
+                      {/* Desktop Header (>= md): Original Untouched Header */}
+                      <div className="hidden md:flex items-center justify-between pb-2 border-b border-slate-200">
                         <div>
                           <h3 className="font-bold text-base text-slate-900 font-heading flex items-center gap-2">
                             <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
@@ -603,9 +623,21 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                         </span>
                       </div>
 
-                      {/* Cards Grid */}
+                      {/* Mobile: Compact 2-column Grid (< md) */}
+                      <div className="grid grid-cols-2 gap-2.5 px-0.5 py-1 md:hidden">
+                        {bucketProperties.map((property) => (
+                          <CompactPropertyCard
+                            key={property.id}
+                            property={property}
+                            onSelect={onSelectProperty}
+                            singleAction={true}
+                          />
+                        ))}
+                      </div>
+
+                      {/* Desktop: Original Grid Layout (>= md) */}
                       <div
-                        className={`grid gap-5 ${
+                        className={`hidden md:grid gap-5 ${
                           viewMode === 'split'
                             ? 'grid-cols-1'
                             : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
