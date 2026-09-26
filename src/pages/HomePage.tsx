@@ -8,7 +8,9 @@ import {
   ArrowRight,
   PlusCircle,
   Sparkles,
-  PhoneOff
+  PhoneOff,
+  SlidersHorizontal,
+  X
 } from 'lucide-react';
 import { LocationSelector } from '../components/search/LocationSelector';
 import { LocationPromptBanner } from '../components/search/LocationPromptBanner';
@@ -52,35 +54,97 @@ export const HomePage: React.FC<HomePageProps> = ({
   ];
 
   return (
-    <div className="space-y-16 sm:space-y-24 pb-28 md:pb-20 w-full max-w-[100vw] overflow-x-hidden relative">
-      {/* 1. HERO SECTION */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-[#101828] via-[#172554] to-[#101828] text-white pt-12 sm:pt-20 pb-20 sm:pb-28 px-4 sm:px-6 lg:px-8 w-full max-w-full">
+    <div className="flex flex-col space-y-8 sm:space-y-16 md:space-y-24 pb-28 md:pb-20 w-full max-w-[100vw] overflow-x-hidden relative">
+      {/* 1. HERO / COMPACT MOBILE TOP SEARCH SECTION */}
+      <section className="relative overflow-hidden bg-gradient-to-b from-[#101828] via-[#172554] to-[#101828] text-white pt-2.5 pb-3 px-4 md:pt-20 md:pb-28 sm:px-6 lg:px-8 w-full max-w-full order-1">
         {/* Subtle decorative grid */}
         <div className="absolute inset-0 opacity-5 pointer-events-none bg-[radial-gradient(#F59E0B_1px,transparent_1px)] [background-size:16px_16px] max-w-full overflow-hidden" />
 
-        <div className="max-w-4xl mx-auto text-center relative z-10 w-full min-w-0">
+        {/* ========================================================= */}
+        {/* MOBILE COMPACT APP-STYLE TOP SEARCH (< md)                */}
+        {/* ========================================================= */}
+        <div className="block md:hidden relative z-10 w-full max-w-full space-y-2">
+          {/* Search Input Pill */}
+          <div
+            onClick={() => onNavigate('search', selectedLocality)}
+            className="w-full bg-slate-800/90 border border-slate-700 text-slate-200 rounded-full py-2.5 px-4 flex items-center justify-between gap-3 shadow-lg active:scale-[0.99] transition cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <MapPin className="text-[#F59E0B] w-5 h-5 flex-shrink-0" />
+              <div className="min-w-0 flex-1 truncate">
+                {selectedLocality ? (
+                  <span className="text-sm font-semibold text-white truncate block">
+                    {selectedLocality}
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-300 truncate block">
+                    Search city, locality, or PG...
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {selectedLocality ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedLocality('');
+                }}
+                className="p-1 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white transition-colors shrink-0 cursor-pointer"
+                aria-label="Clear location"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : (
+              <SlidersHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
+            )}
+          </div>
+
+          {/* Quick Hubs Single-Row Horizontal Scroll */}
+          <div className="flex gap-2 overflow-x-auto no-scrollbar py-1 text-xs w-full max-w-full">
+            {['Prayagraj', 'Lucknow', 'Delhi / NCR', 'Mumbai', 'Bengaluru', 'Pune'].map((city) => {
+              const isSelected = selectedLocality.toLowerCase().includes(city.toLowerCase());
+              return (
+                <button
+                  key={city}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLocality(city);
+                    onSearch(city);
+                  }}
+                  className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full border transition-all font-medium text-xs cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#F59E0B] text-[#101828] border-[#F59E0B] font-bold shadow-xs'
+                      : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
+                  }`}
+                >
+                  {city}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ========================================================= */}
+        {/* DESKTOP HERO CONTENT (>= md)                              */}
+        {/* ========================================================= */}
+        <div className="hidden md:block max-w-4xl mx-auto text-center relative z-10 w-full min-w-0">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-semibold text-[#F59E0B] mb-6 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full">
             <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse shrink-0" />
-            <span className="md:hidden">✓ Verified Homes • Zero Brokerage</span>
-            <span className="hidden md:inline">India's Privacy-First Housing Network • Find Rooms &amp; Compatible Roommates</span>
+            <span>India's Privacy-First Housing Network • Find Rooms &amp; Compatible Roommates</span>
           </div>
 
           {/* Core Headline */}
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight font-heading leading-tight sm:leading-none text-white mb-6">
-            <span className="md:hidden">Find Your Perfect Thikana.</span>
-            <span className="hidden md:inline">
-              Find Your Perfect Thikan. <br className="hidden sm:inline" />
-              <span className="text-[#F59E0B]">Across All of India.</span>
-            </span>
+            Find Your Perfect Thikan. <br className="hidden sm:inline" />
+            <span className="text-[#F59E0B]">Across All of India.</span>
           </h1>
 
           {/* Subheading */}
           <p className="text-sm sm:text-lg text-[#CBD5E1] max-w-2xl mx-auto mb-8 leading-relaxed">
-            <span className="md:hidden">Verified rooms, PGs, and flatmates across India.</span>
-            <span className="hidden md:inline">
-              Discover verified rooms, PGs, hostels, flats, and compatible roommates across Indian cities with transparent rent and zero broker hassle.
-            </span>
+            Discover verified rooms, PGs, hostels, flats, and compatible roommates across Indian cities with transparent rent and zero broker hassle.
           </p>
 
           {/* Geolocation Prompt Banner */}
@@ -94,8 +158,8 @@ export const HomePage: React.FC<HomePageProps> = ({
           />
 
           {/* Main Search Component */}
-          <div className="bg-slate-800 md:bg-white rounded-3xl p-3 sm:p-4 shadow-2xl border border-slate-700 md:border-white/20 text-white md:text-[#111827] w-full max-w-full md:max-w-3xl mx-auto text-left">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-300 md:text-[#64748B] mb-2 px-1">
+          <div className="bg-white rounded-3xl p-3 sm:p-4 shadow-2xl border border-white/20 text-[#111827] w-full max-w-full md:max-w-3xl mx-auto text-left">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] mb-2 px-1">
               Where do you want to stay in India?
             </div>
             <div className="flex flex-col sm:flex-row gap-2.5 w-full min-w-0">
@@ -120,9 +184,9 @@ export const HomePage: React.FC<HomePageProps> = ({
             </div>
 
             {/* Quick area suggestions */}
-            <div className="mt-3 pt-3 border-t border-slate-700 md:border-[#F1F5F9] flex flex-col md:flex-row md:items-center gap-2 text-xs w-full max-w-full overflow-hidden">
+            <div className="mt-3 pt-3 border-t border-[#F1F5F9] flex flex-col md:flex-row md:items-center gap-2 text-xs w-full max-w-full overflow-hidden">
               <div className="w-full max-w-full overflow-x-auto overflow-y-hidden no-scrollbar flex md:flex-wrap items-center gap-2 py-1">
-                <span className="font-semibold text-slate-300 md:text-[#111827] shrink-0 mr-0.5">
+                <span className="font-semibold text-[#111827] shrink-0 mr-0.5">
                   Quick hubs:
                 </span>
                 {['Prayagraj', 'Lucknow', 'Delhi / NCR', 'Mumbai', 'Bengaluru', 'Pune'].map(
@@ -134,7 +198,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                         setSelectedLocality(city);
                         onSearch(city);
                       }}
-                      className="shrink-0 whitespace-nowrap px-3 py-1.5 md:py-1 rounded-lg bg-slate-700/80 md:bg-[#F8FAFC] hover:bg-slate-700 md:hover:bg-[#F1F5F9] text-slate-200 md:text-[#334155] border border-slate-600 md:border-[#E2E8F0] transition-colors font-medium cursor-pointer"
+                      className="shrink-0 whitespace-nowrap px-3 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#334155] border border-[#E2E8F0] transition-colors font-medium cursor-pointer"
                     >
                       {city}
                     </button>
@@ -163,26 +227,26 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       {/* 2. BROWSE BY PROPERTY TYPE */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-end justify-between mb-8">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-2 w-full">
+        <div className="flex items-end justify-between mb-4 sm:mb-8">
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-1">
               Explore Housing Options
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#101828] font-heading">
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#101828] font-heading">
               Browse by Accommodation Type
             </h2>
           </div>
           <button
             onClick={() => onNavigate('search')}
-            className="hidden sm:flex items-center gap-1 text-sm font-semibold text-[#101828] hover:text-[#F59E0B] transition-colors"
+            className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#101828] hover:text-[#F59E0B] transition-colors cursor-pointer"
           >
             <span>View All</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+        <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
           {propertyTypes.map((pt) => (
             <button
               key={pt.id}
@@ -190,16 +254,16 @@ export const HomePage: React.FC<HomePageProps> = ({
                 if (pt.id === 'roommates') onNavigate('roommates');
                 else onSearch(selectedLocality || '', pt.id);
               }}
-              className="p-4 rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#F59E0B] hover:shadow-md transition-all text-left flex flex-col justify-between group"
+              className="p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#F59E0B] hover:shadow-md transition-all text-left flex flex-col justify-between group cursor-pointer"
             >
-              <div className="text-2xl sm:text-3xl mb-3 group-hover:scale-110 transition-transform">
+              <div className="text-xl sm:text-3xl mb-1.5 sm:mb-3 group-hover:scale-110 transition-transform">
                 {pt.icon}
               </div>
               <div>
-                <h3 className="font-bold text-sm text-[#111827] group-hover:text-[#101828] font-heading">
+                <h3 className="font-bold text-xs sm:text-sm text-[#111827] group-hover:text-[#101828] font-heading truncate">
                   {pt.name}
                 </h3>
-                <span className="text-[11px] text-[#667085]">{pt.count}</span>
+                <span className="text-[10px] sm:text-[11px] text-[#667085] truncate block">{pt.count}</span>
               </div>
             </button>
           ))}
@@ -207,13 +271,13 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       {/* 3. POPULAR CITIES & HUBS ACROSS INDIA */}
-      <section id="cities" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-end justify-between mb-8">
+      <section id="cities" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-4 md:order-3 w-full">
+        <div className="flex items-end justify-between mb-4 sm:mb-8">
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-1">
               Nationwide Living Network
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#101828] font-heading">
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#101828] font-heading">
               Popular Cities &amp; Hubs Across India
             </h2>
           </div>
@@ -257,19 +321,21 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       {/* 4. FEATURED / VERIFIED PROPERTIES */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-end justify-between mb-8">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-3 md:order-4 w-full">
+        <div className="flex items-end justify-between mb-4 sm:mb-8">
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-1">
-              Handpicked Accommodations
+              <span className="md:hidden">Recommended Near You</span>
+              <span className="hidden md:inline">Handpicked Accommodations</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#101828] font-heading">
-              Featured Verified Properties
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#101828] font-heading">
+              <span className="md:hidden">Trending Places &amp; Rooms</span>
+              <span className="hidden md:inline">Featured Verified Properties</span>
             </h2>
           </div>
           <button
             onClick={() => onNavigate('search')}
-            className="flex items-center gap-1 text-sm font-semibold text-[#101828] hover:text-[#F59E0B] transition-colors"
+            className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#101828] hover:text-[#F59E0B] transition-colors cursor-pointer"
           >
             <span>Explore All</span>
             <ArrowRight className="w-4 h-4" />
@@ -288,7 +354,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       {/* 5. ROOMMATE DISCOVERY BANNER */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-5 w-full">
         <div className="bg-[#101828] rounded-3xl p-6 sm:p-10 lg:p-12 text-white relative overflow-hidden border border-[#1E293B]">
           <div className="absolute -right-20 -bottom-20 w-80 h-80 rounded-full bg-[#F59E0B]/10 blur-3xl pointer-events-none" />
 
@@ -357,18 +423,18 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       {/* 6. WHY CHOOSE RENTED THIKAN (TRUST PILLARS) */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-2xl mx-auto mb-12">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-6 w-full">
+        <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-12">
           <div className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-2">
             Nationwide Trust &amp; Safety
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#101828] font-heading">
+          <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#101828] font-heading">
             Why Choose Rented Thikan?
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div className="p-6 rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] shadow-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] shadow-xs">
             <div className="w-12 h-12 rounded-xl bg-[#FFFBEB] flex items-center justify-center text-[#92400E] mb-4">
               <ShieldCheck className="w-6 h-6 text-[#F59E0B]" />
             </div>
@@ -380,7 +446,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             </p>
           </div>
 
-          <div className="p-6 rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] shadow-xs">
+          <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] shadow-xs">
             <div className="w-12 h-12 rounded-xl bg-[#FFF7ED] flex items-center justify-center text-[#C2410C] mb-4">
               <PhoneOff className="w-6 h-6 text-[#F97316]" />
             </div>
@@ -392,7 +458,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             </p>
           </div>
 
-          <div className="p-6 rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] shadow-xs">
+          <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] shadow-xs">
             <div className="w-12 h-12 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#334155] mb-4">
               <MapPin className="w-6 h-6 text-[#101828]" />
             </div>
@@ -407,14 +473,14 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       {/* 7. HOW IT WORKS (SEEKERS & LISTERS) */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-[#F8FAFC] py-12 rounded-3xl border border-[#E2E8F0]">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-[#F8FAFC] py-8 sm:py-12 rounded-3xl border border-[#E2E8F0] order-7 w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-10">
           {/* Find Your Place */}
           <div className="space-y-4">
             <div className="inline-block text-xs font-bold uppercase tracking-wider text-[#101828] bg-white px-3 py-1 rounded-full border border-[#E2E8F0]">
               Find Your Place
             </div>
-            <h3 className="text-xl font-bold text-[#101828] font-heading">
+            <h3 className="text-lg sm:text-xl font-bold text-[#101828] font-heading">
               Find Your Room in 5 Easy Steps
             </h3>
             <div className="space-y-3 pt-2">
@@ -443,7 +509,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             <div className="inline-block text-xs font-bold uppercase tracking-wider text-[#F59E0B] bg-[#FFFBEB] px-3 py-1 rounded-full border border-[#FDE68A]">
               List a Property / Room
             </div>
-            <h3 className="text-xl font-bold text-[#101828] font-heading">
+            <h3 className="text-lg sm:text-xl font-bold text-[#101828] font-heading">
               Offer Your Vacancy to Verified Members
             </h3>
             <div className="space-y-3 pt-2">
@@ -470,7 +536,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       {/* 8. BOTTOM CALL TO ACTION */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-8 w-full">
         <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-r from-[#172554] to-[#101828] text-white flex flex-col md:flex-row items-center justify-between gap-6 border border-[#1E293B]">
           <div>
             <h2 className="text-2xl sm:text-3xl font-black font-heading mb-2">

@@ -61,7 +61,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onNavigate }) => {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 p-1.5 pl-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all cursor-pointer shadow-xs active:scale-95"
+        className="flex items-center md:gap-2 p-0.5 md:p-1.5 md:pl-2 rounded-full md:rounded-xl bg-white hover:bg-slate-50 border border-slate-200 md:border-slate-200 hover:border-slate-300 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
         aria-expanded={isOpen}
         aria-haspopup="true"
       >
@@ -69,17 +69,17 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onNavigate }) => {
           <img
             src={currentUser.avatar_url}
             alt={displayName}
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover ring-1 ring-slate-200 shrink-0"
+            className="w-8 h-8 rounded-full md:rounded-lg object-cover ring-1 ring-slate-200 shrink-0"
           />
         ) : (
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-[#101828] text-[#F59E0B] font-extrabold text-xs flex items-center justify-center ring-1 ring-slate-200 shrink-0 font-heading">
+          <div className="w-8 h-8 rounded-full md:rounded-lg bg-[#101828] text-[#F59E0B] font-extrabold text-xs flex items-center justify-center ring-1 ring-slate-200 shrink-0 font-heading">
             {initial}
           </div>
         )}
-        <span className="inline-block text-xs font-bold text-[#111827] truncate max-w-[85px] sm:max-w-[120px]">
+        <span className="hidden md:inline-block text-xs font-bold text-[#111827] truncate max-w-[85px] sm:max-w-[120px]">
           {firstName}
         </span>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`hidden md:block w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown Menu */}
