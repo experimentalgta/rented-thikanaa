@@ -70,7 +70,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
         <button
           onClick={() => {
             const url = new URL(window.location.href);
-            if (url.searchParams.has('roomId') && window.history.length > 1) {
+            if ((url.searchParams.has('room') || url.searchParams.has('roomId')) && window.history.length > 1) {
               window.history.back();
             } else {
               onBack();

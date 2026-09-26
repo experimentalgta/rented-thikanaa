@@ -39,6 +39,7 @@ const MainApp: React.FC = () => {
   const [selectedPropertyType, setSelectedPropertyType] = useState<string | undefined>(undefined);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [subTab, setSubTab] = useState<string | undefined>(undefined);
+  const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
 
   const [featuredProperties, setFeaturedProperties] = useState<Property[]>([]);
   const [sampleRoommates, setSampleRoommates] = useState<StudentProfile[]>([]);
@@ -51,6 +52,13 @@ const MainApp: React.FC = () => {
       previousViewRef.current = currentView;
     }
   }, [currentView]);
+
+  // Clean up any body scroll lock on unmount
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
 
   useEffect(() => {
     // Initial fetch for freshest accommodations (most recent on top) and roommates across India from Supabase
@@ -73,31 +81,67 @@ const MainApp: React.FC = () => {
       });
   }, []);
 
-  // History & Deep-Linking Management (Prevents hardware back from exiting the app)
+  // History & Deep-Linking Management (Mobile back-button trap & Desktop history)
   useEffect(() => {
     // Ensure initial entry has state
     if (!window.history.state) {
       window.history.replaceState({ view: 'home' }, '', window.location.href);
     }
 
-    // Deep link or initial query param check (?roomId=...)
+    // Deep link or initial query param check (?room=... or ?roomId=...)
     const initialUrl = new URL(window.location.href);
-    const initialRoomId = initialUrl.searchParams.get('roomId');
+    const initialRoomId = initialUrl.searchParams.get('room') || initialUrl.searchParams.get('roomId');
     if (initialRoomId) {
       propertyRepository.getPropertyById(initialRoomId).then((p) => {
         if (p) {
           setSelectedProperty(p);
-          setCurrentView('property-detail');
+          if (window.innerWidth < 768) {
+            // For mobile: clean base URL state so back button stays within the app, then push detail sheet
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('room');
+            cleanUrl.searchParams.delete('roomId');
+            window.history.replaceState({ view: 'home' }, '', cleanUrl.toString());
+
+            window.history.pushState(
+              { isMobileDetailOpen: true, roomId: initialRoomId },
+              '',
+              initialUrl.toString()
+            );
+            setIsMobileDetailOpen(true);
+            document.body.style.overflow = 'hidden';
+          } else {
+            setCurrentView('property-detail');
+          }
         }
       });
     }
 
     const handlePopState = (event: PopStateEvent) => {
+      const isMobile = window.innerWidth < 768;
+
+      if (isMobile) {
+        // --- MOBILE POPSTATE INTERCEPTION (< md) ---
+        // When user presses phone physical back or gesture swipes back:
+        setIsMobileDetailOpen(false);
+        setSelectedProperty(null);
+        document.body.style.overflow = '';
+
+        // Clean query parameter from URL without navigating away
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('room') || url.searchParams.has('roomId')) {
+          url.searchParams.delete('room');
+          url.searchParams.delete('roomId');
+          window.history.replaceState({ view: currentView }, '', url.toString());
+        }
+        return;
+      }
+
+      // --- DESKTOP POPSTATE (>= md) ---
       const url = new URL(window.location.href);
-      const roomId = url.searchParams.get('roomId');
+      const roomId = url.searchParams.get('roomId') || url.searchParams.get('room');
 
       if (!roomId) {
-        // User popped back from property detail or other route
+        // User popped back from desktop property detail
         setSelectedProperty(null);
         const targetView = event.state?.fromView || event.state?.view || previousViewRef.current || 'home';
         setCurrentView(targetView);
@@ -126,7 +170,7 @@ const MainApp: React.FC = () => {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [selectedProperty]);
+  }, [currentView, selectedProperty]);
 
   const executePendingAction = (action: PendingAction) => {
     if (action.type === 'property-detail' && (action.property || action.propertyId)) {
@@ -170,6 +214,20 @@ const MainApp: React.FC = () => {
     }
   };
 
+  const handleMobileClose = useCallback(() => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      setIsMobileDetailOpen(false);
+      setSelectedProperty(null);
+      document.body.style.overflow = '';
+      const url = new URL(window.location.href);
+      url.searchParams.delete('room');
+      url.searchParams.delete('roomId');
+      window.history.replaceState({ view: currentView }, '', url.toString());
+    }
+  }, [currentView]);
+
   const handleBackFromProperty = useCallback(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.has('roomId') && window.history.length > 1) {
@@ -190,9 +248,15 @@ const MainApp: React.FC = () => {
   }, []);
 
   const handleNavigate = (view: string, param?: any) => {
+    if (isMobileDetailOpen) {
+      setIsMobileDetailOpen(false);
+      document.body.style.overflow = '';
+    }
+
     const url = new URL(window.location.href);
-    if (url.searchParams.has('roomId')) {
+    if (url.searchParams.has('roomId') || url.searchParams.has('room')) {
       url.searchParams.delete('roomId');
+      url.searchParams.delete('room');
       window.history.replaceState({ view }, '', url.toString());
     } else {
       window.history.replaceState({ view }, '', window.location.href);
@@ -284,28 +348,41 @@ const MainApp: React.FC = () => {
   };
 
   const handleSelectProperty = (property: Property) => {
-    if (!isAuthenticated) {
-      requireAuth(
-        `Sign in with Google to view complete room details, verified photos, and contact the owner for "${property.title}".`,
-        { type: 'property-detail', propertyId: property.id, property }
-      );
-      return;
-    }
-
-    const previousView = currentView !== 'property-detail' ? currentView : 'home';
-    sessionStorage.setItem(`scroll_${previousView}`, String(window.scrollY));
-
-    const url = new URL(window.location.href);
-    url.searchParams.set('roomId', property.id);
-    window.history.pushState(
-      { view: 'property-detail', roomId: property.id, fromView: previousView },
-      '',
-      url.toString()
-    );
-
     setSelectedProperty(property);
-    setCurrentView('property-detail');
-    window.scrollTo({ top: 0, behavior: 'instant' });
+
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+    if (isMobile) {
+      // --- MOBILE FULL-SCREEN SHEET FLOW (< md) ---
+      // Lock background body scroll so the listings screen maintains exact scroll position
+      document.body.style.overflow = 'hidden';
+
+      // Push history state specifically for mobile modal
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', property.id);
+      window.history.pushState(
+        { isMobileDetailOpen: true, roomId: property.id },
+        '',
+        url.toString()
+      );
+
+      setIsMobileDetailOpen(true);
+    } else {
+      // --- DESKTOP ROUTE FLOW (>= md) ---
+      const previousView = currentView !== 'property-detail' ? currentView : 'home';
+      sessionStorage.setItem(`scroll_${previousView}`, String(window.scrollY));
+
+      const url = new URL(window.location.href);
+      url.searchParams.set('roomId', property.id);
+      window.history.pushState(
+        { view: 'property-detail', roomId: property.id, fromView: previousView },
+        '',
+        url.toString()
+      );
+
+      setCurrentView('property-detail');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
   };
 
   return (
@@ -338,11 +415,14 @@ const MainApp: React.FC = () => {
               />
             )}
 
+            {/* Desktop Property Detail Page (>= md) */}
             {currentView === 'property-detail' && selectedProperty && (
-              <PropertyDetailPage
-                property={selectedProperty}
-                onBack={handleBackFromProperty}
-              />
+              <div className="hidden md:block">
+                <PropertyDetailPage
+                  property={selectedProperty}
+                  onBack={handleBackFromProperty}
+                />
+              </div>
             )}
 
             {currentView === 'roommates' && <RoommatePage />}
@@ -375,6 +455,19 @@ const MainApp: React.FC = () => {
           </>
         )}
       </main>
+
+      {/* MOBILE-ONLY FULL-SCREEN ROOM DETAIL SHEET (< md) */}
+      {isMobileDetailOpen && selectedProperty && (
+        <div
+          className="md:hidden fixed inset-0 z-[60] bg-[#F8FAFC] overflow-y-auto overscroll-contain flex flex-col"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
+          <PropertyDetailPage
+            property={selectedProperty}
+            onBack={handleMobileClose}
+          />
+        </div>
+      )}
 
       {/* Global In-App Messaging Modal */}
       <ChatModal />
