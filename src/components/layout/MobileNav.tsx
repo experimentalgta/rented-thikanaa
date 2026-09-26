@@ -111,7 +111,9 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
         >
           <MessageSquare className={`w-5 h-5 ${isChatModalOpen ? 'text-[#F59E0B]' : ''}`} />
           {unreadCount > 0 && (
-            <span className="absolute top-1 right-3 w-2 h-2 bg-[#F97316] rounded-full ring-2 ring-slate-900" />
+            <span className="absolute -top-0.5 right-2 min-w-[16px] h-4 px-1 bg-emerald-500 text-slate-950 font-bold text-[9px] rounded-full flex items-center justify-center ring-2 ring-slate-900">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
           )}
           <span className="text-[10px] mt-0.5">Messages</span>
         </button>

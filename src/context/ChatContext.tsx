@@ -4,6 +4,16 @@ import { chatAndSafetyRepository } from '../services/safetyAndChatRepository';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { showBrowserNotification, requestNotificationPermission } from '../utils/notifications';
+
+export interface IncomingToast {
+  id: string;
+  conversationId: string;
+  senderName: string;
+  senderAvatar?: string;
+  text: string;
+  propertyTitle?: string;
+}
 
 interface ChatContextType {
   conversations: Conversation[];
@@ -11,6 +21,10 @@ interface ChatContextType {
   activeConversation: Conversation | null;
   contactRequests: ContactRequest[];
   unreadCount: number;
+  incomingToast: IncomingToast | null;
+  dismissToast: () => void;
+  markConversationAsRead: (conversationId: string) => Promise<void>;
+  requestNotificationPermission: () => Promise<NotificationPermission | 'unsupported'>;
   openChatForListing: (property: Property) => Promise<void>;
   openChatWithContext: (property: {
     id: string;
@@ -39,7 +53,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [contactRequests, setContactRequests] = useState<ContactRequest[]>([]);
-  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+  const [isChatModalOpen, setIsChatModalOpenState] = useState(false);
+  const [incomingToast, setIncomingToast] = useState<IncomingToast | null>(null);
 
   // Mutable refs to prevent stale closures in event listeners and channels
   const activeConversationRef = useRef<Conversation | null>(null);
@@ -48,7 +63,18 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
 
+  const isChatModalOpenRef = useRef(isChatModalOpen);
+  isChatModalOpenRef.current = isChatModalOpen;
+
+  const conversationsRef = useRef<Conversation[]>(conversations);
+  conversationsRef.current = conversations;
+
+  const processedMessageIdsRef = useRef<Set<string>>(new Set());
   const activeChannelRef = useRef<RealtimeChannel | null>(null);
+
+  const dismissToast = useCallback(() => {
+    setIncomingToast(null);
+  }, []);
 
   const loadData = useCallback(async () => {
     if (!currentUser) {
@@ -66,7 +92,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const reqs = await chatAndSafetyRepository.getContactRequests(currentUser.id);
       setContactRequests(reqs);
 
-      if (activeConversationRef.current) {
+      if (activeConversationRef.current && !activeConversationRef.current.id.startsWith('temp-')) {
         const msgs = await chatAndSafetyRepository.getMessages(activeConversationRef.current.id);
         setMessages(msgs);
       }
@@ -75,6 +101,35 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser]);
 
+  // Mark conversation as read in both optimistic state and Supabase database
+  const markConversationAsRead = useCallback(async (conversationId: string) => {
+    const currentUserId = currentUserRef.current?.id;
+    if (!currentUserId || !conversationId || conversationId.startsWith('temp-')) return;
+
+    // 1. Optimistically reset conversation's unread_count to 0
+    setConversations((prev) =>
+      prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c))
+    );
+
+    // 2. Dismiss any active toast for this conversation
+    setIncomingToast((prev) => (prev?.conversationId === conversationId ? null : prev));
+
+    // 3. Persist read status to Supabase
+    try {
+      await chatAndSafetyRepository.markConversationAsRead(conversationId, currentUserId);
+    } catch (e) {
+      console.warn('[ChatContext] Failed to mark messages as read in DB:', e);
+    }
+  }, []);
+
+  const setIsChatModalOpen = useCallback((open: boolean) => {
+    setIsChatModalOpenState(open);
+    isChatModalOpenRef.current = open;
+    if (open && activeConversationRef.current?.id && !activeConversationRef.current.id.startsWith('temp-')) {
+      markConversationAsRead(activeConversationRef.current.id);
+    }
+  }, [markConversationAsRead]);
+
   // Reset or load initial data on user auth change
   useEffect(() => {
     if (!currentUser) {
@@ -82,7 +137,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setContactRequests([]);
       setActiveConversation(null);
       setMessages([]);
-      setIsChatModalOpen(false);
+      setIsChatModalOpenState(false);
+      isChatModalOpenRef.current = false;
+      setIncomingToast(null);
     } else {
       loadData();
     }
@@ -96,6 +153,174 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     }
   }, [activeConversation?.id, currentUser?.id]);
+
+  // Handle window focus & tab visibility changes to mark active conversation as read
+  useEffect(() => {
+    const handleFocus = () => {
+      if (
+        typeof document !== 'undefined' &&
+        !document.hidden &&
+        isChatModalOpenRef.current &&
+        activeConversationRef.current?.id &&
+        !activeConversationRef.current.id.startsWith('temp-')
+      ) {
+        markConversationAsRead(activeConversationRef.current.id);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [markConversationAsRead]);
+
+  // =========================================================================
+  // UNIFIED INCOMING MESSAGE PROCESSOR
+  // Handles deduplication, active view detection, unread counting & notifications
+  // =========================================================================
+  const handleIncomingMessage = useCallback(
+    (newRow: any) => {
+      if (!newRow || !newRow.id || !newRow.conversation_id) return;
+
+      // 1. Deduplication guard
+      if (processedMessageIdsRef.current.has(newRow.id)) {
+        return;
+      }
+      processedMessageIdsRef.current.add(newRow.id);
+
+      // Prune deduplication cache when large
+      if (processedMessageIdsRef.current.size > 1000) {
+        const ids = Array.from(processedMessageIdsRef.current);
+        ids.slice(0, 500).forEach((id) => processedMessageIdsRef.current.delete(id));
+      }
+
+      const currentUserId = currentUserRef.current?.id;
+      const isSentByMe = Boolean(currentUserId && newRow.sender_id === currentUserId);
+      const convId = newRow.conversation_id;
+
+      // Identify sender info
+      const existingConv = conversationsRef.current.find((c) => c.id === convId);
+      const senderName = isSentByMe
+        ? (currentUserRef.current?.full_name || 'You')
+        : (existingConv?.participant_names?.[newRow.sender_id] || newRow.sender_name || 'User');
+      const senderAvatar = isSentByMe
+        ? currentUserRef.current?.avatar_url
+        : (existingConv?.participant_avatars?.[newRow.sender_id]);
+
+      const incomingMsg: Message = {
+        id: newRow.id,
+        conversation_id: convId,
+        sender_id: newRow.sender_id,
+        sender_name: senderName,
+        receiver_id: newRow.receiver_id,
+        text: newRow.text,
+        timestamp: newRow.created_at
+          ? new Date(newRow.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : (newRow.timestamp || 'Just now'),
+        is_read: Boolean(newRow.is_read),
+        property_context: newRow.property_context,
+        location_share: newRow.location_share,
+      };
+
+      // Check if user is actively viewing this exact conversation right now
+      const isActivelyViewing =
+        isChatModalOpenRef.current &&
+        activeConversationRef.current?.id === convId &&
+        typeof document !== 'undefined' &&
+        !document.hidden;
+
+      if (isActivelyViewing) {
+        // SCENARIO 1: User is actively looking at this conversation
+        incomingMsg.is_read = true;
+
+        // Append to active message thread
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+          return [...prev, incomingMsg];
+        });
+
+        // Update conversation preview and keep unread_count at 0
+        setConversations((prev) => {
+          const found = prev.find((c) => c.id === convId);
+          if (found) {
+            const updated = {
+              ...found,
+              last_message: incomingMsg.text,
+              last_message_time: incomingMsg.timestamp,
+              unread_count: 0,
+            };
+            return [updated, ...prev.filter((c) => c.id !== convId)];
+          }
+          loadData();
+          return prev;
+        });
+
+        // Mark as read in DB if incoming from recipient
+        if (!isSentByMe && currentUserId) {
+          chatAndSafetyRepository.markConversationAsRead(convId, currentUserId).catch(console.warn);
+        }
+      } else {
+        // SCENARIO 2: Inactive conversation, modal closed, or tab in background
+        if (activeConversationRef.current?.id === convId) {
+          // If modal was already pointing to this conversation, keep message list updated
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+            return [...prev, incomingMsg];
+          });
+        }
+
+        // Only increment unread if the message was sent to ME
+        const isTargetedToMe = !isSentByMe && currentUserId && newRow.receiver_id === currentUserId;
+
+        setConversations((prev) => {
+          const found = prev.find((c) => c.id === convId);
+          if (found) {
+            const updated = {
+              ...found,
+              last_message: incomingMsg.text,
+              last_message_time: incomingMsg.timestamp,
+              unread_count: isTargetedToMe ? (found.unread_count || 0) + 1 : (found.unread_count || 0),
+            };
+            // Re-order active thread to top
+            return [updated, ...prev.filter((c) => c.id !== convId)];
+          } else {
+            // New conversation created by another party
+            loadData();
+            return prev;
+          }
+        });
+
+        // Show In-App Toast & Browser Notification if targeted to me
+        if (isTargetedToMe) {
+          setIncomingToast({
+            id: incomingMsg.id,
+            conversationId: convId,
+            senderName: senderName !== 'User' ? senderName : 'Someone',
+            senderAvatar,
+            text: incomingMsg.text,
+            propertyTitle: existingConv?.property_title || newRow.property_context?.title,
+          });
+
+          showBrowserNotification({
+            title: `New message from ${senderName}`,
+            body: incomingMsg.text,
+            tag: `msg-${convId}`,
+            onClick: () => {
+              if (existingConv) {
+                setActiveConversation(existingConv);
+                markConversationAsRead(convId);
+              }
+              setIsChatModalOpen(true);
+            },
+          });
+        }
+      }
+    },
+    [loadData, markConversationAsRead, setIsChatModalOpen]
+  );
 
   // =========================================================================
   // SUPABASE REALTIME: ACTIVE CONVERSATION CHANNEL
@@ -114,7 +339,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const channel = supabase.channel(channelName);
 
-    // 1. Listen for new messages inserted in the database
+    // 1. Listen for new messages inserted in database
     channel.on(
       'postgres_changes',
       {
@@ -126,80 +351,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (payload) => {
         const newRow = payload.new as any;
         if (!newRow || newRow.conversation_id !== convId) return;
-
-        if (import.meta.env.DEV) {
-          console.log(`[Chat Realtime] Incoming postgres_changes message: ${newRow.id}`);
-        }
-
-        const currentActive = activeConversationRef.current;
-        const senderName =
-          newRow.sender_id === currentUserRef.current?.id
-            ? (currentUserRef.current?.full_name || 'You')
-            : (currentActive?.participant_names?.[newRow.sender_id] || 'User');
-
-        const incomingMsg: Message = {
-          id: newRow.id,
-          conversation_id: newRow.conversation_id,
-          sender_id: newRow.sender_id,
-          sender_name: senderName,
-          receiver_id: newRow.receiver_id,
-          text: newRow.text,
-          timestamp: newRow.created_at
-            ? new Date(newRow.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : 'Just now',
-          is_read: Boolean(newRow.is_read),
-          property_context: newRow.property_context,
-        };
-
-        // Deduplicated append to messages
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === incomingMsg.id)) {
-            return prev;
-          }
-          return [...prev, incomingMsg];
-        });
-
-        // Update last message in conversations list
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === convId
-              ? {
-                  ...c,
-                  last_message: incomingMsg.text,
-                  last_message_time: incomingMsg.timestamp,
-                }
-              : c
-          )
-        );
+        handleIncomingMessage(newRow);
       }
     );
 
     // 2. Listen for peer WebSocket broadcast messages
     channel.on('broadcast', { event: 'new_message' }, ({ payload }) => {
       if (!payload || payload.conversation_id !== convId) return;
-
-      if (import.meta.env.DEV) {
-        console.log(`[Chat Realtime] Incoming broadcast message: ${payload.id}`);
-      }
-
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === payload.id)) {
-          return prev;
-        }
-        return [...prev, payload];
-      });
-
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === convId
-            ? {
-                ...c,
-                last_message: payload.text,
-                last_message_time: payload.timestamp,
-              }
-            : c
-        )
-      );
+      handleIncomingMessage(payload);
     });
 
     channel.subscribe((status) => {
@@ -219,10 +378,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       activeChannelRef.current = null;
     };
-  }, [activeConversation?.id, currentUser?.id]);
+  }, [activeConversation?.id, currentUser?.id, handleIncomingMessage]);
 
   // =========================================================================
   // SUPABASE REALTIME: USER-LEVEL NOTIFICATION CHANNEL
+  // Catches all messages sent to this user across all conversations
   // =========================================================================
   useEffect(() => {
     if (!currentUser?.id || !supabase) return;
@@ -242,54 +402,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (payload) => {
           const newRow = payload.new as any;
           if (!newRow) return;
-
-          const activeId = activeConversationRef.current?.id;
-
-          // If the message is for the currently open conversation, append it if not already present
-          if (activeId && activeId === newRow.conversation_id) {
-            const senderName =
-              activeConversationRef.current?.participant_names?.[newRow.sender_id] || 'User';
-
-            const incomingMsg: Message = {
-              id: newRow.id,
-              conversation_id: newRow.conversation_id,
-              sender_id: newRow.sender_id,
-              sender_name: senderName,
-              receiver_id: newRow.receiver_id,
-              text: newRow.text,
-              timestamp: newRow.created_at
-                ? new Date(newRow.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : 'Just now',
-              is_read: Boolean(newRow.is_read),
-              property_context: newRow.property_context,
-            };
-
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === incomingMsg.id)) return prev;
-              return [...prev, incomingMsg];
-            });
-          } else {
-            // For other conversations: update unread counts and last message
-            setConversations((prev) => {
-              const exists = prev.some((c) => c.id === newRow.conversation_id);
-              if (exists) {
-                return prev.map((c) =>
-                  c.id === newRow.conversation_id
-                    ? {
-                        ...c,
-                        last_message: newRow.text,
-                        last_message_time: 'Just now',
-                        unread_count: (c.unread_count || 0) + 1,
-                      }
-                    : c
-                );
-              } else {
-                // Brand new conversation thread
-                loadData();
-                return prev;
-              }
-            });
-          }
+          handleIncomingMessage(newRow);
         }
       )
       .subscribe((status) => {
@@ -303,7 +416,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.removeChannel(userChannel);
       }
     };
-  }, [currentUser?.id, loadData]);
+  }, [currentUser?.id, handleIncomingMessage]);
 
   // =========================================================================
   // CANONICAL CHAT ROUTING: OPEN CHAT FOR LISTING
@@ -343,7 +456,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // 3. Immediately set an accurate active conversation placeholder
-    // This PREVENTS flashing stale conversations or picking conversations[0]
     const immediatePlaceholder: Conversation = {
       id: `temp-${property.id}`,
       participant_ids: [currentUser.id, ownerId],
@@ -381,12 +493,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 5. Update active conversation with canonical DB record
       setActiveConversation(resolvedConv);
+      markConversationAsRead(resolvedConv.id);
 
       // Ensure conversation is in the left sidebar / thread list
       setConversations((prev) => {
         const exists = prev.some((c) => c.id === resolvedConv.id);
         if (exists) {
-          return prev.map((c) => (c.id === resolvedConv.id ? { ...c, ...resolvedConv } : c));
+          return prev.map((c) => (c.id === resolvedConv.id ? { ...c, ...resolvedConv, unread_count: 0 } : c));
         }
         return [resolvedConv, ...prev];
       });
@@ -399,7 +512,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Backwards-compatible / generic chat opener (e.g. for roommate or custom inquiries)
+  // Backwards-compatible / generic chat opener
   const openChatWithContext = async (property: {
     id: string;
     title: string;
@@ -427,12 +540,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!currentUser) return;
 
-    // Prevent self-chat
     if (currentUser.id === ownerId || (property.created_by && currentUser.id === property.created_by)) {
       return;
     }
 
-    // Set immediate placeholder
     const placeholder: Conversation = {
       id: `temp-${property.id}`,
       participant_ids: [currentUser.id, ownerId],
@@ -462,11 +573,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       setActiveConversation(resolvedConv);
+      markConversationAsRead(resolvedConv.id);
 
       setConversations((prev) => {
         const exists = prev.some((c) => c.id === resolvedConv.id);
         if (exists) {
-          return prev.map((c) => (c.id === resolvedConv.id ? { ...c, ...resolvedConv } : c));
+          return prev.map((c) => (c.id === resolvedConv.id ? { ...c, ...resolvedConv, unread_count: 0 } : c));
         }
         return [resolvedConv, ...prev];
       });
@@ -480,6 +592,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const selectConversation = async (conv: Conversation) => {
     setActiveConversation(conv);
+    markConversationAsRead(conv.id);
     try {
       const msgs = await chatAndSafetyRepository.getMessages(conv.id);
       setMessages(msgs);
@@ -515,12 +628,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         : undefined,
     });
 
+    // Record sent message ID in processed cache to avoid handling our own echo twice
+    processedMessageIdsRef.current.add(sent.id);
+
     // If conversation was a placeholder, update to the newly assigned UUID
     if (isTempId && sent.conversation_id) {
       setActiveConversation((prev) => (prev ? { ...prev, id: sent.conversation_id } : prev));
     }
 
-    // 1. Deduplicated local state update
+    // 1. Local state update
     setMessages((prev) => {
       if (prev.some((m) => m.id === sent.id)) return prev;
       return [...prev, sent];
@@ -535,19 +651,21 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     }
 
-    // 3. Update conversations list
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === (isTempId ? sent.conversation_id : activeConversation.id)
-          ? {
-              ...c,
-              id: sent.conversation_id,
-              last_message: sent.text,
-              last_message_time: sent.timestamp,
-            }
-          : c
-      )
-    );
+    // 3. Update conversations list & move to top
+    setConversations((prev) => {
+      const targetId = isTempId ? sent.conversation_id : activeConversation.id;
+      const found = prev.find((c) => c.id === targetId);
+      if (found) {
+        const updated = {
+          ...found,
+          id: sent.conversation_id,
+          last_message: sent.text,
+          last_message_time: sent.timestamp,
+        };
+        return [updated, ...prev.filter((c) => c.id !== targetId)];
+      }
+      return prev;
+    });
   };
 
   const sendContactRequest = async (property: {
@@ -604,6 +722,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       locationShare,
     });
 
+    processedMessageIdsRef.current.add(sent.id);
+
     setMessages((prev) => {
       if (prev.some((m) => m.id === sent.id)) return prev;
       return [...prev, sent];
@@ -630,6 +750,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activeConversation,
         contactRequests,
         unreadCount,
+        incomingToast,
+        dismissToast,
+        markConversationAsRead,
+        requestNotificationPermission,
         openChatForListing,
         openChatWithContext,
         selectConversation,

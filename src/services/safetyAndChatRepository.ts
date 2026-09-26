@@ -38,6 +38,22 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
       throw new Error(`Failed to load conversations: ${error.message}`);
     }
 
+    // Query unread messages targeting this user to populate accurate badge counts
+    const { data: unreadRows } = await client
+      .from('messages')
+      .select('conversation_id')
+      .eq('receiver_id', userId)
+      .eq('is_read', false);
+
+    const unreadCountMap: Record<string, number> = {};
+    if (unreadRows && unreadRows.length > 0) {
+      for (const row of unreadRows) {
+        if (row.conversation_id) {
+          unreadCountMap[row.conversation_id] = (unreadCountMap[row.conversation_id] || 0) + 1;
+        }
+      }
+    }
+
     return (data || []).map((c: any) => {
       const nameA = c.profile_a?.full_name || 'User A';
       const nameB = c.profile_b?.full_name || 'User B';
@@ -57,7 +73,7 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
         },
         last_message: c.last_message || '',
         last_message_time: c.last_message_time ? new Date(c.last_message_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
-        unread_count: 0,
+        unread_count: unreadCountMap[c.id] || 0,
         property_id: c.property_id,
         property_title: c.property_title,
       };
@@ -241,6 +257,22 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
       is_read: Boolean(m.is_read),
       property_context: m.property_context,
     }));
+  }
+
+  async markConversationAsRead(conversationId: string, userId: string): Promise<void> {
+    const client = this.assertSupabaseClient();
+    if (!conversationId || !userId) return;
+
+    const { error } = await client
+      .from('messages')
+      .update({ is_read: true })
+      .eq('conversation_id', conversationId)
+      .eq('receiver_id', userId)
+      .eq('is_read', false);
+
+    if (error) {
+      console.warn('[ChatRepository] Failed to mark messages as read:', error.message);
+    }
   }
 
   async sendMessage(data: {

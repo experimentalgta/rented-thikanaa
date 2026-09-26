@@ -35,6 +35,7 @@ export const ChatModal: React.FC = () => {
     contactRequests,
     updateContactRequest,
     shareExactLocation,
+    markConversationAsRead,
   } = useChat();
 
   const { currentUser } = useAuth();
@@ -55,11 +56,14 @@ export const ChatModal: React.FC = () => {
   const desktopMessagesEndRef = useRef<HTMLDivElement>(null);
   const mobileMessagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-switch mobile view if active conversation changes
+  // Auto-switch mobile view if active conversation changes & mark as read
   useEffect(() => {
     if (isChatModalOpen) {
       if (activeConversation) {
         setMobileView('chat');
+        if (!activeConversation.id.startsWith('temp-')) {
+          markConversationAsRead(activeConversation.id);
+        }
       } else if (conversations.length > 0) {
         if (window.innerWidth >= 768) {
           selectConversation(conversations[0]);
@@ -70,7 +74,7 @@ export const ChatModal: React.FC = () => {
         setMobileView('threads');
       }
     }
-  }, [isChatModalOpen, activeConversation?.id]);
+  }, [isChatModalOpen, activeConversation?.id, markConversationAsRead]);
 
   // Smooth scroll to bottom sentinel
   useEffect(() => {
@@ -266,9 +270,16 @@ export const ChatModal: React.FC = () => {
                             {conv.last_message_time}
                           </span>
                         </div>
-                        <p className="text-[11px] text-[#64748B] truncate">
-                          {conv.last_message}
-                        </p>
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="text-[11px] text-[#64748B] truncate flex-1">
+                            {conv.last_message || 'No messages yet'}
+                          </p>
+                          {conv.unread_count > 0 && (
+                            <span className="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 shadow-2xs leading-none">
+                              +{conv.unread_count > 99 ? '99+' : conv.unread_count}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
@@ -675,9 +686,16 @@ export const ChatModal: React.FC = () => {
                           {conv.last_message_time}
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        {conv.last_message}
-                      </p>
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-[11px] text-slate-400 truncate flex-1">
+                          {conv.last_message || 'No messages yet'}
+                        </p>
+                        {conv.unread_count > 0 && (
+                          <span className="bg-emerald-500 text-slate-950 font-bold text-[10px] px-1.5 py-0.5 rounded-full shrink-0 leading-none">
+                            +{conv.unread_count > 99 ? '99+' : conv.unread_count}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
                   </button>

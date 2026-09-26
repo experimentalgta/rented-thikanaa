@@ -8,6 +8,7 @@ import { Header } from './components/layout/Header';
 import { MobileNav } from './components/layout/MobileNav';
 import { Footer } from './components/layout/Footer';
 import { ChatModal } from './components/chat/ChatModal';
+import { MessageNotificationToast } from './components/chat/MessageNotificationToast';
 import { LoginModal } from './components/auth/LoginModal';
 import { AuthCallback } from './components/auth/AuthCallback';
 
@@ -509,6 +510,9 @@ const MainApp: React.FC = () => {
           />
         </div>
       )}
+
+      {/* In-App Incoming Message Toast Notification */}
+      <MessageNotificationToast />
 
       {/* Global In-App Messaging Modal */}
       <ChatModal />

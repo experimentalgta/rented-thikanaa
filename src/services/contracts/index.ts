@@ -51,6 +51,7 @@ export interface IChatRepository {
     userAvatar?: string;
   }): Promise<Conversation>;
   getMessages(conversationId: string): Promise<Message[]>;
+  markConversationAsRead(conversationId: string, userId: string): Promise<void>;
   sendMessage(data: {
     conversationId?: string;
     senderId: string;
