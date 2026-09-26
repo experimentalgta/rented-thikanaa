@@ -20,7 +20,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
   const { unreadCount, setIsChatModalOpen } = useChat();
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E5E7EB] transition-all w-full max-w-full overflow-hidden">
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E5E7EB] transition-all w-full max-w-full">
       <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-18 w-full min-w-0">
           {/* Brand Logo */}

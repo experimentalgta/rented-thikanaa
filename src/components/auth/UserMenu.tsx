@@ -21,7 +21,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onNavigate }) => {
 
   // Close dropdown on click outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
@@ -31,9 +31,11 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onNavigate }) => {
     };
 
     document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
     document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
   }, []);
@@ -84,7 +86,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onNavigate }) => {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-24px)] bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
           {/* User Details Header */}
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
             {currentUser.avatar_url ? (
