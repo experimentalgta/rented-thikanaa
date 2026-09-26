@@ -40,6 +40,16 @@ export interface IRoommateRepository {
 
 export interface IChatRepository {
   getConversations(userId: string): Promise<Conversation[]>;
+  getOrCreateConversation(params: {
+    userId: string;
+    ownerId: string;
+    propertyId?: string;
+    propertyTitle?: string;
+    ownerName?: string;
+    ownerAvatar?: string;
+    userName?: string;
+    userAvatar?: string;
+  }): Promise<Conversation>;
   getMessages(conversationId: string): Promise<Message[]>;
   sendMessage(data: {
     conversationId?: string;

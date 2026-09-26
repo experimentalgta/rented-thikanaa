@@ -22,9 +22,14 @@ export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = React.mem
   singleAction = false,
 }) => {
   const { isSaved, toggleSave } = useSaved();
-  const { setIsChatModalOpen } = useChat();
-  const { requireAuth } = useAuth();
+  const { openChatForListing } = useChat();
+  const { currentUser } = useAuth();
   const saved = isSaved(property.id);
+
+  const isOwner = Boolean(
+    currentUser?.id &&
+    (property.owner_id === currentUser.id || property.created_by === currentUser.id)
+  );
 
   const coverImage =
     property.images.find((img) => img.is_cover)?.url ||
@@ -144,24 +149,23 @@ export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = React.mem
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-1.5 mt-2.5 pt-2 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (
-                  requireAuth('Sign in with Google to chat with the property owner.', {
-                    type: 'chat',
-                    propertyId: property.id,
-                  })
-                ) {
-                  setIsChatModalOpen(true);
-                }
-              }}
-              className="py-1 px-1.5 text-[11px] font-medium rounded-lg border border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-700 hover:text-white text-center transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
-            >
-              <MessageSquare className="w-3 h-3 text-amber-400 shrink-0" />
-              <span>Chat</span>
-            </button>
+            {isOwner ? (
+              <span className="py-1 px-1.5 text-[10px] font-medium rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 text-center flex items-center justify-center truncate">
+                Your Room
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openChatForListing(property);
+                }}
+                className="py-1 px-1.5 text-[11px] font-medium rounded-lg border border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-700 hover:text-white text-center transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <MessageSquare className="w-3 h-3 text-amber-400 shrink-0" />
+                <span>Chat</span>
+              </button>
+            )}
 
             <button
               type="button"

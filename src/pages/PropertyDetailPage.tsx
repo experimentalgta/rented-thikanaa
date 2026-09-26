@@ -36,8 +36,13 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
   onBack,
 }) => {
   const { isSaved, toggleSave } = useSaved();
-  const { openChatWithContext } = useChat();
-  const { requireAuth } = useAuth();
+  const { openChatForListing } = useChat();
+  const { currentUser, requireAuth } = useAuth();
+
+  const isOwner = Boolean(
+    currentUser?.id &&
+    (property.owner_id === currentUser.id || property.created_by === currentUser.id)
+  );
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -410,16 +415,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() =>
-                    openChatWithContext({
-                      id: property.id,
-                      title: property.title,
-                      locality: property.locality,
-                      rent: property.rent,
-                      owner_id: property.owner_id,
-                      owner_name: property.owner_name,
-                    })
-                  }
+                  onClick={() => openChatForListing(property)}
                   className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#101828] text-white text-[11px] font-semibold hover:bg-[#1E293B] transition-colors shadow-2xs self-start sm:self-center shrink-0 cursor-pointer"
                 >
                   <MessageSquare className="w-3.5 h-3.5 text-[#F59E0B]" />
@@ -536,20 +532,12 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                 variant="primary"
                 size="lg"
                 fullWidth
-                onClick={() =>
-                  openChatWithContext({
-                    id: property.id,
-                    title: property.title,
-                    locality: property.locality,
-                    rent: property.rent,
-                    owner_id: property.owner_id,
-                    owner_name: property.lister_name || property.owner_name,
-                  })
-                }
+                disabled={isOwner}
+                onClick={() => openChatForListing(property)}
                 icon={<MessageSquare className="w-5 h-5" />}
                 className="font-bold"
               >
-                Message Lister
+                {isOwner ? 'You Listed this Room' : 'Message Lister'}
               </Button>
 
               {!isPhoneAuthorized && (

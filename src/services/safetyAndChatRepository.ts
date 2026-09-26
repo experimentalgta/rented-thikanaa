@@ -64,6 +64,156 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     });
   }
 
+  async getOrCreateConversation(params: {
+    userId: string;
+    ownerId: string;
+    propertyId?: string;
+    propertyTitle?: string;
+    ownerName?: string;
+    ownerAvatar?: string;
+    userName?: string;
+    userAvatar?: string;
+  }): Promise<Conversation> {
+    const client = this.assertSupabaseClient();
+    const { userId, ownerId, propertyId, propertyTitle } = params;
+
+    if (!userId || !ownerId) {
+      throw new Error('Both userId and ownerId are required to resolve a conversation');
+    }
+
+    if (userId === ownerId) {
+      throw new Error('Cannot start a conversation with yourself');
+    }
+
+    // 1. Search for existing conversation between these participants
+    let query = client
+      .from('conversations')
+      .select(`
+        *,
+        profile_a:profiles!conversations_participant_a_fkey (id, full_name, avatar_url),
+        profile_b:profiles!conversations_participant_b_fkey (id, full_name, avatar_url)
+      `)
+      .or(`and(participant_a.eq.${userId},participant_b.eq.${ownerId}),and(participant_a.eq.${ownerId},participant_b.eq.${userId})`);
+
+    if (propertyId) {
+      query = query.eq('property_id', propertyId);
+    }
+
+    const { data: existingList, error: findErr } = await query;
+
+    if (findErr) {
+      console.warn('[ChatRepository] Error searching for conversation:', findErr.message);
+    }
+
+    if (existingList && existingList.length > 0) {
+      const c = existingList[0];
+      const nameA = c.profile_a?.full_name || (c.participant_a === userId ? params.userName : params.ownerName) || 'User';
+      const nameB = c.profile_b?.full_name || (c.participant_b === userId ? params.userName : params.ownerName) || 'User';
+      const avatarA = c.profile_a?.avatar_url || (c.participant_a === userId ? params.userAvatar : params.ownerAvatar);
+      const avatarB = c.profile_b?.avatar_url || (c.participant_b === userId ? params.userAvatar : params.ownerAvatar);
+
+      return {
+        id: c.id,
+        participant_ids: [c.participant_a, c.participant_b],
+        participant_names: {
+          [c.participant_a]: nameA,
+          [c.participant_b]: nameB,
+        },
+        participant_avatars: {
+          [c.participant_a]: avatarA,
+          [c.participant_b]: avatarB,
+        },
+        last_message: c.last_message || '',
+        last_message_time: c.last_message_time ? new Date(c.last_message_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+        unread_count: 0,
+        property_id: c.property_id || propertyId,
+        property_title: c.property_title || propertyTitle,
+      };
+    }
+
+    // 2. Insert new conversation record
+    const { data: newConv, error: createErr } = await client
+      .from('conversations')
+      .insert({
+        participant_a: userId,
+        participant_b: ownerId,
+        property_id: propertyId || null,
+        property_title: propertyTitle || null,
+        last_message: '',
+        last_message_time: new Date().toISOString(),
+      })
+      .select(`
+        *,
+        profile_a:profiles!conversations_participant_a_fkey (id, full_name, avatar_url),
+        profile_b:profiles!conversations_participant_b_fkey (id, full_name, avatar_url)
+      `)
+      .single();
+
+    if (createErr || !newConv) {
+      // Race condition recovery (e.g. concurrent insert)
+      if (createErr?.code === '23505' || createErr?.message?.includes('duplicate key')) {
+        let retryQuery = client
+          .from('conversations')
+          .select(`
+            *,
+            profile_a:profiles!conversations_participant_a_fkey (id, full_name, avatar_url),
+            profile_b:profiles!conversations_participant_b_fkey (id, full_name, avatar_url)
+          `)
+          .or(`and(participant_a.eq.${userId},participant_b.eq.${ownerId}),and(participant_a.eq.${ownerId},participant_b.eq.${userId})`);
+
+        if (propertyId) {
+          retryQuery = retryQuery.eq('property_id', propertyId);
+        }
+
+        const { data: retryList } = await retryQuery;
+        if (retryList && retryList.length > 0) {
+          const c = retryList[0];
+          return {
+            id: c.id,
+            participant_ids: [c.participant_a, c.participant_b],
+            participant_names: {
+              [c.participant_a]: c.profile_a?.full_name || (c.participant_a === userId ? params.userName : params.ownerName) || 'User',
+              [c.participant_b]: c.profile_b?.full_name || (c.participant_b === userId ? params.userName : params.ownerName) || 'User',
+            },
+            participant_avatars: {
+              [c.participant_a]: c.profile_a?.avatar_url || (c.participant_a === userId ? params.userAvatar : params.ownerAvatar),
+              [c.participant_b]: c.profile_b?.avatar_url || (c.participant_b === userId ? params.userAvatar : params.ownerAvatar),
+            },
+            last_message: c.last_message || '',
+            last_message_time: 'Recently',
+            unread_count: 0,
+            property_id: c.property_id || propertyId,
+            property_title: c.property_title || propertyTitle,
+          };
+        }
+      }
+      throw new Error(`Failed to initialize conversation: ${createErr?.message}`);
+    }
+
+    const nameA = newConv.profile_a?.full_name || params.userName || 'User';
+    const nameB = newConv.profile_b?.full_name || params.ownerName || 'User';
+    const avatarA = newConv.profile_a?.avatar_url || params.userAvatar;
+    const avatarB = newConv.profile_b?.avatar_url || params.ownerAvatar;
+
+    return {
+      id: newConv.id,
+      participant_ids: [newConv.participant_a, newConv.participant_b],
+      participant_names: {
+        [newConv.participant_a]: nameA,
+        [newConv.participant_b]: nameB,
+      },
+      participant_avatars: {
+        [newConv.participant_a]: avatarA,
+        [newConv.participant_b]: avatarB,
+      },
+      last_message: newConv.last_message || '',
+      last_message_time: 'Just now',
+      unread_count: 0,
+      property_id: newConv.property_id,
+      property_title: newConv.property_title,
+    };
+  }
+
   async getMessages(conversationId: string): Promise<Message[]> {
     const client = this.assertSupabaseClient();
 
@@ -107,34 +257,15 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     let targetConvId = data.conversationId;
 
     if (!targetConvId) {
-      // Find or create conversation
-      const { data: existing, error: findErr } = await client
-        .from('conversations')
-        .select('id')
-        .or(`and(participant_a.eq.${data.senderId},participant_b.eq.${data.receiverId}),and(participant_a.eq.${data.receiverId},participant_b.eq.${data.senderId})`)
-        .maybeSingle();
-
-      if (existing) {
-        targetConvId = existing.id;
-      } else {
-        const { data: newConv, error: createErr } = await client
-          .from('conversations')
-          .insert({
-            participant_a: data.senderId,
-            participant_b: data.receiverId,
-            property_id: data.propertyContext?.id,
-            property_title: data.propertyContext?.title,
-            last_message: data.text,
-            last_message_time: new Date().toISOString(),
-          })
-          .select()
-          .single();
-
-        if (createErr || !newConv) {
-          throw new Error(`Failed to initialize conversation: ${createErr?.message}`);
-        }
-        targetConvId = newConv.id;
-      }
+      // Find or create conversation using canonical resolver
+      const conv = await this.getOrCreateConversation({
+        userId: data.senderId,
+        ownerId: data.receiverId,
+        propertyId: data.propertyContext?.id,
+        propertyTitle: data.propertyContext?.title,
+        userName: data.senderName,
+      });
+      targetConvId = conv.id;
     }
 
     const { data: newMsg, error: msgErr } = await client

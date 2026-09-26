@@ -311,7 +311,7 @@ export interface Conversation {
   id: string;
   participant_ids: string[];
   participant_names: Record<string, string>;
-  participant_avatars?: Record<string, string>;
+  participant_avatars?: Record<string, string | undefined>;
   last_message: string;
   last_message_time: string;
   unread_count: number;

@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Conversation, Message, ContactRequest, ContactRequestStatus } from '../types';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { Conversation, Message, ContactRequest, ContactRequestStatus, Property } from '../types';
 import { chatAndSafetyRepository } from '../services/safetyAndChatRepository';
 import { useAuth } from './AuthContext';
+import { supabase } from '../lib/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface ChatContextType {
   conversations: Conversation[];
@@ -9,8 +11,17 @@ interface ChatContextType {
   activeConversation: Conversation | null;
   contactRequests: ContactRequest[];
   unreadCount: number;
-  openChatWithContext: (property: { id: string; title: string; locality: string; rent: number; owner_id: string; owner_name: string }) => void;
-  selectConversation: (conv: Conversation) => void;
+  openChatForListing: (property: Property) => Promise<void>;
+  openChatWithContext: (property: {
+    id: string;
+    title: string;
+    locality: string;
+    rent: number;
+    owner_id: string;
+    owner_name: string;
+    created_by?: string;
+  }) => Promise<void>;
+  selectConversation: (conv: Conversation) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   sendContactRequest: (property: { id: string; title: string; owner_id: string; owner_name: string }) => Promise<ContactRequest>;
   updateContactRequest: (requestId: string, status: ContactRequestStatus) => Promise<void>;
@@ -30,7 +41,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [contactRequests, setContactRequests] = useState<ContactRequest[]>([]);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
-  const loadData = async () => {
+  // Mutable refs to prevent stale closures in event listeners and channels
+  const activeConversationRef = useRef<Conversation | null>(null);
+  activeConversationRef.current = activeConversation;
+
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+
+  const activeChannelRef = useRef<RealtimeChannel | null>(null);
+
+  const loadData = useCallback(async () => {
     if (!currentUser) {
       setConversations([]);
       setContactRequests([]);
@@ -46,19 +66,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const reqs = await chatAndSafetyRepository.getContactRequests(currentUser.id);
       setContactRequests(reqs);
 
-      if (activeConversation) {
-        const msgs = await chatAndSafetyRepository.getMessages(activeConversation.id);
-        setMessages(msgs);
-      } else if (convs.length > 0) {
-        setActiveConversation(convs[0]);
-        const msgs = await chatAndSafetyRepository.getMessages(convs[0].id);
+      if (activeConversationRef.current) {
+        const msgs = await chatAndSafetyRepository.getMessages(activeConversationRef.current.id);
         setMessages(msgs);
       }
     } catch (e) {
-      console.error('Failed to load chat data', e);
+      console.error('[ChatContext] Failed to load chat data', e);
     }
-  };
+  }, [currentUser]);
 
+  // Reset or load initial data on user auth change
   useEffect(() => {
     if (!currentUser) {
       setConversations([]);
@@ -69,20 +86,320 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       loadData();
     }
-  }, [currentUser?.id]);
+  }, [currentUser?.id, loadData]);
 
+  // Load messages whenever activeConversation changes
   useEffect(() => {
-    if (activeConversation && currentUser) {
-      chatAndSafetyRepository.getMessages(activeConversation.id).then(setMessages);
+    if (activeConversation && currentUser && !activeConversation.id.startsWith('temp-')) {
+      chatAndSafetyRepository.getMessages(activeConversation.id).then((msgs) => {
+        setMessages(msgs);
+      });
     }
   }, [activeConversation?.id, currentUser?.id]);
 
-  const selectConversation = async (conv: Conversation) => {
-    setActiveConversation(conv);
-    const msgs = await chatAndSafetyRepository.getMessages(conv.id);
-    setMessages(msgs);
+  // =========================================================================
+  // SUPABASE REALTIME: ACTIVE CONVERSATION CHANNEL
+  // =========================================================================
+  useEffect(() => {
+    if (!activeConversation?.id || activeConversation.id.startsWith('temp-') || !currentUser || !supabase) {
+      return;
+    }
+
+    const convId = activeConversation.id;
+    const channelName = `conv_${convId}`;
+
+    if (import.meta.env.DEV) {
+      console.log(`[Chat Realtime] Subscribing to channel ${channelName} for conversation ${convId}`);
+    }
+
+    const channel = supabase.channel(channelName);
+
+    // 1. Listen for new messages inserted in the database
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${convId}`,
+      },
+      (payload) => {
+        const newRow = payload.new as any;
+        if (!newRow || newRow.conversation_id !== convId) return;
+
+        if (import.meta.env.DEV) {
+          console.log(`[Chat Realtime] Incoming postgres_changes message: ${newRow.id}`);
+        }
+
+        const currentActive = activeConversationRef.current;
+        const senderName =
+          newRow.sender_id === currentUserRef.current?.id
+            ? (currentUserRef.current?.full_name || 'You')
+            : (currentActive?.participant_names?.[newRow.sender_id] || 'User');
+
+        const incomingMsg: Message = {
+          id: newRow.id,
+          conversation_id: newRow.conversation_id,
+          sender_id: newRow.sender_id,
+          sender_name: senderName,
+          receiver_id: newRow.receiver_id,
+          text: newRow.text,
+          timestamp: newRow.created_at
+            ? new Date(newRow.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'Just now',
+          is_read: Boolean(newRow.is_read),
+          property_context: newRow.property_context,
+        };
+
+        // Deduplicated append to messages
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === incomingMsg.id)) {
+            return prev;
+          }
+          return [...prev, incomingMsg];
+        });
+
+        // Update last message in conversations list
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  last_message: incomingMsg.text,
+                  last_message_time: incomingMsg.timestamp,
+                }
+              : c
+          )
+        );
+      }
+    );
+
+    // 2. Listen for peer WebSocket broadcast messages
+    channel.on('broadcast', { event: 'new_message' }, ({ payload }) => {
+      if (!payload || payload.conversation_id !== convId) return;
+
+      if (import.meta.env.DEV) {
+        console.log(`[Chat Realtime] Incoming broadcast message: ${payload.id}`);
+      }
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === payload.id)) {
+          return prev;
+        }
+        return [...prev, payload];
+      });
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                last_message: payload.text,
+                last_message_time: payload.timestamp,
+              }
+            : c
+        )
+      );
+    });
+
+    channel.subscribe((status) => {
+      if (import.meta.env.DEV) {
+        console.log(`[Chat Realtime] Channel status for ${channelName}: ${status}`);
+      }
+    });
+
+    activeChannelRef.current = channel;
+
+    return () => {
+      if (import.meta.env.DEV) {
+        console.log(`[Chat Realtime] Unsubscribing from channel ${channelName}`);
+      }
+      if (supabase && channel) {
+        supabase.removeChannel(channel);
+      }
+      activeChannelRef.current = null;
+    };
+  }, [activeConversation?.id, currentUser?.id]);
+
+  // =========================================================================
+  // SUPABASE REALTIME: USER-LEVEL NOTIFICATION CHANNEL
+  // =========================================================================
+  useEffect(() => {
+    if (!currentUser?.id || !supabase) return;
+
+    const userChannelName = `user_${currentUser.id}`;
+    const userChannel = supabase.channel(userChannelName);
+
+    userChannel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `receiver_id=eq.${currentUser.id}`,
+        },
+        (payload) => {
+          const newRow = payload.new as any;
+          if (!newRow) return;
+
+          const activeId = activeConversationRef.current?.id;
+
+          // If the message is for the currently open conversation, append it if not already present
+          if (activeId && activeId === newRow.conversation_id) {
+            const senderName =
+              activeConversationRef.current?.participant_names?.[newRow.sender_id] || 'User';
+
+            const incomingMsg: Message = {
+              id: newRow.id,
+              conversation_id: newRow.conversation_id,
+              sender_id: newRow.sender_id,
+              sender_name: senderName,
+              receiver_id: newRow.receiver_id,
+              text: newRow.text,
+              timestamp: newRow.created_at
+                ? new Date(newRow.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : 'Just now',
+              is_read: Boolean(newRow.is_read),
+              property_context: newRow.property_context,
+            };
+
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+              return [...prev, incomingMsg];
+            });
+          } else {
+            // For other conversations: update unread counts and last message
+            setConversations((prev) => {
+              const exists = prev.some((c) => c.id === newRow.conversation_id);
+              if (exists) {
+                return prev.map((c) =>
+                  c.id === newRow.conversation_id
+                    ? {
+                        ...c,
+                        last_message: newRow.text,
+                        last_message_time: 'Just now',
+                        unread_count: (c.unread_count || 0) + 1,
+                      }
+                    : c
+                );
+              } else {
+                // Brand new conversation thread
+                loadData();
+                return prev;
+              }
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (import.meta.env.DEV) {
+          console.log(`[Chat Realtime] User channel status for ${userChannelName}: ${status}`);
+        }
+      });
+
+    return () => {
+      if (supabase && userChannel) {
+        supabase.removeChannel(userChannel);
+      }
+    };
+  }, [currentUser?.id, loadData]);
+
+  // =========================================================================
+  // CANONICAL CHAT ROUTING: OPEN CHAT FOR LISTING
+  // =========================================================================
+  const openChatForListing = async (property: Property) => {
+    const ownerId = property.owner_id || property.created_by;
+
+    if (!ownerId) {
+      console.warn('[ChatContext] Cannot open chat: Listing has no owner ID', property.id);
+      return;
+    }
+
+    // 1. Enforce authentication
+    if (!currentUser) {
+      requireAuth(`Sign in with Google to chat with the lister for "${property.title}".`, {
+        type: 'chat',
+        propertyId: property.id,
+        property,
+        context: {
+          id: property.id,
+          title: property.title,
+          locality: property.locality,
+          rent: property.rent,
+          owner_id: ownerId,
+          owner_name: property.lister_name || property.owner_name || 'Host / Owner',
+        },
+      });
+      return;
+    }
+
+    // 2. Prevent self-chatting: User owns this listing
+    if (currentUser.id === ownerId || (property.created_by && currentUser.id === property.created_by)) {
+      if (import.meta.env.DEV) {
+        console.log('[ChatContext] Blocked attempt to chat with self on owned listing');
+      }
+      return;
+    }
+
+    // 3. Immediately set an accurate active conversation placeholder
+    // This PREVENTS flashing stale conversations or picking conversations[0]
+    const immediatePlaceholder: Conversation = {
+      id: `temp-${property.id}`,
+      participant_ids: [currentUser.id, ownerId],
+      participant_names: {
+        [currentUser.id]: currentUser.full_name || 'You',
+        [ownerId]: property.lister_name || property.owner_name || 'Host / Owner',
+      },
+      participant_avatars: {
+        [currentUser.id]: currentUser.avatar_url,
+        [ownerId]: property.lister_avatar || property.owner_avatar,
+      },
+      last_message: '',
+      last_message_time: 'Just now',
+      unread_count: 0,
+      property_id: property.id,
+      property_title: property.title,
+    };
+
+    setActiveConversation(immediatePlaceholder);
+    setMessages([]);
+    setIsChatModalOpen(true);
+
+    try {
+      // 4. Deterministically resolve or create the conversation record in Supabase
+      const resolvedConv = await chatAndSafetyRepository.getOrCreateConversation({
+        userId: currentUser.id,
+        ownerId,
+        propertyId: property.id,
+        propertyTitle: property.title,
+        ownerName: property.lister_name || property.owner_name,
+        ownerAvatar: property.lister_avatar || property.owner_avatar,
+        userName: currentUser.full_name,
+        userAvatar: currentUser.avatar_url,
+      });
+
+      // 5. Update active conversation with canonical DB record
+      setActiveConversation(resolvedConv);
+
+      // Ensure conversation is in the left sidebar / thread list
+      setConversations((prev) => {
+        const exists = prev.some((c) => c.id === resolvedConv.id);
+        if (exists) {
+          return prev.map((c) => (c.id === resolvedConv.id ? { ...c, ...resolvedConv } : c));
+        }
+        return [resolvedConv, ...prev];
+      });
+
+      // Load existing messages for this conversation
+      const existingMsgs = await chatAndSafetyRepository.getMessages(resolvedConv.id);
+      setMessages(existingMsgs);
+    } catch (err) {
+      console.error('[ChatContext] Failed to resolve conversation for listing:', err);
+    }
   };
 
+  // Backwards-compatible / generic chat opener (e.g. for roommate or custom inquiries)
   const openChatWithContext = async (property: {
     id: string;
     title: string;
@@ -90,7 +407,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     rent: number;
     owner_id: string;
     owner_name: string;
+    created_by?: string;
   }) => {
+    const ownerId = property.owner_id || property.created_by;
+
+    if (!ownerId) {
+      console.warn('[ChatContext] Missing owner ID in openChatWithContext', property);
+      return;
+    }
+
     if (
       !requireAuth(
         `Sign in with Google to message the lister for "${property.title}".`,
@@ -102,36 +427,64 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!currentUser) return;
 
-    setIsChatModalOpen(true);
-    // Find existing or initialize temporary
-    const existing = conversations.find(
-      (c) => c.participant_ids.includes(property.owner_id) && c.property_id === property.id
-    );
+    // Prevent self-chat
+    if (currentUser.id === ownerId || (property.created_by && currentUser.id === property.created_by)) {
+      return;
+    }
 
-    if (existing) {
-      await selectConversation(existing);
-    } else {
-      // Auto-send initial inquiry with property context
-      const newMsg = await chatAndSafetyRepository.sendMessage({
-        senderId: currentUser.id,
-        senderName: currentUser.full_name,
-        receiverId: property.owner_id,
-        text: `Hi, I am inquiring about "${property.title}" in ${property.locality}. Is this still available for visit?`,
-        propertyContext: {
-          id: property.id,
-          title: property.title,
-          locality: property.locality,
-          rent: property.rent,
-        },
+    // Set immediate placeholder
+    const placeholder: Conversation = {
+      id: `temp-${property.id}`,
+      participant_ids: [currentUser.id, ownerId],
+      participant_names: {
+        [currentUser.id]: currentUser.full_name || 'You',
+        [ownerId]: property.owner_name || 'Host / Owner',
+      },
+      last_message: '',
+      last_message_time: 'Just now',
+      unread_count: 0,
+      property_id: property.id,
+      property_title: property.title,
+    };
+
+    setActiveConversation(placeholder);
+    setMessages([]);
+    setIsChatModalOpen(true);
+
+    try {
+      const resolvedConv = await chatAndSafetyRepository.getOrCreateConversation({
+        userId: currentUser.id,
+        ownerId,
+        propertyId: property.id.startsWith('roommate-') ? undefined : property.id,
+        propertyTitle: property.title,
+        ownerName: property.owner_name,
+        userName: currentUser.full_name,
       });
 
-      await loadData();
-      const updatedConvs = await chatAndSafetyRepository.getConversations(currentUser.id);
-      const target = updatedConvs.find((c) => c.property_id === property.id);
-      if (target) {
-        setActiveConversation(target);
-        setMessages([newMsg]);
-      }
+      setActiveConversation(resolvedConv);
+
+      setConversations((prev) => {
+        const exists = prev.some((c) => c.id === resolvedConv.id);
+        if (exists) {
+          return prev.map((c) => (c.id === resolvedConv.id ? { ...c, ...resolvedConv } : c));
+        }
+        return [resolvedConv, ...prev];
+      });
+
+      const existingMsgs = await chatAndSafetyRepository.getMessages(resolvedConv.id);
+      setMessages(existingMsgs);
+    } catch (err) {
+      console.error('[ChatContext] Failed to resolve conversation in openChatWithContext:', err);
+    }
+  };
+
+  const selectConversation = async (conv: Conversation) => {
+    setActiveConversation(conv);
+    try {
+      const msgs = await chatAndSafetyRepository.getMessages(conv.id);
+      setMessages(msgs);
+    } catch (err) {
+      console.error('[ChatContext] Failed to load messages for conversation:', err);
     }
   };
 
@@ -144,8 +497,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!otherParticipantId) return;
 
+    const isTempId = activeConversation.id.startsWith('temp-');
+
     const sent = await chatAndSafetyRepository.sendMessage({
-      conversationId: activeConversation.id,
+      conversationId: isTempId ? undefined : activeConversation.id,
       senderId: currentUser.id,
       senderName: currentUser.full_name,
       receiverId: otherParticipantId,
@@ -160,8 +515,39 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         : undefined,
     });
 
-    setMessages((prev) => [...prev, sent]);
-    loadData();
+    // If conversation was a placeholder, update to the newly assigned UUID
+    if (isTempId && sent.conversation_id) {
+      setActiveConversation((prev) => (prev ? { ...prev, id: sent.conversation_id } : prev));
+    }
+
+    // 1. Deduplicated local state update
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === sent.id)) return prev;
+      return [...prev, sent];
+    });
+
+    // 2. Peer WebSocket broadcast
+    if (activeChannelRef.current) {
+      activeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: sent,
+      });
+    }
+
+    // 3. Update conversations list
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === (isTempId ? sent.conversation_id : activeConversation.id)
+          ? {
+              ...c,
+              id: sent.conversation_id,
+              last_message: sent.text,
+              last_message_time: sent.timestamp,
+            }
+          : c
+      )
+    );
   };
 
   const sendContactRequest = async (property: {
@@ -202,7 +588,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       activeConversation.participant_ids.find((id) => id !== currentUser.id) || 'user-stud-1';
 
     const sent = await chatAndSafetyRepository.sendMessage({
-      conversationId: activeConversation.id,
+      conversationId: activeConversation.id.startsWith('temp-') ? undefined : activeConversation.id,
       senderId: currentUser.id,
       senderName: currentUser.full_name,
       receiverId: otherParticipantId,
@@ -218,7 +604,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       locationShare,
     });
 
-    setMessages((prev) => [...prev, sent]);
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === sent.id)) return prev;
+      return [...prev, sent];
+    });
+
+    if (activeChannelRef.current) {
+      activeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: sent,
+      });
+    }
+
     await loadData();
   };
 
@@ -232,6 +630,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activeConversation,
         contactRequests,
         unreadCount,
+        openChatForListing,
         openChatWithContext,
         selectConversation,
         sendMessage,

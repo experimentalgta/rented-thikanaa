@@ -25,7 +25,7 @@ import { roommateRepository } from './services/roommateRepository';
 
 const MainApp: React.FC = () => {
   const { isAuthenticated, requireAuth, isSuperAdmin, consumePendingAction } = useAuth();
-  const { openChatWithContext, isChatModalOpen, setIsChatModalOpen } = useChat();
+  const { openChatForListing, openChatWithContext, isChatModalOpen, setIsChatModalOpen } = useChat();
 
   const isChatModalOpenRef = useRef(isChatModalOpen);
   useEffect(() => {
@@ -205,8 +205,16 @@ const MainApp: React.FC = () => {
           }
         });
       }
-    } else if (action.type === 'chat' && action.context) {
-      openChatWithContext(action.context);
+    } else if (action.type === 'chat') {
+      if (action.property) {
+        openChatForListing(action.property);
+      } else if (action.context) {
+        openChatWithContext(action.context);
+      } else if (action.propertyId) {
+        propertyRepository.getPropertyById(action.propertyId).then((p) => {
+          if (p) openChatForListing(p);
+        });
+      }
     } else if (action.type === 'dashboard' || action.type === 'saved') {
       if (action.subTab || action.type === 'saved') {
         setSubTab(action.subTab || 'saved');

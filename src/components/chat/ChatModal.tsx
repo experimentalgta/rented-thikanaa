@@ -61,8 +61,11 @@ export const ChatModal: React.FC = () => {
       if (activeConversation) {
         setMobileView('chat');
       } else if (conversations.length > 0) {
-        selectConversation(conversations[0]);
-        setMobileView('chat');
+        if (window.innerWidth >= 768) {
+          selectConversation(conversations[0]);
+        } else {
+          setMobileView('threads');
+        }
       } else {
         setMobileView('threads');
       }
@@ -323,8 +326,13 @@ export const ChatModal: React.FC = () => {
 
               {/* Messages Scroll Area */}
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F8FAFC]">
-                {messages.map((msg) => {
-                  const isMe = currentUser ? msg.sender_id === currentUser.id : false;
+                {messages.length === 0 ? (
+                  <div className="h-full flex items-center justify-center p-8 text-center text-slate-400 text-xs">
+                    Send a message to discuss room availability, amenities, and visit timings.
+                  </div>
+                ) : (
+                  messages.map((msg) => {
+                    const isMe = currentUser ? msg.sender_id === currentUser.id : false;
                   return (
                     <div
                       key={msg.id}
@@ -428,7 +436,8 @@ export const ChatModal: React.FC = () => {
                       </div>
                     </div>
                   );
-                })}
+                })
+                )}
                 <div ref={desktopMessagesEndRef} />
               </div>
 
