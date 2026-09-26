@@ -147,6 +147,25 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
+  // Request location immediately upon opening the website (cold start) if not already set
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SAVED_LOCATION_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.latitude && parsed.longitude) {
+          return;
+        }
+      }
+    } catch {}
+
+    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+      detectCurrentLocation().catch((err) => {
+        console.warn('Initial website open location request deferred or denied:', err);
+      });
+    }
+  }, [detectCurrentLocation]);
+
   const setManualLocation = useCallback(
     (
       localityName: string,

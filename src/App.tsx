@@ -359,6 +359,14 @@ const MainApp: React.FC = () => {
       return;
     }
 
+    if (view === 'search') {
+      if (param !== undefined) {
+        setSelectedLocality(param);
+      }
+      setCurrentView('search');
+      return;
+    }
+
     setCurrentView(view);
   };
 

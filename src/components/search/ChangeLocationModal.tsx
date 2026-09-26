@@ -6,7 +6,8 @@ import {
   Check,
   Building2,
   Edit3,
-  ListFilter
+  ListFilter,
+  Navigation
 } from 'lucide-react';
 import { getSupportedCities, getCityConfig, getCityAreas, CityConfig } from '../../data/cityAreas';
 import { locationRepository } from '../../services/locationRepository';
@@ -22,6 +23,7 @@ interface ChangeLocationModalProps {
     lat?: number;
     lng?: number;
   }) => void;
+  onUseGps?: () => void;
 }
 
 export const ChangeLocationModal: React.FC<ChangeLocationModalProps> = ({
@@ -30,6 +32,7 @@ export const ChangeLocationModal: React.FC<ChangeLocationModalProps> = ({
   currentCity = 'Prayagraj',
   currentLocality = 'Civil Lines',
   onApplyLocation,
+  onUseGps,
 }) => {
   const cities: CityConfig[] = useMemo(() => getSupportedCities(), []);
 
@@ -130,6 +133,21 @@ export const ChangeLocationModal: React.FC<ChangeLocationModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-5 overflow-y-auto space-y-5 flex-1">
+          {/* Quick GPS Re-detect Action */}
+          {onUseGps && (
+            <button
+              type="button"
+              onClick={() => {
+                onUseGps();
+                onClose();
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 active:scale-98 text-amber-900 border border-amber-400/40 text-xs font-bold transition-all cursor-pointer shadow-xs"
+            >
+              <Navigation className="w-3.5 h-3.5 text-amber-600" />
+              <span>Use My Current GPS Location</span>
+            </button>
+          )}
+
           {/* Step 1: Select City */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">

@@ -240,6 +240,7 @@ export interface Locality {
   popular_for?: string;
   active_listings_count?: number;
   average_rent?: number;
+  aliases?: string[];
 }
 
 export interface Landmark {

@@ -1,4 +1,6 @@
 import { LocationData, LocationSource, Locality, City, Landmark } from '../../types';
+import { ALL_INDIAN_LOCALITIES } from '../../data/indiaLocations';
+import { calculateHaversineDistanceKm } from '../../utils/geo';
 
 export interface NominatimAddress {
   house_number?: string;
@@ -367,5 +369,94 @@ export function normalizeLandmarkToLocationData(
     latitude: lm.latitude,
     longitude: lm.longitude,
     source,
+  };
+}
+
+export interface RefinedLocalityResult {
+  locality: string;
+  localitySlug: string;
+  city?: string;
+  isSnapped: boolean;
+}
+
+/**
+ * High-accuracy locality resolution & proximity snapping:
+ * Resolves discrepancies where third-party geocoders return broad municipal zones (e.g. "Chowk")
+ * when user is actually residing in a specific neighborhood (e.g. "Kydganj (Khaadganj)").
+ */
+export function snapToAccurateLocality(
+  latitude: number,
+  longitude: number,
+  cityName?: string,
+  rawResolvedLocality?: string,
+  rawAddressText?: string
+): RefinedLocalityResult {
+  if (!latitude || !longitude) {
+    return {
+      locality: rawResolvedLocality || '',
+      localitySlug: (rawResolvedLocality || '').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      isSnapped: false,
+    };
+  }
+
+  const combinedText = `${rawResolvedLocality || ''} ${rawAddressText || ''}`.toLowerCase();
+
+  // Filter candidates by city if specified, or all within reasonable distance
+  let candidates = ALL_INDIAN_LOCALITIES;
+  if (cityName) {
+    const cleanCity = cityName.trim().toLowerCase();
+    const cityMatches = ALL_INDIAN_LOCALITIES.filter(
+      (l) => l.city_name.toLowerCase() === cleanCity || l.city_slug === cleanCity
+    );
+    if (cityMatches.length > 0) {
+      candidates = cityMatches;
+    }
+  }
+
+  // 1. Text-based alias match (if address text contains known neighborhood within 5km)
+  for (const loc of candidates) {
+    const dist = calculateHaversineDistanceKm(latitude, longitude, loc.latitude, loc.longitude);
+    if (dist <= 5.0) {
+      const namesToCheck = [loc.name, loc.slug, ...(loc.aliases || [])];
+      for (const name of namesToCheck) {
+        if (name && name.length >= 3 && combinedText.includes(name.toLowerCase())) {
+          return {
+            locality: loc.name,
+            localitySlug: loc.slug,
+            city: loc.city_name,
+            isSnapped: true,
+          };
+        }
+      }
+    }
+  }
+
+  // 2. High-precision nearest neighbor snapping:
+  let closestLocality = candidates[0];
+  let minDistanceKm = 999999;
+
+  for (const loc of candidates) {
+    const dist = calculateHaversineDistanceKm(latitude, longitude, loc.latitude, loc.longitude);
+    if (dist < minDistanceKm) {
+      minDistanceKm = dist;
+      closestLocality = loc;
+    }
+  }
+
+  // If user is within 2.5km of a verified locality in our catalog:
+  if (closestLocality && minDistanceKm <= 2.5) {
+    return {
+      locality: closestLocality.name,
+      localitySlug: closestLocality.slug,
+      city: closestLocality.city_name,
+      isSnapped: true,
+    };
+  }
+
+  return {
+    locality: rawResolvedLocality || closestLocality?.name || '',
+    localitySlug: (rawResolvedLocality || closestLocality?.slug || '').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    city: closestLocality?.city_name,
+    isSnapped: false,
   };
 }

@@ -98,7 +98,11 @@ export class LocationRepository {
     const cleanLoc = localityNameOrSlug.trim().toLowerCase();
     const list = this.getLocalities(citySlugOrName);
     return list.find(
-      (l) => l.slug === cleanLoc || l.name.toLowerCase() === cleanLoc
+      (l) =>
+        l.slug === cleanLoc ||
+        l.name.toLowerCase() === cleanLoc ||
+        (l.aliases && l.aliases.some((a) => a.toLowerCase() === cleanLoc)) ||
+        (l.hindi_name && l.hindi_name === cleanLoc)
     );
   }
 
@@ -127,6 +131,7 @@ export class LocationRepository {
         loc.name.toLowerCase().includes(q) ||
         (loc.hindi_name && loc.hindi_name.includes(q)) ||
         (loc.popular_for && loc.popular_for.toLowerCase().includes(q)) ||
+        (loc.aliases && loc.aliases.some((a) => a.toLowerCase().includes(q))) ||
         `${loc.name}, ${loc.city_name}`.toLowerCase().includes(q)
       ) {
         const key = `loc-${loc.id}`;

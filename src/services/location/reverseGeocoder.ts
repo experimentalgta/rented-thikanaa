@@ -5,7 +5,12 @@ import {
   ALL_INDIAN_LANDMARKS
 } from '../../data/indiaLocations';
 import { calculateHaversineDistanceKm } from '../../utils/geo';
-import { normalizeNominatimPlace, normalizePhotonFeature, NominatimPlace } from './locationNormalizer';
+import {
+  normalizeNominatimPlace,
+  normalizePhotonFeature,
+  snapToAccurateLocality,
+  NominatimPlace
+} from './locationNormalizer';
 import { locationCache } from './locationCache';
 
 const NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
@@ -14,6 +19,26 @@ const BIGDATACLOUD_REVERSE_URL = 'https://api.bigdatacloud.net/data/reverse-geoc
 let lastReverseCallTime = 0;
 
 export class ReverseGeocoder {
+  private refineLocation(loc: LocationData, rawText?: string): LocationData {
+    const refined = snapToAccurateLocality(
+      loc.latitude,
+      loc.longitude,
+      loc.city,
+      loc.locality,
+      rawText
+    );
+
+    if (refined.isSnapped) {
+      loc.locality = refined.locality;
+      loc.localitySlug = refined.localitySlug;
+      if (refined.city) {
+        loc.city = refined.city;
+      }
+      loc.formattedAddress = `${loc.locality}, ${loc.city}${loc.state ? ', ' + loc.state : ''}`;
+    }
+    return loc;
+  }
+
   async reverse(latitude: number, longitude: number, signal?: AbortSignal): Promise<LocationData> {
     // 1. Check Cache
     const cached = locationCache.getReverse(latitude, longitude);
@@ -64,6 +89,9 @@ export class ReverseGeocoder {
           normalized.landmark = nearestLandmark;
         }
 
+        const rawText = `${data.display_name || ''} ${data.address?.road || ''} ${data.address?.neighbourhood || ''} ${data.address?.suburb || ''}`;
+        this.refineLocation(normalized, rawText);
+
         if (import.meta.env.DEV) {
           console.log('[GPS Debug] Coordinates:', { latitude, longitude });
           console.log('[GPS Debug] Reverse Geocoder raw components:', {
@@ -79,7 +107,7 @@ export class ReverseGeocoder {
             state: data.address?.state,
             postcode: data.address?.postcode,
           });
-          console.log('[GPS Debug] Resolved Locality:', normalized.locality);
+          console.log('[GPS Debug] Resolved Locality (refined):', normalized.locality);
           console.log('[GPS Debug] Formatted Address:', normalized.formattedAddress);
         }
 
@@ -115,6 +143,9 @@ export class ReverseGeocoder {
           if (nearestLandmark && !normalized.landmark) {
             normalized.landmark = nearestLandmark;
           }
+
+          const rawText = `${feature.properties?.name || ''} ${feature.properties?.street || ''} ${feature.properties?.district || ''} ${feature.properties?.city || ''}`;
+          this.refineLocation(normalized, rawText);
 
           if (import.meta.env.DEV) {
             console.log('[GPS Debug: Photon Fallback]', {
@@ -178,12 +209,14 @@ export class ReverseGeocoder {
             source: 'gps',
           };
 
+          this.refineLocation(normalized, `${bdc.locality || ''} ${bdc.city || ''}`);
+
           if (import.meta.env.DEV) {
             console.log('[GPS Debug: BigDataCloud Fallback]', {
               latitude,
               longitude,
               cityName,
-              localityName,
+              localityName: normalized.locality,
               stateName,
             });
           }
@@ -244,22 +277,23 @@ export class ReverseGeocoder {
     // Strict proximity: only use locality name if within 4km, else do not guess wrong neighborhood
     const isCloseToLocality = minLocDist < 4.0 && closestLocality.city_slug === closestCity.slug;
     const fallbackLocality = isCloseToLocality ? closestLocality.name : closestCity.name;
-    const fallbackDisplayName = isCloseToLocality
-      ? `${closestLocality.name}, ${closestCity.name}, ${closestCity.state_name}`
-      : `${closestCity.name}, ${closestCity.state_name}`;
+    const refined = snapToAccurateLocality(latitude, longitude, closestCity.name, fallbackLocality);
+    const finalLocality = refined.isSnapped ? refined.locality : fallbackLocality;
+    const finalLocalitySlug = refined.isSnapped ? refined.localitySlug : (isCloseToLocality ? closestLocality.slug : closestCity.slug);
+    const finalCity = refined.city || closestCity.name;
 
     const fallbackResult: LocationData = {
       country: 'India',
       countryCode: 'IN',
       state: closestCity.state_name,
       stateCode: closestCity.state_code,
-      district: closestCity.district || closestCity.name,
-      city: closestCity.name,
+      district: closestCity.district || finalCity,
+      city: finalCity,
       citySlug: closestCity.slug,
-      locality: fallbackLocality,
-      localitySlug: isCloseToLocality ? closestLocality.slug : closestCity.slug,
+      locality: finalLocality,
+      localitySlug: finalLocalitySlug,
       landmark: nearestLandmark,
-      formattedAddress: fallbackDisplayName,
+      formattedAddress: `${finalLocality}, ${finalCity}, ${closestCity.state_name}`,
       latitude,
       longitude,
       source: 'gps',

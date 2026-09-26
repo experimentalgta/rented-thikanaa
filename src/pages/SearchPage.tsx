@@ -45,11 +45,13 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   onNavigate,
 }) => {
   const { currentUser } = useAuth();
-  const { userLocation, setManualLocation } = useLocation();
+  const { userLocation, setManualLocation, isDetecting: isContextDetecting } = useLocation();
 
   // Location search mode: 'gps' (automatic discovery) or 'manual' (user chosen)
   const [locationMode, setLocationMode] = useState<'gps' | 'manual'>(() => {
-    return initialLocality ? 'manual' : 'gps';
+    if (initialLocality) return 'manual';
+    if (userLocation.source === 'manual') return 'manual';
+    return 'gps';
   });
 
   // Current target location state
@@ -67,7 +69,11 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   });
 
   // GPS Telemetry & Status
-  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState<boolean>(() => {
+    if (initialLocality) return false;
+    if (userLocation.latitude && userLocation.longitude) return false;
+    return Boolean(isContextDetecting);
+  });
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(userLocation.accuracy || null);
   const [isLowAccuracy, setIsLowAccuracy] = useState<boolean>(Boolean(userLocation.isLowAccuracy));
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -143,9 +149,10 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   }, [setManualLocation]);
 
   /**
-   * Initial Mount Flow:
+   * Initial Mount & Context Location Sync Flow:
    * - If an explicit initialLocality was passed in, respect it (manual mode).
-   * - Otherwise, AUTOMATIC GPS DISCOVERY on Search Page open!
+   * - If userLocation is already available (from LocationContext / auto-detect on site load), USE IT directly! Do NOT re-trigger GPS.
+   * - Only if no location exists in context AND context is not actively detecting, trigger GPS discovery once.
    */
   useEffect(() => {
     if (initialLocality) {
@@ -160,11 +167,39 @@ export const SearchPage: React.FC<SearchPageProps> = ({
       return;
     }
 
+    if (userLocation.latitude && userLocation.longitude && userLocation.locality) {
+      setLocationMode(userLocation.source === 'manual' ? 'manual' : 'gps');
+      setCurrentCity(userLocation.city || 'Prayagraj');
+      setCurrentLocality(userLocation.locality);
+      setCurrentCoords({ lat: userLocation.latitude, lng: userLocation.longitude });
+      setGpsAccuracy(userLocation.accuracy || null);
+      setIsLowAccuracy(Boolean(userLocation.isLowAccuracy));
+      setIsDetectingLocation(false);
+      return;
+    }
+
+    if (isContextDetecting) {
+      setIsDetectingLocation(true);
+      return;
+    }
+
+    // Only if context has no location at all and is not actively detecting, trigger GPS discovery once
     if (!hasTriggeredInitialGpsRef.current) {
       hasTriggeredInitialGpsRef.current = true;
       triggerGpsDiscovery();
     }
-  }, [initialLocality, triggerGpsDiscovery]);
+  }, [
+    initialLocality,
+    userLocation.latitude,
+    userLocation.longitude,
+    userLocation.locality,
+    userLocation.city,
+    userLocation.source,
+    userLocation.accuracy,
+    userLocation.isLowAccuracy,
+    isContextDetecting,
+    triggerGpsDiscovery,
+  ]);
 
   /**
    * Perform room search whenever target location, radius, or filters change.
@@ -360,18 +395,18 @@ export const SearchPage: React.FC<SearchPageProps> = ({
               <span>Change Location</span>
             </button>
 
-            {/* Restore GPS Discovery button (visible when in manual mode or if GPS errored) */}
-            {locationMode === 'manual' && (
-              <button
-                type="button"
-                onClick={triggerGpsDiscovery}
-                disabled={isDetectingLocation}
-                className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 active:scale-98 text-amber-900 border border-amber-300 transition-all cursor-pointer disabled:opacity-60"
-              >
-                <Navigation className="w-3.5 h-3.5 text-amber-600" />
-                <span>📍 My Location</span>
-              </button>
-            )}
+            {/* Re-trace GPS Discovery button (allows user to re-trace GPS location anytime) */}
+            <button
+              type="button"
+              onClick={triggerGpsDiscovery}
+              disabled={isDetectingLocation}
+              title="Trace current GPS location"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 active:scale-98 text-amber-900 border border-amber-300 transition-all cursor-pointer disabled:opacity-60 shrink-0"
+            >
+              <Navigation className={`w-3.5 h-3.5 text-amber-600 ${isDetectingLocation ? 'animate-spin' : ''}`} />
+              <span className="hidden xs:inline sm:inline">📍 My Location</span>
+              <span className="xs:hidden sm:hidden">GPS</span>
+            </button>
           </div>
 
           {/* Mobile Filter Button */}
@@ -728,6 +763,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         currentCity={currentCity}
         currentLocality={currentLocality}
         onApplyLocation={handleApplyManualLocation}
+        onUseGps={triggerGpsDiscovery}
       />
 
       {/* Mobile Filters Bottom Sheet */}
