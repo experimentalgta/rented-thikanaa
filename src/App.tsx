@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SavedProvider } from './context/SavedContext';
 import { ChatProvider, useChat } from './context/ChatContext';
@@ -43,15 +43,24 @@ const MainApp: React.FC = () => {
   const [featuredProperties, setFeaturedProperties] = useState<Property[]>([]);
   const [sampleRoommates, setSampleRoommates] = useState<StudentProfile[]>([]);
 
+  // Track the previous non-detail view for smart back navigation & scroll restoration
+  const previousViewRef = useRef<string>('home');
+
   useEffect(() => {
-    // Initial fetch for featured accommodations and roommates across India from Supabase
+    if (currentView !== 'property-detail') {
+      previousViewRef.current = currentView;
+    }
+  }, [currentView]);
+
+  useEffect(() => {
+    // Initial fetch for freshest accommodations (most recent on top) and roommates across India from Supabase
     propertyRepository
-      .searchProperties({})
-      .then((res) => {
-        setFeaturedProperties(res.properties);
+      .getRecentProperties(12)
+      .then((props) => {
+        setFeaturedProperties(props);
       })
       .catch((err) => {
-        console.error('Failed to fetch initial properties from Supabase:', err);
+        console.error('Failed to fetch recent properties from Supabase:', err);
       });
 
     roommateRepository
@@ -64,16 +73,69 @@ const MainApp: React.FC = () => {
       });
   }, []);
 
+  // History & Deep-Linking Management (Prevents hardware back from exiting the app)
+  useEffect(() => {
+    // Ensure initial entry has state
+    if (!window.history.state) {
+      window.history.replaceState({ view: 'home' }, '', window.location.href);
+    }
+
+    // Deep link or initial query param check (?roomId=...)
+    const initialUrl = new URL(window.location.href);
+    const initialRoomId = initialUrl.searchParams.get('roomId');
+    if (initialRoomId) {
+      propertyRepository.getPropertyById(initialRoomId).then((p) => {
+        if (p) {
+          setSelectedProperty(p);
+          setCurrentView('property-detail');
+        }
+      });
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      const url = new URL(window.location.href);
+      const roomId = url.searchParams.get('roomId');
+
+      if (!roomId) {
+        // User popped back from property detail or other route
+        setSelectedProperty(null);
+        const targetView = event.state?.fromView || event.state?.view || previousViewRef.current || 'home';
+        setCurrentView(targetView);
+
+        // Restore scroll position
+        const savedScroll = sessionStorage.getItem(`scroll_${targetView}`);
+        if (savedScroll) {
+          setTimeout(() => {
+            window.scrollTo({ top: Number(savedScroll), behavior: 'instant' });
+          }, 30);
+        }
+      } else {
+        // User popped forward to a property detail
+        if (!selectedProperty || selectedProperty.id !== roomId) {
+          propertyRepository.getPropertyById(roomId).then((p) => {
+            if (p) {
+              setSelectedProperty(p);
+              setCurrentView('property-detail');
+            }
+          });
+        } else {
+          setCurrentView('property-detail');
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [selectedProperty]);
+
   const executePendingAction = (action: PendingAction) => {
     if (action.type === 'property-detail' && (action.property || action.propertyId)) {
       if (action.property) {
-        setSelectedProperty(action.property);
-        setCurrentView('property-detail');
+        handleSelectProperty(action.property);
       } else if (action.propertyId) {
         propertyRepository.getPropertyById(action.propertyId).then((p) => {
           if (p) {
-            setSelectedProperty(p);
-            setCurrentView('property-detail');
+            handleSelectProperty(p);
           }
         });
       }
@@ -108,7 +170,35 @@ const MainApp: React.FC = () => {
     }
   };
 
+  const handleBackFromProperty = useCallback(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('roomId') && window.history.length > 1) {
+      window.history.back();
+    } else {
+      url.searchParams.delete('roomId');
+      const targetView = previousViewRef.current || 'home';
+      window.history.replaceState({ view: targetView }, '', url.toString());
+      setSelectedProperty(null);
+      setCurrentView(targetView);
+      const savedScroll = sessionStorage.getItem(`scroll_${targetView}`);
+      if (savedScroll) {
+        setTimeout(() => {
+          window.scrollTo({ top: Number(savedScroll), behavior: 'instant' });
+        }, 30);
+      }
+    }
+  }, []);
+
   const handleNavigate = (view: string, param?: any) => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('roomId')) {
+      url.searchParams.delete('roomId');
+      window.history.replaceState({ view }, '', url.toString());
+    } else {
+      window.history.replaceState({ view }, '', window.location.href);
+    }
+    setSelectedProperty(null);
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     if (view === 'property-detail' && param) {
@@ -194,8 +284,6 @@ const MainApp: React.FC = () => {
   };
 
   const handleSelectProperty = (property: Property) => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-
     if (!isAuthenticated) {
       requireAuth(
         `Sign in with Google to view complete room details, verified photos, and contact the owner for "${property.title}".`,
@@ -204,8 +292,20 @@ const MainApp: React.FC = () => {
       return;
     }
 
+    const previousView = currentView !== 'property-detail' ? currentView : 'home';
+    sessionStorage.setItem(`scroll_${previousView}`, String(window.scrollY));
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('roomId', property.id);
+    window.history.pushState(
+      { view: 'property-detail', roomId: property.id, fromView: previousView },
+      '',
+      url.toString()
+    );
+
     setSelectedProperty(property);
     setCurrentView('property-detail');
+    window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   return (
@@ -241,7 +341,7 @@ const MainApp: React.FC = () => {
             {currentView === 'property-detail' && selectedProperty && (
               <PropertyDetailPage
                 property={selectedProperty}
-                onBack={() => setCurrentView('search')}
+                onBack={handleBackFromProperty}
               />
             )}
 
@@ -262,8 +362,8 @@ const MainApp: React.FC = () => {
             {(currentView === 'add-property' || currentView === 'owner-add') && (
               <AddPropertyPage
                 onSuccess={(newProp) => {
-                  setSelectedProperty(newProp);
-                  setCurrentView('property-detail');
+                  setFeaturedProperties((prev) => [newProp, ...prev.filter((p) => p.id !== newProp.id)]);
+                  handleSelectProperty(newProp);
                 }}
                 onCancel={() => handleNavigate('member-dashboard')}
               />

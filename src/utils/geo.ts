@@ -66,7 +66,7 @@ export const PROXIMITY_BUCKET_LABELS: Record<ProximityBucket, { title: string; s
     subtitle: 'Within 1 km of your target location',
   },
   nearby: {
-    title: 'Nearby',
+    title: 'Nearby Rooms',
     subtitle: 'Between 1 km and 3 km away',
   },
   nearby_areas: {
@@ -74,8 +74,8 @@ export const PROXIMITY_BUCKET_LABELS: Record<ProximityBucket, { title: string; s
     subtitle: 'Between 3 km and 5 km away',
   },
   more_options: {
-    title: 'More Options Nearby',
-    subtitle: 'More than 5 km away',
+    title: 'Other Available Rooms Across the City',
+    subtitle: 'Sorted by distance from closest to farthest',
   },
 };
 

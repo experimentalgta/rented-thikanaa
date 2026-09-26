@@ -335,7 +335,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                 <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
                   <span>
                     {searchResult
-                      ? `${searchResult.total_found} available room${searchResult.total_found === 1 ? '' : 's'} found within ${searchRadius} km`
+                      ? `${searchResult.total_found} available room${searchResult.total_found === 1 ? '' : 's'} sorted by proximity`
                       : 'Searching nearby properties...'}
                   </span>
                   <span>•</span>
@@ -629,11 +629,11 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                     <MapPin className="w-7 h-7" />
                   </div>
                   <h4 className="text-lg font-bold text-slate-900 font-heading mb-1.5">
-                    No rooms found within {searchRadius} km
+                    No matching rooms found
                   </h4>
                   <p className="text-xs text-slate-600 max-w-sm mx-auto mb-6 leading-relaxed">
-                    There are currently no active listings within {searchRadius} km of{' '}
-                    <strong>{currentLocality}, {currentCity}</strong>. You can expand your search radius to find nearby properties in neighboring sectors.
+                    There are currently no active listings matching your search filters in{' '}
+                    <strong>{currentLocality}, {currentCity}</strong>. Try resetting filters or choosing another city/area.
                   </p>
 
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">

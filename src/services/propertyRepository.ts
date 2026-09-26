@@ -307,7 +307,7 @@ export class PropertyRepository implements IPropertyRepository {
     }
 
     // 2. Query Supabase via PostGIS Proximity Function
-    const { data: rpcRows, error: rpcError } = await client.rpc(
+    let { data: rpcRows, error: rpcError } = await client.rpc(
       'get_properties_proximity_ranked',
       {
         ref_lat: refLat,
@@ -318,6 +318,24 @@ export class PropertyRepository implements IPropertyRepository {
         filter_city: params.city && params.city !== 'all' ? params.city : null,
       }
     );
+
+    // If city was specified but yielded zero listings, expand to query all cities ranked by proximity
+    if (!rpcError && Array.isArray(rpcRows) && rpcRows.length === 0 && params.city && params.city !== 'all') {
+      const { data: fallbackRows, error: fallbackError } = await client.rpc(
+        'get_properties_proximity_ranked',
+        {
+          ref_lat: refLat,
+          ref_lon: refLng,
+          filter_gender: params.gender && params.gender !== 'any' ? params.gender : null,
+          filter_prop_type: params.property_type && params.property_type !== 'all' ? params.property_type : null,
+          filter_max_rent: params.max_price || null,
+          filter_city: null,
+        }
+      );
+      if (!fallbackError && Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+        rpcRows = fallbackRows;
+      }
+    }
 
     let rawListings: any[] = [];
 
@@ -394,8 +412,10 @@ export class PropertyRepository implements IPropertyRepository {
         if (!hasAllAmenities) continue;
       }
 
-      // Filter by search radius (km) if specified
-      if (params.radius_km && params.radius_km > 0) {
+      // Do NOT hard-filter out rooms beyond radius_km by default.
+      // All rooms across the city/area are preserved and sorted by proximity.
+      // Only filter by distance cutoff if strict_radius is explicitly requested.
+      if (params.strict_radius && params.radius_km && params.radius_km > 0) {
         const hasCoordinates = (row.latitude !== null && row.latitude !== undefined) || (row.distance_meters !== null && row.distance_meters !== undefined);
         if (hasCoordinates) {
           if (distanceKm > params.radius_km) {
@@ -421,16 +441,25 @@ export class PropertyRepository implements IPropertyRepository {
     // 4. Sort properties
     const sortBy = params.sort_by || 'nearest';
     if (sortBy === 'price_low') {
-      scoredProperties.sort((a, b) => a.rent - b.rent);
+      scoredProperties.sort((a, b) => a.rent - b.rent || (a.distance_km ?? 9999) - (b.distance_km ?? 9999));
     } else if (sortBy === 'price_high') {
-      scoredProperties.sort((a, b) => b.rent - a.rent);
+      scoredProperties.sort((a, b) => b.rent - a.rent || (a.distance_km ?? 9999) - (b.distance_km ?? 9999));
     } else if (sortBy === 'newest') {
       scoredProperties.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime() ||
+          (a.distance_km ?? 9999) - (b.distance_km ?? 9999)
       );
     } else {
-      // Nearest default
-      scoredProperties.sort((a, b) => (a.distance_km ?? 999) - (b.distance_km ?? 999));
+      // Nearest default: Order by ascending distance, secondary order by created_at DESC
+      scoredProperties.sort((a, b) => {
+        const distA = a.distance_km ?? 9999;
+        const distB = b.distance_km ?? 9999;
+        if (Math.abs(distA - distB) > 0.05) {
+          return distA - distB;
+        }
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
     }
 
     // 5. Partition into anti-leapfrogging proximity buckets
@@ -460,6 +489,42 @@ export class PropertyRepository implements IPropertyRepository {
       expanded_message: expandedMessage,
       buckets,
     };
+  }
+
+  /**
+   * Fetches the freshest, most recently uploaded rooms for the Home screen.
+   * Ordered strictly by created_at DESC so newly listed rooms appear at the very top.
+   */
+  async getRecentProperties(limit: number = 12, currentUserId?: string): Promise<Property[]> {
+    const client = this.assertSupabaseClient();
+
+    const { data, error } = await client
+      .from('properties')
+      .select(`
+        *,
+        property_images (id, url, caption, is_cover, sort_order)
+      `)
+      .in('availability_status', ['available', 'limited'])
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Failed to retrieve recent properties:', error);
+      throw new Error(`Failed to retrieve recent properties: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    const properties: Property[] = [];
+    for (const row of data) {
+      const prop = this.mapRowToProperty(row);
+      const sanitized = await this.applyPrivacyEnforcement(prop, currentUserId);
+      properties.push(sanitized);
+    }
+
+    return properties;
   }
 
   async getPropertyById(id: string, currentUserId?: string): Promise<Property | null> {

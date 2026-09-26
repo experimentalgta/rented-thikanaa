@@ -399,6 +399,7 @@ export interface PropertySearchParams {
   verified_only?: boolean;
   sort_by?: 'nearest' | 'price_low' | 'price_high' | 'newest';
   radius_km?: number;
+  strict_radius?: boolean;
 }
 
 export interface SearchResultSummary {

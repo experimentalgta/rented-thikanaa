@@ -321,16 +321,16 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
-      {/* 4. FEATURED / VERIFIED PROPERTIES */}
+      {/* 4. RECENTLY ADDED & VERIFIED PROPERTIES */}
       <section className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 order-3 md:order-4 w-full bg-slate-950 md:bg-transparent rounded-2xl md:rounded-none p-3 sm:p-4 md:p-0 border border-slate-800 md:border-transparent">
         <div className="flex items-center justify-between mb-2.5 sm:mb-8">
           <div>
             <div className="hidden md:block text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-1">
-              Handpicked Accommodations
+              Freshly Listed • Zero Brokerage
             </div>
             <h2 className="text-base sm:text-2xl lg:text-3xl font-bold text-slate-100 md:text-[#101828] font-heading">
-              <span className="md:hidden">Trending Places &amp; Rooms</span>
-              <span className="hidden md:inline">Featured Verified Properties</span>
+              <span className="md:hidden">Recently Added Rooms</span>
+              <span className="hidden md:inline">Recently Added &amp; Trending Rooms</span>
             </h2>
           </div>
           <button
@@ -345,7 +345,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
         {/* Mobile: Compact 2-column Grid (< md) */}
         <div className="grid grid-cols-2 gap-2.5 md:hidden">
-          {featuredProperties.slice(0, 6).map((property) => (
+          {featuredProperties.slice(0, 8).map((property) => (
             <CompactPropertyCard
               key={property.id}
               property={property}
@@ -356,7 +356,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
         {/* Desktop: Original Grid (>= md) */}
         <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {featuredProperties.slice(0, 6).map((property) => (
+          {featuredProperties.slice(0, 9).map((property) => (
             <PropertyCard
               key={property.id}
               property={property}
