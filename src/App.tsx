@@ -51,12 +51,19 @@ const MainApp: React.FC = () => {
 
   // Track the previous non-detail view for smart back navigation & scroll restoration
   const previousViewRef = useRef<string>('home');
+  const currentViewRef = useRef<string>('home');
+  const selectedPropertyRef = useRef<Property | null>(null);
 
   useEffect(() => {
+    currentViewRef.current = currentView;
     if (currentView !== 'property-detail') {
       previousViewRef.current = currentView;
     }
   }, [currentView]);
+
+  useEffect(() => {
+    selectedPropertyRef.current = selectedProperty;
+  }, [selectedProperty]);
 
   // Clean up any body scroll lock on unmount
   useEffect(() => {
@@ -86,7 +93,7 @@ const MainApp: React.FC = () => {
       });
   }, []);
 
-  // History & Deep-Linking Management (Mobile back-button trap & Desktop history)
+  // 1. Initial Cold-Start Deep-Linking Check (Executes STRICTLY ONCE on initial app mount)
   useEffect(() => {
     // Ensure initial entry has state
     if (!window.history.state) {
@@ -120,7 +127,10 @@ const MainApp: React.FC = () => {
         }
       });
     }
+  }, []); // Strictly once on cold start!
 
+  // 2. Hardware / Browser PopState Navigation Trap (Attached ONCE, reads latest values via mutable refs)
+  useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       const isMobile = window.innerWidth < 768;
 
@@ -142,7 +152,7 @@ const MainApp: React.FC = () => {
         if (url.searchParams.has('room') || url.searchParams.has('roomId')) {
           url.searchParams.delete('room');
           url.searchParams.delete('roomId');
-          window.history.replaceState({ view: currentView }, '', url.toString());
+          window.history.replaceState({ view: currentViewRef.current }, '', url.toString());
         }
         return;
       }
@@ -166,7 +176,7 @@ const MainApp: React.FC = () => {
         }
       } else {
         // User popped forward to a property detail
-        if (!selectedProperty || selectedProperty.id !== roomId) {
+        if (!selectedPropertyRef.current || selectedPropertyRef.current.id !== roomId) {
           propertyRepository.getPropertyById(roomId).then((p) => {
             if (p) {
               setSelectedProperty(p);
@@ -181,7 +191,7 @@ const MainApp: React.FC = () => {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [currentView, selectedProperty]);
+  }, []);
 
   const executePendingAction = (action: PendingAction) => {
     if (action.type === 'property-detail' && (action.property || action.propertyId)) {
@@ -235,9 +245,9 @@ const MainApp: React.FC = () => {
       const url = new URL(window.location.href);
       url.searchParams.delete('room');
       url.searchParams.delete('roomId');
-      window.history.replaceState({ view: currentView }, '', url.toString());
+      window.history.replaceState({ view: currentViewRef.current }, '', url.toString());
     }
-  }, [currentView]);
+  }, []);
 
   const handleBackFromProperty = useCallback(() => {
     const url = new URL(window.location.href);
