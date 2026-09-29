@@ -79,6 +79,7 @@ export interface PropertyRule {
 export interface PropertyImage {
   id: string;
   url: string;
+  thumbnail_url?: string;
   caption?: string;
   is_cover?: boolean;
 }

@@ -9,6 +9,7 @@ import { Property } from '../../types';
 import { useSaved } from '../../context/SavedContext';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
+import { getThumbnailUrl } from '../../utils/imageProcessor';
 
 interface CompactPropertyCardProps {
   property: Property;
@@ -31,9 +32,10 @@ export const CompactPropertyCard: React.FC<CompactPropertyCardProps> = React.mem
     (property.owner_id === currentUser.id || property.created_by === currentUser.id)
   );
 
+  const coverImg = property.images.find((img) => img.is_cover) || property.images[0];
   const coverImage =
-    property.images.find((img) => img.is_cover)?.url ||
-    property.images[0]?.url ||
+    coverImg?.thumbnail_url ||
+    (coverImg?.url ? getThumbnailUrl(coverImg.url) : null) ||
     'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=800&q=80';
 
   const typeLabels: Record<string, string> = {

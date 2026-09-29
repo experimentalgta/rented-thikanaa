@@ -23,7 +23,7 @@ import { getSupportedCities, getCityConfig, getCityAreas } from '../data/cityAre
 import { lookupIndianPincode } from '../services/pincodeService';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { propertyRepository } from '../services/propertyRepository';
-import { uploadPropertyImage } from '../utils/imageUpload';
+import { uploadPropertyImage, deletePropertyImage } from '../utils/imageUpload';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 
 interface AddPropertyPageProps {
@@ -100,6 +100,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [uploadProgressMessage, setUploadProgressMessage] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showUrlInput, setShowUrlInput] = useState(false);
 
@@ -270,21 +271,33 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
     // Reset input value immediately so re-selecting the same file reliably fires onChange
     inputElement.value = '';
 
+    const validFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (validFiles.length === 0) {
+      setUploadError('Please select valid image files.');
+      return;
+    }
+
     setIsUploadingPhoto(true);
     setUploadError(null);
+    setUploadProgressMessage(`Preparing ${validFiles.length} photo${validFiles.length > 1 ? 's' : ''}...`);
 
     try {
       const newImages: PropertyImage[] = [];
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!file.type.startsWith('image/')) continue;
+      // Process sequentially to protect mobile RAM and avoid freezing UI
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        setUploadProgressMessage(`Optimizing photo ${i + 1} of ${validFiles.length}...`);
 
-        const publicUrlOrDataUrl = await uploadPropertyImage(file, currentUser?.id);
+        const uploadResult = await uploadPropertyImage(file, currentUser?.id, (status) => {
+          setUploadProgressMessage(`Photo ${i + 1}/${validFiles.length}: ${status}`);
+        });
+
         const existingCount = (formData.images || []).length + newImages.length;
         newImages.push({
           id: `img-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
-          url: publicUrlOrDataUrl,
+          url: uploadResult.url,
+          thumbnail_url: uploadResult.thumbnailUrl,
           caption: `Photo ${existingCount + 1}`,
           is_cover: existingCount === 0,
         });
@@ -298,9 +311,10 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       }
     } catch (err: any) {
       console.error('Failed to process image:', err);
-      setUploadError('Failed to process one or more images. Please try again.');
+      setUploadError(err.message || 'Failed to process one or more images. Please try again.');
     } finally {
       setIsUploadingPhoto(false);
+      setUploadProgressMessage(null);
     }
   };
 
@@ -325,6 +339,11 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   };
 
   const handleRemoveImage = (imgId: string) => {
+    const target = (formData.images || []).find((i) => i.id === imgId);
+    if (target?.url && target.url.includes('/property-images/')) {
+      deletePropertyImage(target.url).catch(() => {});
+    }
+
     const next = (formData.images || []).filter((i) => i.id !== imgId);
     if (next.length > 0 && !next.some((i) => i.is_cover)) {
       next[0].is_cover = true;
@@ -1171,7 +1190,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
               {isUploadingPhoto && (
                 <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold animate-pulse">
                   <Loader2 className="w-4 h-4 animate-spin text-[#F59E0B] shrink-0" />
-                  <span>Processing, optimizing and saving photos...</span>
+                  <span>{uploadProgressMessage || 'Processing, optimizing and saving photos...'}</span>
                 </div>
               )}
 
@@ -1223,7 +1242,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                     key={img.id}
                     className="relative rounded-2xl overflow-hidden border border-[#E5E7EB] group aspect-4/3 bg-[#F8FAFC] shadow-xs"
                   >
-                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    <img src={img.thumbnail_url || img.url} alt="" className="w-full h-full object-cover" />
                     <button
                       type="button"
                       onClick={() => handleRemoveImage(img.id)}
@@ -1245,6 +1264,9 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                         Set as Cover
                       </button>
                     )}
+                    <span className="absolute bottom-2 right-2 text-[9px] bg-black/60 text-emerald-400 font-mono px-1.5 py-0.5 rounded backdrop-blur-xs pointer-events-none">
+                      WebP
+                    </span>
                   </div>
                 ))}
               </div>

@@ -15,6 +15,7 @@ import {
 } from '../utils/geo';
 import { serverAuth } from './serverAuth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getThumbnailUrl } from '../utils/imageProcessor';
 
 export const DEFAULT_SEARCH_RADIUS_KM = 5;
 
@@ -139,11 +140,15 @@ export class PropertyRepository implements IPropertyRepository {
   private mapRowToProperty(row: any): Property {
     let images: PropertyImage[] = [];
     if (Array.isArray(row.images)) {
-      images = row.images;
+      images = row.images.map((img: any) => ({
+        ...img,
+        thumbnail_url: img.thumbnail_url || getThumbnailUrl(img.url),
+      }));
     } else if (Array.isArray(row.property_images)) {
       images = row.property_images.map((pi: any) => ({
         id: pi.id,
         url: pi.url,
+        thumbnail_url: pi.thumbnail_url || getThumbnailUrl(pi.url),
         caption: pi.caption,
         is_cover: pi.is_cover,
       }));

@@ -25,6 +25,7 @@ import { ReportModal } from '../components/safety/ReportModal';
 import { PropertyMap } from '../components/map/PropertyMap';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
+import { getThumbnailUrl } from '../utils/imageProcessor';
 
 interface PropertyDetailPageProps {
   property: Property;
@@ -198,7 +199,13 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                         : 'border-transparent opacity-70 hover:opacity-100'
                     }`}
                   >
-                    <img src={img.url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                    <img
+                      src={img.thumbnail_url || getThumbnailUrl(img.url)}
+                      alt={`Thumbnail ${idx + 1}`}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover"
+                    />
                   </button>
                 ))}
               </div>
