@@ -5,8 +5,8 @@ interface CacheEntry<T> {
   timestamp: number;
 }
 
-const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const STORAGE_PREFIX = 'rt_geo_cache_';
+const DEFAULT_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours TTL
+const STORAGE_PREFIX = 'rt_geo_cache_v3_';
 
 export class LocationCache {
   private memSearch = new Map<string, CacheEntry<LocationData[]>>();
@@ -102,6 +102,19 @@ export class LocationCache {
     try {
       Object.keys(localStorage).forEach((k) => {
         if (k.startsWith(STORAGE_PREFIX)) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  clearReverse(): void {
+    this.memReverse.clear();
+    try {
+      Object.keys(localStorage).forEach((k) => {
+        if (k.includes('rt_geo_cache')) {
           localStorage.removeItem(k);
         }
       });

@@ -1,5 +1,5 @@
 import { LocationData, LocationSource, Locality, City, Landmark } from '../../types';
-import { ALL_INDIAN_LOCALITIES } from '../../data/indiaLocations';
+import { ALL_INDIAN_LOCALITIES, ALL_INDIAN_CITIES } from '../../data/indiaLocations';
 import { calculateHaversineDistanceKm } from '../../utils/geo';
 
 export interface NominatimAddress {
@@ -401,62 +401,118 @@ export function snapToAccurateLocality(
 
   const combinedText = `${rawResolvedLocality || ''} ${rawAddressText || ''}`.toLowerCase();
 
-  // Filter candidates by city if specified, or all within reasonable distance
-  let candidates = ALL_INDIAN_LOCALITIES;
-  if (cityName) {
-    const cleanCity = cityName.trim().toLowerCase();
+  // 1. Determine target city
+  let resolvedCity = cityName?.trim();
+  if (!resolvedCity) {
+    let closestCity = ALL_INDIAN_CITIES[0];
+    let minCityDist = 999999;
+    for (const c of ALL_INDIAN_CITIES) {
+      const dist = calculateHaversineDistanceKm(latitude, longitude, c.latitude, c.longitude);
+      if (dist < minCityDist) {
+        minCityDist = dist;
+        closestCity = c;
+      }
+    }
+    if (minCityDist <= 35.0) {
+      resolvedCity = closestCity.name;
+    }
+  }
+
+  // 2. Filter candidates STRICTLY by the resolved city
+  if (resolvedCity) {
+    const cleanCity = resolvedCity.toLowerCase();
     const cityMatches = ALL_INDIAN_LOCALITIES.filter(
       (l) => l.city_name.toLowerCase() === cleanCity || l.city_slug === cleanCity
     );
-    if (cityMatches.length > 0) {
-      candidates = cityMatches;
-    }
-  }
 
-  // 1. Text-based alias match (if address text contains known neighborhood within 5km)
-  for (const loc of candidates) {
-    const dist = calculateHaversineDistanceKm(latitude, longitude, loc.latitude, loc.longitude);
-    if (dist <= 5.0) {
-      const namesToCheck = [loc.name, loc.slug, ...(loc.aliases || [])];
-      for (const name of namesToCheck) {
-        if (name && name.length >= 3 && combinedText.includes(name.toLowerCase())) {
-          return {
-            locality: loc.name,
-            localitySlug: loc.slug,
-            city: loc.city_name,
-            isSnapped: true,
-          };
+    // If city has no pre-mapped localities (e.g. non-catalog city in India):
+    // NEVER fall back to other cities' localities! Keep the authentic detected city & area.
+    if (cityMatches.length === 0) {
+      const locName = rawResolvedLocality && rawResolvedLocality.toLowerCase() !== cleanCity
+        ? rawResolvedLocality
+        : resolvedCity;
+      return {
+        locality: locName,
+        localitySlug: locName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+        city: resolvedCity,
+        isSnapped: false,
+      };
+    }
+
+    // 3. Find closest verified locality in this city
+    let closestLocality = cityMatches[0];
+    let minDistanceKm = 999999;
+    for (const loc of cityMatches) {
+      const dist = calculateHaversineDistanceKm(latitude, longitude, loc.latitude, loc.longitude);
+      if (dist < minDistanceKm) {
+        minDistanceKm = dist;
+        closestLocality = loc;
+      }
+    }
+
+    // 4. Text-based alias match within this city (within 6km)
+    let textMatchedLocality: (typeof cityMatches)[0] | null = null;
+    let textMatchDist = 999999;
+
+    for (const loc of cityMatches) {
+      const dist = calculateHaversineDistanceKm(latitude, longitude, loc.latitude, loc.longitude);
+      if (dist <= 6.0) {
+        const namesToCheck = [loc.name, loc.slug, ...(loc.aliases || [])];
+        for (const name of namesToCheck) {
+          if (name && name.length >= 3 && combinedText.includes(name.toLowerCase())) {
+            if (dist < textMatchDist) {
+              textMatchDist = dist;
+              textMatchedLocality = loc;
+            }
+          }
         }
       }
     }
-  }
 
-  // 2. High-precision nearest neighbor snapping:
-  let closestLocality = candidates[0];
-  let minDistanceKm = 999999;
-
-  for (const loc of candidates) {
-    const dist = calculateHaversineDistanceKm(latitude, longitude, loc.latitude, loc.longitude);
-    if (dist < minDistanceKm) {
-      minDistanceKm = dist;
-      closestLocality = loc;
+    // If a text match was found, only accept it if it is physically close
+    // or not dramatically further away than the closest neighborhood.
+    // (Prevents broad administrative ward labels like "Chowk" from overriding actual residential neighborhood 300m away)
+    if (textMatchedLocality) {
+      const isMuchFurtherThanClosest = textMatchDist > 1.0 && minDistanceKm < 0.9 && textMatchDist > minDistanceKm * 1.4;
+      if (!isMuchFurtherThanClosest) {
+        return {
+          locality: textMatchedLocality.name,
+          localitySlug: textMatchedLocality.slug,
+          city: textMatchedLocality.city_name,
+          isSnapped: true,
+        };
+      }
     }
-  }
 
-  // If user is within 2.5km of a verified locality in our catalog:
-  if (closestLocality && minDistanceKm <= 2.5) {
+    // If coordinates are within 2.5km of a verified locality in this city:
+    if (closestLocality && minDistanceKm <= 2.5) {
+      return {
+        locality: closestLocality.name,
+        localitySlug: closestLocality.slug,
+        city: closestLocality.city_name,
+        isSnapped: true,
+      };
+    }
+
+    // Beyond 2.5km: do NOT guess wrong central neighborhood! Preserve raw locality or city name.
+    const fallbackLoc = (rawResolvedLocality && rawResolvedLocality.toLowerCase() !== cleanCity)
+      ? rawResolvedLocality
+      : resolvedCity;
+
     return {
-      locality: closestLocality.name,
-      localitySlug: closestLocality.slug,
-      city: closestLocality.city_name,
-      isSnapped: true,
+      locality: fallbackLoc,
+      localitySlug: fallbackLoc.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+      city: resolvedCity,
+      isSnapped: false,
     };
   }
 
+  // Fallback if no city could be resolved
+  const fallback = rawResolvedLocality || 'India';
   return {
-    locality: rawResolvedLocality || closestLocality?.name || '',
-    localitySlug: (rawResolvedLocality || closestLocality?.slug || '').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-    city: closestLocality?.city_name,
+    locality: fallback,
+    localitySlug: fallback.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+    city: undefined,
     isSnapped: false,
   };
 }

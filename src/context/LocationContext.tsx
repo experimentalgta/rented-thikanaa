@@ -9,7 +9,7 @@ interface LocationContextType {
   permissionState: 'prompt' | 'granted' | 'denied' | 'unsupported';
   isDetecting: boolean;
   error: string | null;
-  detectCurrentLocation: () => Promise<UserLocationState | null>;
+  detectCurrentLocation: (options?: { forceFresh?: boolean }) => Promise<UserLocationState | null>;
   setManualLocation: (
     localityName: string,
     lat?: number,
@@ -42,12 +42,16 @@ const EMPTY_LOCATION: UserLocationState = {
   source: 'none',
 };
 
-const SAVED_LOCATION_KEY = 'rented_thikan_user_location_v1';
+const SAVED_LOCATION_KEY = 'rented_thikan_user_location_v3';
 const PROMPT_DISMISSED_KEY = 'rented_thikan_location_prompt_dismissed_v1';
 
 export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [userLocation, setUserLocation] = useState<UserLocationState>(() => {
     try {
+      // Clear legacy bugged v1 and v2 caches
+      localStorage.removeItem('rented_thikan_user_location_v1');
+      localStorage.removeItem('rented_thikan_user_location_v2');
+
       const saved = localStorage.getItem(SAVED_LOCATION_KEY);
       if (saved) {
         return JSON.parse(saved);
@@ -103,7 +107,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
-  const detectCurrentLocation = useCallback(async (): Promise<UserLocationState | null> => {
+  const detectCurrentLocation = useCallback(async (options?: { forceFresh?: boolean }): Promise<UserLocationState | null> => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
       setPermissionState('unsupported');
       setError('Location detection is not supported on this browser/device.');
@@ -111,15 +115,16 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     if (import.meta.env.DEV) {
-      console.log('[Location] GPS request');
+      console.log('[Location] GPS request', options?.forceFresh ? '(force fresh)' : '');
     }
 
     setIsDetecting(true);
     setError(null);
 
     try {
-      const detected = await locationService.detectLocation();
+      const detected = await locationService.detectLocation(undefined, options?.forceFresh);
       const detectedLoc = locationService.toUserLocationState(detected);
+      detectedLoc.timestamp = Date.now();
 
       setUserLocation(detectedLoc);
       try {
@@ -151,15 +156,17 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
-  // Request location immediately upon opening the website (cold start) if not already set
+  // Request location immediately upon opening the website (cold start)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(SAVED_LOCATION_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.latitude && parsed.longitude) {
+        const parsed: UserLocationState = JSON.parse(saved);
+        const age = parsed.timestamp ? Date.now() - parsed.timestamp : Infinity;
+        // If manual location or recent GPS location (< 2 hours), reuse session location
+        if (parsed.latitude && parsed.longitude && (parsed.source === 'manual' || age < 2 * 60 * 60 * 1000)) {
           if (import.meta.env.DEV) {
-            console.log('[Location] Using cached location', parsed.locality || parsed.city);
+            console.log('[Location] Using recent valid location', parsed.locality || parsed.city);
           }
           return;
         }

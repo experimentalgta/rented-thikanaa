@@ -42,7 +42,7 @@ const NearbyRoomsContext = createContext<NearbyRoomsContextType | undefined>(und
 
 const LOCATION_CHANGE_THRESHOLD_KM = 1.5;
 const NEARBY_ROOMS_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes TTL
-const SESSION_CACHE_KEY = 'rented_thikan_nearby_rooms_cache_v1';
+const SESSION_CACHE_KEY = 'rented_thikan_nearby_rooms_cache_v2';
 
 /**
  * High-performance client-side filtering and bucketing over cached properties.
@@ -162,6 +162,7 @@ export const NearbyRoomsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // Primary in-memory cache
   const [cachedRooms, setCachedRooms] = useState<NearbyRoomsCache | null>(() => {
     try {
+      sessionStorage.removeItem('rented_thikan_nearby_rooms_cache_v1');
       const stored = sessionStorage.getItem(SESSION_CACHE_KEY);
       if (stored) {
         const parsed: NearbyRoomsCache = JSON.parse(stored);

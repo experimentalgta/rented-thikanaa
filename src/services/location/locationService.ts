@@ -6,6 +6,7 @@
 import { LocationData, UserLocationState } from '../../types';
 import { locationRepository } from '../locationRepository';
 import { evaluateLocationAccuracy } from './locationAccuracy';
+import { locationCache } from './locationCache';
 
 export interface GpsPositionResult {
   latitude: number;
@@ -36,19 +37,40 @@ export interface DetectedLocationResult {
 
 export const GPS_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
-  timeout: 20000,
-  maximumAge: 0,
+  timeout: 6000,
+  maximumAge: 60000,
 };
 
 export class LocationService {
+  private formatGeoError(err: GeolocationPositionError): Error {
+    let msg = "We couldn't detect your location. Please check browser permissions.";
+    if (err.code === 1) {
+      msg = 'Location permission was denied. Please enable location permissions or choose your location manually.';
+    } else if (err.code === 2) {
+      msg = 'Location information is unavailable on your device. Please choose your location manually.';
+    } else if (err.code === 3) {
+      msg = 'Location request timed out. Please try again or choose your location manually.';
+    }
+    const error = new Error(msg);
+    (error as any).code = err.code;
+    return error;
+  }
+
   /**
-   * Captures fresh GPS coordinates from browser/device.
-   * High accuracy, no cached coordinates (maximumAge: 0), 20s timeout.
+   * Fast GPS acquisition:
+   * Uses high accuracy with fused provider cache first (< 500ms),
+   * falling back smoothly if GPS satellite lock takes too long.
    */
-  async getCurrentPosition(options: PositionOptions = GPS_OPTIONS): Promise<GpsPositionResult> {
+  async getCurrentPosition(options?: PositionOptions, forceFresh?: boolean): Promise<GpsPositionResult> {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
       throw new Error('Geolocation is not supported on this device or browser.');
     }
+
+    const primaryOptions: PositionOptions = options || {
+      enableHighAccuracy: true,
+      timeout: forceFresh ? 7000 : 4000,
+      maximumAge: forceFresh ? 0 : 60000,
+    };
 
     return new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(
@@ -57,19 +79,23 @@ export class LocationService {
           resolve({ latitude, longitude, accuracy });
         },
         (err) => {
-          let msg = "We couldn't detect your location. Please check browser permissions.";
-          if (err.code === 1) {
-            msg = 'Location permission was denied. Please enable location permissions or choose your location manually.';
-          } else if (err.code === 2) {
-            msg = 'Location information is unavailable on your device. Please choose your location manually.';
-          } else if (err.code === 3) {
-            msg = 'Location request timed out. Please try again or choose your location manually.';
+          // If high-accuracy timed out, immediately attempt fast cell/wifi network fallback
+          if (err.code === 3) {
+            navigator.geolocation.getCurrentPosition(
+              (fallbackPos) => {
+                const { latitude, longitude, accuracy } = fallbackPos.coords;
+                resolve({ latitude, longitude, accuracy });
+              },
+              (fallbackErr) => {
+                reject(this.formatGeoError(fallbackErr));
+              },
+              { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 }
+            );
+            return;
           }
-          const error = new Error(msg);
-          (error as any).code = err.code;
-          reject(error);
+          reject(this.formatGeoError(err));
         },
-        options
+        primaryOptions
       );
     });
   }
@@ -83,12 +109,16 @@ export class LocationService {
 
   /**
    * Full discovery pipeline:
-   * 1. Get fresh GPS coordinates
+   * 1. Get fast GPS coordinates
    * 2. Reverse geocode to authentic City and Area/Locality
    * 3. Evaluate accuracy
    */
-  async detectLocation(signal?: AbortSignal): Promise<DetectedLocationResult> {
-    const coords = await this.getCurrentPosition();
+  async detectLocation(signal?: AbortSignal, forceFresh?: boolean): Promise<DetectedLocationResult> {
+    if (forceFresh) {
+      locationCache.clearReverse();
+    }
+
+    const coords = await this.getCurrentPosition(undefined, forceFresh);
     const evalAcc = evaluateLocationAccuracy(coords.accuracy, 'gps');
 
     let rev: LocationData;
@@ -115,12 +145,15 @@ export class LocationService {
 
     const city = rev.city || 'Prayagraj';
     const citySlug = rev.citySlug || city.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const locality = rev.locality || rev.city || 'Civil Lines';
+    const locality = rev.locality || city;
     const localitySlug = rev.localitySlug || locality.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const state = rev.state || 'Uttar Pradesh';
     const stateCode = rev.stateCode || 'UP';
 
-    const displayName = rev.formattedAddress || `${locality}, ${city}`;
+    let displayName = rev.formattedAddress;
+    if (!displayName) {
+      displayName = locality !== city ? `${locality}, ${city}` : city;
+    }
 
     return {
       latitude: coords.latitude,

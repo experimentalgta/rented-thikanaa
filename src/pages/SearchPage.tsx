@@ -113,6 +113,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   const loading = isLoadingRooms && !searchResult;
   const searchError = roomsError;
 
+  // Track if user explicitly activated GPS mode on search page
+  const [isGpsActive, setIsGpsActive] = useState<boolean>(() => locationMode === 'gps');
+
   /**
    * Handle user manual location change from ChangeLocationModal.
    * Strict Rule: Manual search overrides GPS and is never auto-overwritten by GPS.
@@ -123,6 +126,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
     lat?: number;
     lng?: number;
   }) => {
+    setIsGpsActive(false);
     setLocationMode('manual');
     setCurrentCity(selected.city);
     setCurrentLocality(selected.locality);
@@ -160,9 +164,29 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   const handleTriggerGpsDiscovery = async () => {
     setIsDetectingLocation(true);
     setGpsError(null);
+    setIsGpsActive(true);
+    setLocationMode('gps');
+
     try {
-      await refreshNearbyRooms({ forceGps: true });
-      setLocationMode('gps');
+      const fresh = await detectCurrentLocation({ forceFresh: true });
+      if (fresh?.latitude && fresh?.longitude) {
+        const freshCity = fresh.city || 'Prayagraj';
+        const freshLocality = fresh.locality || freshCity;
+        setCurrentCity(freshCity);
+        setCurrentLocality(freshLocality);
+        setCurrentCoords({ lat: fresh.latitude, lng: fresh.longitude });
+        setGpsAccuracy(fresh.accuracy || null);
+        setIsLowAccuracy(Boolean(fresh.isLowAccuracy));
+
+        await fetchNearbyRooms({
+          force: true,
+          lat: fresh.latitude,
+          lng: fresh.longitude,
+          locality: freshLocality,
+          city: freshCity,
+          radius_km: DEFAULT_SEARCH_RADIUS_KM,
+        });
+      }
     } catch (err: any) {
       console.warn('GPS detection failed, falling back to default location:', err);
       setGpsError(err.message || "We couldn't detect your location.");
@@ -173,11 +197,16 @@ export const SearchPage: React.FC<SearchPageProps> = ({
 
   /**
    * Initial Mount & Context Location Sync Flow:
+   * - If user explicitly activated GPS on search page, respect GPS.
    * - If an explicit initialLocality was passed in, respect it (manual mode).
    * - If userLocation is already available, sync local labels and check cache.
    * - DOES NOT request GPS if cached location exists!
    */
   useEffect(() => {
+    if (isGpsActive) {
+      return;
+    }
+
     if (initialLocality) {
       setLocationMode('manual');
       setCurrentLocality(initialLocality);
@@ -223,6 +252,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
       });
     }
   }, [
+    isGpsActive,
     initialLocality,
     userLocation.latitude,
     userLocation.longitude,

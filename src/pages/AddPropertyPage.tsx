@@ -12,6 +12,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLocation } from '../context/LocationContext';
+import { locationService } from '../services/location/locationService';
 import { Button } from '../components/common/Button';
 import { PropertyCard } from '../components/property/PropertyCard';
 import { Property, PropertyType, GenderPreference, RoomType, PhonePrivacy, PropertyImage } from '../types';
@@ -36,6 +38,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   onCancel,
 }) => {
   const { currentUser } = useAuth();
+  const { userLocation } = useLocation();
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 7;
 
@@ -110,182 +113,123 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   const [isManualAreaEntry, setIsManualAreaEntry] = useState(false);
   const [pincodePostOffices, setPincodePostOffices] = useState<string[]>([]);
 
-  const watchIdRef = useRef<number | null>(null);
-  const timerIdRef = useRef<any>(null);
+  const applyDetectedLocation = (loc: {
+    country?: string;
+    state?: string;
+    stateCode?: string;
+    city?: string;
+    citySlug?: string;
+    locality?: string;
+    localitySlug?: string;
+    formattedAddress?: string;
+    pincode?: string;
+    landmark?: string;
+    latitude?: number;
+    longitude?: number;
+    accuracy?: number;
+  }) => {
+    if (!loc.latitude || !loc.longitude) return;
 
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current !== null && typeof window !== 'undefined' && 'geolocation' in navigator) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
-      if (timerIdRef.current) {
-        clearTimeout(timerIdRef.current);
-      }
-    };
-  }, []);
+    const citySlug = loc.citySlug || 'prayagraj';
+    const cityAreas = getCityAreas(citySlug);
+    const locName = (loc.locality || '').trim();
+    const locLower = locName.toLowerCase();
 
-  const handleUseCurrentGps = () => {
+    // Check exact or partial match in verified city areas
+    let matchedArea = cityAreas.find((a) => a.toLowerCase().trim() === locLower);
+    if (!matchedArea) {
+      matchedArea = cityAreas.find((a) => {
+        const aLower = a.toLowerCase();
+        return locLower.includes(aLower) || aLower.includes(detLower(locLower));
+      });
+    }
+
+    if (!matchedArea && locName) {
+      setIsManualAreaEntry(true);
+    } else if (matchedArea) {
+      setIsManualAreaEntry(false);
+    }
+
+    const finalLocality = matchedArea || locName;
+    const finalLocalitySlug = finalLocality.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    setFormData((prev) => ({
+      ...prev,
+      country: loc.country || 'India',
+      address: loc.formattedAddress || prev.address,
+      pincode: loc.pincode || prev.pincode,
+      state: loc.state || prev.state || 'Uttar Pradesh',
+      state_code: loc.stateCode || prev.state_code || 'UP',
+      city: loc.city || prev.city || 'Prayagraj',
+      city_slug: citySlug,
+      locality: finalLocality || prev.locality,
+      locality_slug: finalLocalitySlug || prev.locality_slug,
+      landmark: loc.landmark ? (loc.landmark.startsWith('Near') ? loc.landmark : `Near ${loc.landmark}`) : prev.landmark,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+    }));
+
+    setIsLocationDetected(true);
+    if (loc.accuracy) {
+      setAccuracyLabel(`GPS accuracy: ±${Math.round(loc.accuracy)} m`);
+    } else {
+      setAccuracyLabel('Applied from phone GPS');
+    }
+  };
+
+  const detLower = (val: string) => val.trim().toLowerCase();
+
+  const handleUseCurrentGps = async () => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
       setGpsError('Geolocation is not supported on this device or browser.');
       return;
     }
 
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-    if (timerIdRef.current) {
-      clearTimeout(timerIdRef.current);
-      timerIdRef.current = null;
-    }
-
     setIsGpsDetecting(true);
-    setGpsStatusMessage('Getting precise location (locking GPS satellites)...');
+    setGpsStatusMessage('Detecting doorstep GPS...');
     setGpsError(null);
 
-    let bestCoords: GeolocationCoordinates | null = null;
-    let sampleCount = 0;
-    const maxSamples = 3;
+    const startTime = Date.now();
+    try {
+      const detected = await locationService.detectLocation(undefined, true);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-    const finalizePosition = async (coords: GeolocationCoordinates) => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
-      if (timerIdRef.current) {
-        clearTimeout(timerIdRef.current);
-        timerIdRef.current = null;
-      }
-
-      const { latitude, longitude, accuracy } = coords;
-      setGpsStatusMessage('Finding address...');
-
-      let revAddress = '';
-      let revPincode = '';
-      let revState = '';
-      let revStateCode = '';
-      let revCity = '';
-      let revCitySlug = '';
-      let revLocality = '';
-      let revLocalitySlug = '';
-      let revLandmark: string | undefined = undefined;
-
-      try {
-        const rev = await locationRepository.reverseGeocodeAsync(latitude, longitude);
-        revAddress = rev.formattedAddress || '';
-        revPincode = rev.pincode || '';
-        revState = rev.state || '';
-        revStateCode = rev.stateCode || '';
-        revCity = rev.city || '';
-        revCitySlug = rev.citySlug || '';
-        revLocality = rev.locality || '';
-        revLocalitySlug = rev.localitySlug || '';
-        revLandmark = rev.landmark;
-      } catch {
-        const rev = locationRepository.reverseGeocode(latitude, longitude);
-        revAddress = rev.displayName;
-        revState = rev.stateName;
-        revStateCode = rev.stateCode;
-        revCity = rev.cityName;
-        revCitySlug = rev.citySlug;
-        revLocality = rev.localityName;
-        revLocalitySlug = rev.localitySlug || '';
-        revLandmark = rev.nearestLandmark;
-      }
-
-      const evalAcc = evaluateLocationAccuracy(accuracy, 'gps');
-
-      // Check if detected locality is in predefined areas of the city
-      const cityAreas = getCityAreas(revCitySlug || 'prayagraj');
-      const matchedArea = cityAreas.find(
-        (a) => a.toLowerCase() === revLocality.toLowerCase()
-      );
-      if (!matchedArea && revLocality) {
-        setIsManualAreaEntry(true);
-      } else if (matchedArea) {
-        setIsManualAreaEntry(false);
-      }
-
-      setFormData((prev) => ({
-        ...prev,
-        country: 'India',
-        address: revAddress || prev.address,
-        pincode: revPincode || prev.pincode,
-        state: revState || prev.state || 'Uttar Pradesh',
-        state_code: revStateCode || prev.state_code || 'UP',
-        city: revCity || prev.city || 'Prayagraj',
-        city_slug: revCitySlug || prev.city_slug || 'prayagraj',
-        locality: revLocality || prev.locality,
-        locality_slug: revLocalitySlug || prev.locality_slug,
-        landmark: revLandmark ? `Near ${revLandmark}` : prev.landmark,
-        latitude,
-        longitude,
-      }));
+      applyDetectedLocation({
+        country: detected.country,
+        state: detected.state,
+        stateCode: detected.stateCode,
+        city: detected.city,
+        citySlug: detected.citySlug,
+        locality: detected.locality,
+        localitySlug: detected.localitySlug,
+        formattedAddress: detected.formattedAddress,
+        pincode: detected.pincode,
+        landmark: detected.landmark,
+        latitude: detected.latitude,
+        longitude: detected.longitude,
+        accuracy: detected.accuracy,
+      });
 
       setIsGpsDetecting(false);
-      setGpsStatusMessage('Location detected');
-      setIsLocationDetected(true);
-      setAccuracyLabel(`GPS accuracy: ±${Math.round(accuracy)} m`);
+      setGpsStatusMessage(`Detected in ${elapsed}s`);
 
-      if (evalAcc.isLowAccuracy && evalAcc.warningMessage) {
-        setGpsError(evalAcc.warningMessage);
+      if (detected.isLowAccuracy) {
+        setGpsError(`Low accuracy fix (±${Math.round(detected.accuracy)}m). Please verify your exact locality below.`);
       } else {
         setGpsError(null);
       }
-    };
-
-    try {
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          sampleCount++;
-          const coords = pos.coords;
-          if (!bestCoords || coords.accuracy < bestCoords.accuracy) {
-            bestCoords = coords;
-          }
-
-          // If accuracy is high (<= 35m) or reached 3 samples, lock in
-          if (coords.accuracy <= 35 || sampleCount >= maxSamples) {
-            finalizePosition(bestCoords || coords);
-          }
-        },
-        (err) => {
-          if (bestCoords) {
-            finalizePosition(bestCoords);
-            return;
-          }
-          if (watchIdRef.current !== null) {
-            navigator.geolocation.clearWatch(watchIdRef.current);
-            watchIdRef.current = null;
-          }
-          if (timerIdRef.current) {
-            clearTimeout(timerIdRef.current);
-            timerIdRef.current = null;
-          }
-          setIsGpsDetecting(false);
-          setGpsStatusMessage(null);
-          if (err.code === 1) {
-            setGpsError('Location permission denied. Please allow location access in your browser or select your area manually.');
-          } else if (err.code === 2) {
-            setGpsError('Unable to determine location. Please try again or select your area manually.');
-          } else if (err.code === 3) {
-            setGpsError('Location request timed out. Please try again or select your area manually.');
-          } else {
-            setGpsError('Unable to determine location. Please try again.');
-          }
-        },
-        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-      );
-
-      // Fallback timer after 5.5s
-      timerIdRef.current = setTimeout(() => {
-        if (bestCoords) {
-          finalizePosition(bestCoords);
-        }
-      }, 5500);
-    } catch {
+    } catch (err: any) {
       setIsGpsDetecting(false);
       setGpsStatusMessage(null);
-      setGpsError('Could not start location sensor. Please select your area manually.');
+      if (err.code === 1) {
+        setGpsError('Location permission denied. Please allow location access in your browser or select your area manually.');
+      } else if (err.code === 2) {
+        setGpsError('Unable to determine location. Please try again or select your area manually.');
+      } else if (err.code === 3) {
+        setGpsError('Location request timed out. Please try again or select your area manually.');
+      } else {
+        setGpsError(err.message || 'Unable to detect location. Please select your area manually.');
+      }
     }
   };
 
@@ -639,6 +583,33 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   {isGpsDetecting ? (gpsStatusMessage || 'Detecting...') : '📍 Use Current Location'}
                 </Button>
               </div>
+
+              {userLocation.latitude && userLocation.source === 'gps' && (!formData.latitude || formData.latitude !== userLocation.latitude) && (
+                <div className="mt-3 p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-amber-200">
+                    <Navigation className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Phone location ready: <strong className="text-white">{userLocation.locality || userLocation.city}</strong></span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => applyDetectedLocation({
+                      country: userLocation.country,
+                      state: userLocation.state,
+                      stateCode: userLocation.stateCode,
+                      city: userLocation.city,
+                      citySlug: userLocation.citySlug,
+                      locality: userLocation.locality,
+                      localitySlug: userLocation.localitySlug,
+                      formattedAddress: userLocation.displayName,
+                      latitude: userLocation.latitude,
+                      longitude: userLocation.longitude,
+                    })}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shrink-0 transition text-xs cursor-pointer shadow-sm"
+                  >
+                    1-Tap Auto-fill
+                  </button>
+                </div>
+              )}
 
               {isLocationDetected && formData.latitude && formData.longitude && !isGpsDetecting && (
                 <div className="mt-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">

@@ -62,6 +62,8 @@ export const CITY_CONFIGS: Record<string, CityConfig> = {
       'Chowk',
       'Mutthi Ganj',
       'Kydganj',
+      'Khaadganj',
+      'Kydganj (Khaadganj)',
       'Zero Road',
       'Rambagh',
       'Alopibagh',

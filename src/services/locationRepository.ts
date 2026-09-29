@@ -280,31 +280,27 @@ export class LocationRepository {
       }
     }
 
-    // 2. Determine closest locality
-    let closestLocality = ALL_INDIAN_LOCALITIES[0];
-    let minLocDist = calculateHaversineDistanceKm(
-      latitude,
-      longitude,
-      closestLocality.latitude,
-      closestLocality.longitude
-    );
+    // 2. Determine closest locality belonging STRICTLY to closestCity
+    const cityLocalities = this.getLocalities(closestCity.slug);
+    let closestLocality = cityLocalities[0];
+    let minLocDist = 999999;
 
-    for (let i = 1; i < ALL_INDIAN_LOCALITIES.length; i++) {
+    for (const loc of cityLocalities) {
       const dist = calculateHaversineDistanceKm(
         latitude,
         longitude,
-        ALL_INDIAN_LOCALITIES[i].latitude,
-        ALL_INDIAN_LOCALITIES[i].longitude
+        loc.latitude,
+        loc.longitude
       );
       if (dist < minLocDist) {
         minLocDist = dist;
-        closestLocality = ALL_INDIAN_LOCALITIES[i];
+        closestLocality = loc;
       }
     }
 
     // 3. Determine if there is a very close landmark (< 2.5km)
     let nearestLandmark: string | undefined = undefined;
-    const cityLandmarks = this.getLandmarks(closestLocality.city_slug);
+    const cityLandmarks = this.getLandmarks(closestCity.slug);
     for (const lm of cityLandmarks) {
       const dist = calculateHaversineDistanceKm(latitude, longitude, lm.latitude, lm.longitude);
       if (dist < 2.5) {
@@ -315,23 +311,23 @@ export class LocationRepository {
 
     const isWithinIndia = latitude >= 8 && latitude <= 37 && longitude >= 68 && longitude <= 98;
 
-    let displayName = `Near ${closestLocality.name}, ${closestLocality.city_name}`;
-    if (minLocDist > 25) {
-      displayName = `${closestCity.name} Region, ${closestCity.state_code}`;
-    }
+    // Strict locality snapping: only within 2.5km of a verified locality in that city
+    const useLocality = Boolean(closestLocality) && minLocDist <= 2.5;
+    const displayName = useLocality
+      ? `${closestLocality.name}, ${closestCity.name}`
+      : `${closestCity.name}, ${closestCity.state_name}`;
 
-    const useLocality = minLocDist < 25;
     return {
       localityName: useLocality ? closestLocality.name : closestCity.name,
       localitySlug: useLocality ? closestLocality.slug : closestCity.slug,
-      cityName: useLocality ? closestLocality.city_name : closestCity.name,
-      citySlug: useLocality ? closestLocality.city_slug : closestCity.slug,
-      stateName: useLocality ? closestLocality.state_name : closestCity.state_name,
-      stateCode: useLocality ? closestLocality.state_code : closestCity.state_code,
+      cityName: closestCity.name,
+      citySlug: closestCity.slug,
+      stateName: closestCity.state_name,
+      stateCode: closestCity.state_code,
       districtName: (useLocality ? closestLocality.district : undefined) || closestCity.district,
       displayName,
       nearestLandmark,
-      distanceToLocalityKm: minLocDist,
+      distanceToLocalityKm: useLocality ? minLocDist : 0,
       isWithinIndia,
     };
   }
