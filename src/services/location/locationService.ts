@@ -37,19 +37,19 @@ export interface DetectedLocationResult {
 
 export const GPS_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
-  timeout: 6000,
-  maximumAge: 60000,
+  timeout: 12000,
+  maximumAge: 300000,
 };
 
 export class LocationService {
   private formatGeoError(err: GeolocationPositionError): Error {
-    let msg = "We couldn't detect your location. Please check browser permissions.";
+    let msg = "We couldn't detect your location. Please enter your location manually.";
     if (err.code === 1) {
-      msg = 'Location permission was denied. Please enable location permissions or choose your location manually.';
+      msg = 'Location permission was denied. You can enter your location manually.';
     } else if (err.code === 2) {
-      msg = 'Location information is unavailable on your device. Please choose your location manually.';
+      msg = "We couldn't detect your location. Please enter your location manually.";
     } else if (err.code === 3) {
-      msg = 'Location request timed out. Please try again or choose your location manually.';
+      msg = 'Location request timed out. Please enter your location manually or retry.';
     }
     const error = new Error(msg);
     (error as any).code = err.code;
@@ -57,9 +57,8 @@ export class LocationService {
   }
 
   /**
-   * Fast GPS acquisition:
-   * Uses high accuracy with fused provider cache first (< 500ms),
-   * falling back smoothly if GPS satellite lock takes too long.
+   * High-accuracy device GPS acquisition using the browser's native Geolocation API:
+   * Uses enableHighAccuracy: true with a sensible 12-15s timeout for satellite/GPS hardware lock.
    */
   async getCurrentPosition(options?: PositionOptions, forceFresh?: boolean): Promise<GpsPositionResult> {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
@@ -68,8 +67,8 @@ export class LocationService {
 
     const primaryOptions: PositionOptions = options || {
       enableHighAccuracy: true,
-      timeout: forceFresh ? 7000 : 4000,
-      maximumAge: forceFresh ? 0 : 60000,
+      timeout: forceFresh ? 15000 : 12000,
+      maximumAge: forceFresh ? 0 : 300000,
     };
 
     return new Promise((resolve, reject) => {
@@ -79,17 +78,17 @@ export class LocationService {
           resolve({ latitude, longitude, accuracy });
         },
         (err) => {
-          // If high-accuracy timed out, immediately attempt fast cell/wifi network fallback
-          if (err.code === 3) {
+          // If high-accuracy timed out on a cold satellite lock, attempt one graceful retry
+          if (err.code === 3 && !forceFresh) {
             navigator.geolocation.getCurrentPosition(
-              (fallbackPos) => {
-                const { latitude, longitude, accuracy } = fallbackPos.coords;
+              (retryPos) => {
+                const { latitude, longitude, accuracy } = retryPos.coords;
                 resolve({ latitude, longitude, accuracy });
               },
-              (fallbackErr) => {
-                reject(this.formatGeoError(fallbackErr));
+              (retryErr) => {
+                reject(this.formatGeoError(retryErr));
               },
-              { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 }
+              { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
             );
             return;
           }

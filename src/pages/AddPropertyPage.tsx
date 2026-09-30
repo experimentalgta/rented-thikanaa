@@ -25,6 +25,7 @@ import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { propertyRepository } from '../services/propertyRepository';
 import { uploadPropertyImage, deletePropertyImage } from '../utils/imageUpload';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
+import { LocationPickerMap } from '../components/map/LocationPickerMap';
 
 interface AddPropertyPageProps {
   onSuccess: (newProperty: Property) => void;
@@ -182,12 +183,12 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
 
   const handleUseCurrentGps = async () => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
-      setGpsError('Geolocation is not supported on this device or browser.');
+      setGpsError('Geolocation is not supported on this device or browser. Please enter your location manually.');
       return;
     }
 
     setIsGpsDetecting(true);
-    setGpsStatusMessage('Detecting doorstep GPS...');
+    setGpsStatusMessage('📍 Detecting your location...');
     setGpsError(null);
 
     const startTime = Date.now();
@@ -212,7 +213,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       });
 
       setIsGpsDetecting(false);
-      setGpsStatusMessage(`Detected in ${elapsed}s`);
+      setGpsStatusMessage(`✓ Location detected in ${elapsed}s`);
 
       if (detected.isLowAccuracy) {
         setGpsError(`Low accuracy fix (±${Math.round(detected.accuracy)}m). Please verify your exact locality below.`);
@@ -223,16 +224,38 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       setIsGpsDetecting(false);
       setGpsStatusMessage(null);
       if (err.code === 1) {
-        setGpsError('Location permission denied. Please allow location access in your browser or select your area manually.');
-      } else if (err.code === 2) {
-        setGpsError('Unable to determine location. Please try again or select your area manually.');
-      } else if (err.code === 3) {
-        setGpsError('Location request timed out. Please try again or select your area manually.');
+        setGpsError('Location permission was denied. Please enter your location manually.');
       } else {
-        setGpsError(err.message || 'Unable to detect location. Please select your area manually.');
+        setGpsError("We couldn't detect your location. Please enter your location manually.");
       }
     }
   };
+
+  // Auto-populate location fields in Step 2 if GPS location was already detected in session
+  useEffect(() => {
+    if (
+      currentStep === 2 &&
+      userLocation.latitude &&
+      userLocation.longitude &&
+      userLocation.source === 'gps' &&
+      !formData.latitude
+    ) {
+      applyDetectedLocation({
+        country: userLocation.country,
+        state: userLocation.state,
+        stateCode: userLocation.stateCode,
+        city: userLocation.city,
+        citySlug: userLocation.citySlug,
+        locality: userLocation.locality,
+        localitySlug: userLocation.localitySlug,
+        formattedAddress: userLocation.displayName,
+        pincode: userLocation.pincode,
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        accuracy: userLocation.accuracy,
+      });
+    }
+  }, [currentStep, userLocation, formData.latitude]);
 
   // Auto-save draft on form changes
   useEffect(() => {
@@ -599,7 +622,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   icon={isGpsDetecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
                   className="shrink-0 font-bold text-xs w-full sm:w-auto"
                 >
-                  {isGpsDetecting ? (gpsStatusMessage || 'Detecting...') : '📍 Use Current Location'}
+                  {isGpsDetecting ? (gpsStatusMessage || '📍 Detecting your location...') : '📍 Detect My Location'}
                 </Button>
               </div>
 
@@ -620,6 +643,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                       locality: userLocation.locality,
                       localitySlug: userLocation.localitySlug,
                       formattedAddress: userLocation.displayName,
+                      pincode: userLocation.pincode,
                       latitude: userLocation.latitude,
                       longitude: userLocation.longitude,
                     })}
@@ -646,7 +670,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
               )}
 
               {gpsError && (
-                <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs flex items-center gap-2">
+                <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>{gpsError}</span>
                 </div>
@@ -697,23 +721,35 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                   <label className="block text-xs font-bold uppercase tracking-wider text-[#667085]">
                     Area / Locality *
                   </label>
-                  {!isManualAreaEntry ? (
+                  <div className="flex items-center gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setIsManualAreaEntry(true)}
-                      className="text-xs text-[#D97706] hover:underline font-semibold cursor-pointer"
+                      onClick={handleUseCurrentGps}
+                      disabled={isGpsDetecting}
+                      className="text-xs text-amber-600 hover:text-amber-700 font-semibold cursor-pointer active:scale-98 transition flex items-center gap-1"
+                      title="Auto-detect current GPS location"
                     >
-                      ✏️ Enter manually
+                      <Navigation className="w-3 h-3 text-amber-500" />
+                      <span>{isGpsDetecting ? 'Detecting...' : '📍 Detect My Location'}</span>
                     </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setIsManualAreaEntry(false)}
-                      className="text-xs text-[#2563EB] hover:underline font-semibold cursor-pointer"
-                    >
-                      ← Choose from list
-                    </button>
-                  )}
+                    {!isManualAreaEntry ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsManualAreaEntry(true)}
+                        className="text-xs text-[#D97706] hover:underline font-semibold cursor-pointer"
+                      >
+                        ✏️ Enter manually
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setIsManualAreaEntry(false)}
+                        className="text-xs text-[#2563EB] hover:underline font-semibold cursor-pointer"
+                      >
+                        ← Choose from list
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {!isManualAreaEntry ? (
@@ -894,23 +930,38 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
               </p>
             </div>
 
-            {/* Doorstep GPS Precision Badge (No Map) */}
+            {/* Doorstep GPS Precision Badge & Interactive Location Map */}
             {formData.latitude && formData.longitude && (
-              <div className="border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 flex items-center justify-between gap-3 shadow-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                    <CheckCircle2 className="w-5 h-5" />
+              <div className="space-y-3">
+                <div className="border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 flex items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-xs text-emerald-950">GPS Coordinates Attached</h5>
+                      <p className="text-[11px] text-emerald-800">
+                        Latitude: {Number(formData.latitude).toFixed(6)}, Longitude: {Number(formData.longitude).toFixed(6)} • Doorstep precision walking distance active
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h5 className="font-bold text-xs text-emerald-950">GPS Coordinates Attached</h5>
-                    <p className="text-[11px] text-emerald-800">
-                      Latitude: {Number(formData.latitude).toFixed(6)}, Longitude: {Number(formData.longitude).toFixed(6)} • Doorstep precision walking distance active
-                    </p>
-                  </div>
+                  <span className="text-[10px] font-bold text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
+                    Doorstep Precision Active
+                  </span>
                 </div>
-                <span className="text-[10px] font-bold text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
-                  Doorstep Precision Active
-                </span>
+
+                <div className="rounded-2xl overflow-hidden border border-[#E5E7EB] shadow-xs">
+                  <LocationPickerMap
+                    latitude={Number(formData.latitude)}
+                    longitude={Number(formData.longitude)}
+                    localityName={formData.locality || formData.city}
+                    onLocationChange={(newLat, newLng) => {
+                      updateField('latitude', newLat);
+                      updateField('longitude', newLng);
+                    }}
+                    className="h-64 w-full"
+                  />
+                </div>
               </div>
             )}
           </div>

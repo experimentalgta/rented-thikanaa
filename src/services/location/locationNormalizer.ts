@@ -469,23 +469,25 @@ export function snapToAccurateLocality(
       }
     }
 
-    // If a text match was found, only accept it if it is physically close
-    // or not dramatically further away than the closest neighborhood.
-    // (Prevents broad administrative ward labels like "Chowk" from overriding actual residential neighborhood 300m away)
-    if (textMatchedLocality) {
-      const isMuchFurtherThanClosest = textMatchDist > 1.0 && minDistanceKm < 0.9 && textMatchDist > minDistanceKm * 1.4;
-      if (!isMuchFurtherThanClosest) {
-        return {
-          locality: textMatchedLocality.name,
-          localitySlug: textMatchedLocality.slug,
-          city: textMatchedLocality.city_name,
-          isSnapped: true,
-        };
-      }
+    // Prioritize the physically closest verified locality if it is close (<= 2.2 km).
+    // A text match (e.g. broad administrative OSM polygon like "Chowk") is ONLY accepted
+    // if it is not significantly further away than the physically closest neighborhood.
+    const textMatchIsMuchFurther =
+      textMatchedLocality &&
+      closestLocality &&
+      (textMatchDist > minDistanceKm + 0.35 || (minDistanceKm > 0.4 && textMatchDist > minDistanceKm * 1.4));
+
+    if (textMatchedLocality && !textMatchIsMuchFurther && textMatchDist <= 2.2) {
+      return {
+        locality: textMatchedLocality.name,
+        localitySlug: textMatchedLocality.slug,
+        city: textMatchedLocality.city_name,
+        isSnapped: true,
+      };
     }
 
-    // If coordinates are within 2.5km of a verified locality in this city:
-    if (closestLocality && minDistanceKm <= 2.5) {
+    // Physical proximity snap to closest verified locality in this city:
+    if (closestLocality && minDistanceKm <= 2.2) {
       return {
         locality: closestLocality.name,
         localitySlug: closestLocality.slug,

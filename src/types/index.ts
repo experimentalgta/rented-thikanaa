@@ -370,6 +370,7 @@ export interface UserLocationState {
   localitySlug?: string;
   subLocality?: string;
   landmark?: string;
+  pincode?: string;
   displayName: string;
   formattedAddress?: string;
   source: UserLocationSource;

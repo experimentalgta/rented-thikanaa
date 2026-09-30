@@ -56,104 +56,22 @@ export class ReverseGeocoder {
       }
     }
 
-    // 3. Primary: High-Accuracy Fast CORS Client-side Reverse Geocoding via BigDataCloud
-    try {
-      const bdcController = new AbortController();
-      const bdcTimer = setTimeout(() => bdcController.abort(), 4000);
-      if (signal) {
-        signal.addEventListener('abort', () => bdcController.abort(), { once: true });
-      }
-
-      const bdcUrl = `${BIGDATACLOUD_REVERSE_URL}?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`;
-      const bdcRes = await fetch(bdcUrl, {
-        headers: { Accept: 'application/json' },
-        signal: bdcController.signal,
-      });
-      clearTimeout(bdcTimer);
-
-      if (bdcRes.ok) {
-        const bdc = await bdcRes.json();
-        if (bdc.city || bdc.principalSubdivision) {
-          const stateName = bdc.principalSubdivision || 'Uttar Pradesh';
-          const stateCode = bdc.principalSubdivisionCode ? bdc.principalSubdivisionCode.replace('IN-', '') : 'UP';
-          const cityName = bdc.city || bdc.locality || 'Prayagraj';
-
-          // Extract granular administrative area (tehsil, taluk, ward) if available
-          let subArea = '';
-          if (Array.isArray(bdc.localityInfo?.administrative)) {
-            for (const admin of bdc.localityInfo.administrative) {
-              if (admin.name && admin.adminLevel >= 6 && !admin.name.toLowerCase().includes('district')) {
-                const clean = admin.name.replace(/\s+(tehsil|taluk|block|division|corporation)$/i, '').trim();
-                if (clean && clean.toLowerCase() !== cityName.toLowerCase() && !clean.toLowerCase().includes('allahabad')) {
-                  subArea = clean;
-                  break;
-                }
-              }
-            }
-          }
-
-          const rawLocality = bdc.locality && bdc.locality.toLowerCase() !== cityName.toLowerCase()
-            ? bdc.locality
-            : subArea || cityName;
-
-          const cleanLocalitySlug = rawLocality.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-          const cleanCitySlug = cityName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-
-          const normalized: LocationData = {
-            country: 'India',
-            countryCode: 'IN',
-            formattedAddress: [rawLocality, cityName, stateName].filter(Boolean).join(', '),
-            state: stateName,
-            stateCode,
-            city: cityName,
-            citySlug: cleanCitySlug,
-            locality: rawLocality,
-            localitySlug: cleanLocalitySlug,
-            pincode: bdc.postcode || '',
-            latitude,
-            longitude,
-            landmark: nearestLandmark,
-            source: 'gps',
-          };
-
-          this.refineLocation(normalized, `${rawLocality} ${bdc.locality || ''} ${cityName}`);
-
-          if (import.meta.env.DEV) {
-            console.log('[GPS: BigDataCloud Success]', {
-              latitude,
-              longitude,
-              cityName,
-              locality: normalized.locality,
-              formattedAddress: normalized.formattedAddress,
-            });
-          }
-
-          locationCache.setReverse(latitude, longitude, normalized);
-          return normalized;
-        }
-      }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        console.warn('BigDataCloud geocoder failed, trying fallback:', err);
-      }
-    }
-
-    // 4. Secondary: OpenStreetMap Nominatim / Photon (if available/supported)
+    // 3. Primary: High-Accuracy OpenStreetMap Nominatim Reverse Geocoding
     try {
       const now = Date.now();
       const timeSinceLastCall = now - lastReverseCallTime;
-      if (timeSinceLastCall < 800) {
-        await new Promise((resolve) => setTimeout(resolve, 800 - timeSinceLastCall));
+      if (timeSinceLastCall < 600) {
+        await new Promise((resolve) => setTimeout(resolve, 600 - timeSinceLastCall));
       }
       lastReverseCallTime = Date.now();
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       if (signal) {
         signal.addEventListener('abort', () => controller.abort(), { once: true });
       }
 
-      const url = `${NOMINATIM_REVERSE_URL}?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
+      const url = `${NOMINATIM_REVERSE_URL}?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&email=support@rentedthikanaa.com`;
       const response = await fetch(url, {
         headers: { Accept: 'application/json' },
         signal: controller.signal,
@@ -169,14 +87,27 @@ export class ReverseGeocoder {
           normalized.landmark = nearestLandmark;
         }
 
-        const rawText = `${data.display_name || ''} ${data.address?.road || ''} ${data.address?.neighbourhood || ''} ${data.address?.suburb || ''}`;
+        const rawText = `${data.display_name || ''} ${data.address?.road || ''} ${data.address?.neighbourhood || ''} ${data.address?.residential || ''} ${data.address?.suburb || ''} ${data.address?.city || ''}`;
         this.refineLocation(normalized, rawText);
+
+        if (import.meta.env.DEV) {
+          console.log('[GPS: Nominatim Success]', {
+            latitude,
+            longitude,
+            city: normalized.city,
+            locality: normalized.locality,
+            pincode: normalized.pincode,
+            formattedAddress: normalized.formattedAddress,
+          });
+        }
 
         locationCache.setReverse(latitude, longitude, normalized);
         return normalized;
       }
     } catch (e: any) {
-      // Ignore Nominatim browser CORS failures
+      if (e.name !== 'AbortError') {
+        console.warn('OpenStreetMap Nominatim reverse geocoder unavailable, falling back to local catalog:', e);
+      }
     }
 
     // 5. Offline Fallback: Nearest-Neighbor Proximity Match strictly scoped to same city

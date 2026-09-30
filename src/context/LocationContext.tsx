@@ -42,15 +42,16 @@ const EMPTY_LOCATION: UserLocationState = {
   source: 'none',
 };
 
-const SAVED_LOCATION_KEY = 'rented_thikan_user_location_v3';
+const SAVED_LOCATION_KEY = 'rented_thikan_user_location_v4';
 const PROMPT_DISMISSED_KEY = 'rented_thikan_location_prompt_dismissed_v1';
 
 export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [userLocation, setUserLocation] = useState<UserLocationState>(() => {
     try {
-      // Clear legacy bugged v1 and v2 caches
+      // Clear legacy bugged caches
       localStorage.removeItem('rented_thikan_user_location_v1');
       localStorage.removeItem('rented_thikan_user_location_v2');
+      localStorage.removeItem('rented_thikan_user_location_v3');
 
       const saved = localStorage.getItem(SAVED_LOCATION_KEY);
       if (saved) {
@@ -79,43 +80,23 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && navigator.permissions && navigator.permissions.query) {
-      navigator.permissions.query({ name: 'geolocation' as PermissionName }).then((result) => {
-        if (result.state === 'granted') {
-          setPermissionState('granted');
-        } else if (result.state === 'denied') {
-          setPermissionState('denied');
-        } else {
-          setPermissionState('prompt');
-        }
-
-        result.onchange = () => {
-          if (result.state === 'granted') {
-            setPermissionState('granted');
-            setError(null);
-          } else if (result.state === 'denied') {
-            setPermissionState('denied');
-            setError('Location access is turned off. You can search for an area manually.');
-          } else {
-            setPermissionState('prompt');
-          }
-        };
-      }).catch(() => {
-        // Ignore permissions query failure
-      });
-    }
-  }, []);
-
   const detectCurrentLocation = useCallback(async (options?: { forceFresh?: boolean }): Promise<UserLocationState | null> => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
       setPermissionState('unsupported');
-      setError('Location detection is not supported on this browser/device.');
+      setError('Location detection is not supported on this browser/device. Please enter manually.');
       return null;
     }
 
+    // Reuse valid session GPS location if not explicitly requested fresh
+    if (!options?.forceFresh && userLocation.latitude && userLocation.longitude && userLocation.source === 'gps') {
+      const age = userLocation.timestamp ? Date.now() - userLocation.timestamp : Infinity;
+      if (age < 2 * 60 * 60 * 1000) {
+        return userLocation;
+      }
+    }
+
     if (import.meta.env.DEV) {
-      console.log('[Location] GPS request', options?.forceFresh ? '(force fresh)' : '');
+      console.log('[Location] GPS request initiated', options?.forceFresh ? '(force fresh)' : '');
     }
 
     setIsDetecting(true);
@@ -135,7 +116,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setIsDetecting(false);
 
       if (detected.isLowAccuracy) {
-        setError(`GPS accuracy is low (~${Math.round(detected.accuracy)}m). Double-check your area.`);
+        setError(`GPS accuracy is low (~${Math.round(detected.accuracy)}m). You can verify or edit your area manually.`);
       } else {
         setError(null);
       }
@@ -144,39 +125,69 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setIsDetecting(false);
       if (err.code === 1) {
         setPermissionState('denied');
-        setError('Location access was denied. You can search for your location manually.');
+        setError('Location permission was denied. You can enter your location manually.');
       } else if (err.code === 2) {
-        setError("We couldn't detect your location. Try searching your area manually.");
+        setError("We couldn't detect your location. Please enter your location manually.");
       } else if (err.code === 3) {
-        setError('Location request timed out. Try again or choose your location manually.');
+        setError('Location request timed out. Please enter your location manually.');
       } else {
-        setError(err.message || "We couldn't detect your location. Try choosing your location manually.");
+        setError(err.message || "We couldn't detect your location. Please enter your location manually.");
       }
       return null;
     }
-  }, []);
+  }, [userLocation]);
 
-  // Request location immediately upon opening the website (cold start)
+  // Request location permission immediately upon opening the website
   useEffect(() => {
     try {
       const saved = localStorage.getItem(SAVED_LOCATION_KEY);
       if (saved) {
         const parsed: UserLocationState = JSON.parse(saved);
         const age = parsed.timestamp ? Date.now() - parsed.timestamp : Infinity;
-        // If manual location or recent GPS location (< 2 hours), reuse session location
+        // If manual location or recent GPS location (< 2 hours), reuse session location without prompting
         if (parsed.latitude && parsed.longitude && (parsed.source === 'manual' || age < 2 * 60 * 60 * 1000)) {
           if (import.meta.env.DEV) {
-            console.log('[Location] Using recent valid location', parsed.locality || parsed.city);
+            console.log('[Location] Using recent session location:', parsed.locality || parsed.city);
           }
           return;
         }
       }
     } catch {}
 
-    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
-      detectCurrentLocation().catch((err) => {
-        console.warn('Initial website open location request deferred or denied:', err);
+    // Check permission state via Permissions API if available
+    if (typeof window !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' as PermissionName }).then((result) => {
+        if (result.state === 'granted') {
+          setPermissionState('granted');
+          detectCurrentLocation();
+        } else if (result.state === 'denied') {
+          setPermissionState('denied');
+          setError('Location access was denied. You can enter your location manually.');
+        } else {
+          setPermissionState('prompt');
+          // Request browser/device GPS permission immediately on open
+          detectCurrentLocation().catch(() => {});
+        }
+
+        result.onchange = () => {
+          if (result.state === 'granted') {
+            setPermissionState('granted');
+            setError(null);
+            detectCurrentLocation({ forceFresh: true });
+          } else if (result.state === 'denied') {
+            setPermissionState('denied');
+            setError('Location access was denied. You can enter your location manually.');
+          } else {
+            setPermissionState('prompt');
+          }
+        };
+      }).catch(() => {
+        // Fallback for browsers where permissions.query fails
+        detectCurrentLocation().catch(() => {});
       });
+    } else if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+      // iOS Safari and other browsers without permissions.query
+      detectCurrentLocation().catch(() => {});
     }
   }, [detectCurrentLocation]);
 
