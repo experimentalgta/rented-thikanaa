@@ -18,6 +18,7 @@ export interface IncomingToast {
 interface ChatContextType {
   conversations: Conversation[];
   messages: Message[];
+  isLoadingMessages: boolean;
   activeConversation: Conversation | null;
   contactRequests: ContactRequest[];
   unreadCount: number;
@@ -52,6 +53,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [contactRequests, setContactRequests] = useState<ContactRequest[]>([]);
   const [isChatModalOpen, setIsChatModalOpenState] = useState(false);
   const [incomingToast, setIncomingToast] = useState<IncomingToast | null>(null);
@@ -72,6 +74,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const processedMessageIdsRef = useRef<Set<string>>(new Set());
   const activeChannelRef = useRef<RealtimeChannel | null>(null);
 
+  // In-memory per-conversation message cache for instant zero-flash switching & session persistence
+  const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
+
+  // Sequential request ID counter to guarantee that only the latest active conversation fetch updates UI
+  const fetchRequestIdRef = useRef<number>(0);
+
   const dismissToast = useCallback(() => {
     setIncomingToast(null);
   }, []);
@@ -82,6 +90,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setContactRequests([]);
       setActiveConversation(null);
       setMessages([]);
+      setIsLoadingMessages(false);
+      messagesCacheRef.current.clear();
       return;
     }
 
@@ -92,9 +102,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const reqs = await chatAndSafetyRepository.getContactRequests(currentUser.id);
       setContactRequests(reqs);
 
-      if (activeConversationRef.current && !activeConversationRef.current.id.startsWith('temp-')) {
-        const msgs = await chatAndSafetyRepository.getMessages(activeConversationRef.current.id);
-        setMessages(msgs);
+      const currentActive = activeConversationRef.current;
+      if (currentActive && !currentActive.id.startsWith('temp-')) {
+        const msgs = await chatAndSafetyRepository.getMessages(currentActive.id);
+        messagesCacheRef.current.set(currentActive.id, msgs);
+        if (activeConversationRef.current?.id === currentActive.id) {
+          setMessages(msgs);
+        }
       }
     } catch (e) {
       console.error('[ChatContext] Failed to load chat data', e);
@@ -137,6 +151,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setContactRequests([]);
       setActiveConversation(null);
       setMessages([]);
+      setIsLoadingMessages(false);
+      messagesCacheRef.current.clear();
       setIsChatModalOpenState(false);
       isChatModalOpenRef.current = false;
       setIncomingToast(null);
@@ -145,13 +161,75 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser?.id, loadData]);
 
-  // Load messages whenever activeConversation changes
+  // Synchronize / load messages strictly for the active conversation
   useEffect(() => {
-    if (activeConversation && currentUser && !activeConversation.id.startsWith('temp-')) {
-      chatAndSafetyRepository.getMessages(activeConversation.id).then((msgs) => {
-        setMessages(msgs);
-      });
+    if (!currentUser || !activeConversation) {
+      setMessages([]);
+      setIsLoadingMessages(false);
+      return;
     }
+
+    const convId = activeConversation.id;
+
+    // Placeholder conversation (new listing inquiry, no messages yet until first send)
+    if (convId.startsWith('temp-')) {
+      setMessages([]);
+      setIsLoadingMessages(false);
+      return;
+    }
+
+    // Check if we already have non-empty cached messages for this conversation
+    const cached = messagesCacheRef.current.get(convId);
+    if (cached && cached.length > 0) {
+      // Show cached messages instantly — no loading flash
+      setMessages(cached);
+      setIsLoadingMessages(false);
+    } else {
+      // Immediately clear visible messages to prevent ANY visual bleed from previously viewed conversation
+      setMessages([]);
+      setIsLoadingMessages(true);
+    }
+
+    // Capture request ID for stale-fetch invalidation
+    const currentRequestId = ++fetchRequestIdRef.current;
+    let isCancelled = false;
+
+    chatAndSafetyRepository
+      .getMessages(convId)
+      .then((msgs) => {
+        if (isCancelled) return;
+
+        // Cache the latest messages for this conversation
+        messagesCacheRef.current.set(convId, msgs);
+
+        // Strict guard: Only update UI if this fetch belongs to the currently active conversation and latest request
+        if (
+          fetchRequestIdRef.current === currentRequestId &&
+          activeConversationRef.current?.id === convId
+        ) {
+          setMessages(msgs);
+          setIsLoadingMessages(false);
+        } else if (import.meta.env.DEV) {
+          console.log(
+            `[ChatContext] Discarded stale messages response for ${convId}. Active conversation is now: ${activeConversationRef.current?.id}`
+          );
+        }
+      })
+      .catch((err) => {
+        if (isCancelled) return;
+        console.error(`[ChatContext] Failed to load messages for ${convId}:`, err);
+        if (
+          fetchRequestIdRef.current === currentRequestId &&
+          activeConversationRef.current?.id === convId
+        ) {
+          setIsLoadingMessages(false);
+        }
+      });
+
+    // Cleanup: mark this effect instance as cancelled to ignore its in-flight response
+    return () => {
+      isCancelled = true;
+    };
   }, [activeConversation?.id, currentUser?.id]);
 
   // Handle window focus & tab visibility changes to mark active conversation as read
@@ -224,6 +302,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         property_context: newRow.property_context,
         location_share: newRow.location_share,
       };
+
+      // Update cache for this conversation so it is immediately available on switch
+      const currentCached = messagesCacheRef.current.get(convId) || [];
+      if (!currentCached.some((m) => m.id === incomingMsg.id)) {
+        messagesCacheRef.current.set(convId, [...currentCached, incomingMsg]);
+      }
 
       // Check if user is actively viewing this exact conversation right now
       const isActivelyViewing =
@@ -455,7 +539,20 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // 3. Immediately set an accurate active conversation placeholder
+    // 3. Immediately set an accurate active conversation placeholder with property context
+    const propertyContext = {
+      id: property.id,
+      title: property.title,
+      locality: property.locality,
+      rent: property.rent,
+      image_url:
+        property.images?.find((img) => img.is_cover)?.thumbnail_url ||
+        property.images?.find((img) => img.is_cover)?.url ||
+        property.images?.[0]?.thumbnail_url ||
+        property.images?.[0]?.url,
+      is_available: property.availability_status === 'available',
+    };
+
     const immediatePlaceholder: Conversation = {
       id: `temp-${property.id}`,
       participant_ids: [currentUser.id, ownerId],
@@ -472,10 +569,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unread_count: 0,
       property_id: property.id,
       property_title: property.title,
+      property_context: propertyContext,
     };
 
     setActiveConversation(immediatePlaceholder);
+    activeConversationRef.current = immediatePlaceholder;
     setMessages([]);
+    setIsLoadingMessages(false);
     setIsChatModalOpen(true);
 
     try {
@@ -491,7 +591,21 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userAvatar: currentUser.avatar_url,
       });
 
+      // Preserve property context on resolved conversation
+      resolvedConv.property_context = propertyContext;
+
+      // Synchronously set messages from cache or skeleton
+      const cached = messagesCacheRef.current.get(resolvedConv.id);
+      if (cached) {
+        setMessages(cached);
+        setIsLoadingMessages(false);
+      } else {
+        setMessages([]);
+        setIsLoadingMessages(true);
+      }
+
       // 5. Update active conversation with canonical DB record
+      activeConversationRef.current = resolvedConv;
       setActiveConversation(resolvedConv);
       markConversationAsRead(resolvedConv.id);
 
@@ -503,12 +617,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return [resolvedConv, ...prev];
       });
-
-      // Load existing messages for this conversation
-      const existingMsgs = await chatAndSafetyRepository.getMessages(resolvedConv.id);
-      setMessages(existingMsgs);
+      // The activeConversation?.id useEffect will automatically synchronize fresh messages safely
     } catch (err) {
       console.error('[ChatContext] Failed to resolve conversation for listing:', err);
+      setIsLoadingMessages(false);
     }
   };
 
@@ -544,6 +656,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    const propertyContext = {
+      id: property.id,
+      title: property.title,
+      locality: property.locality,
+      rent: property.rent,
+    };
+
     const placeholder: Conversation = {
       id: `temp-${property.id}`,
       participant_ids: [currentUser.id, ownerId],
@@ -556,10 +675,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unread_count: 0,
       property_id: property.id,
       property_title: property.title,
+      property_context: propertyContext,
     };
 
+    activeConversationRef.current = placeholder;
     setActiveConversation(placeholder);
     setMessages([]);
+    setIsLoadingMessages(false);
     setIsChatModalOpen(true);
 
     try {
@@ -572,6 +694,18 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userName: currentUser.full_name,
       });
 
+      resolvedConv.property_context = propertyContext;
+
+      const cached = messagesCacheRef.current.get(resolvedConv.id);
+      if (cached) {
+        setMessages(cached);
+        setIsLoadingMessages(false);
+      } else {
+        setMessages([]);
+        setIsLoadingMessages(true);
+      }
+
+      activeConversationRef.current = resolvedConv;
       setActiveConversation(resolvedConv);
       markConversationAsRead(resolvedConv.id);
 
@@ -582,24 +716,45 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return [resolvedConv, ...prev];
       });
-
-      const existingMsgs = await chatAndSafetyRepository.getMessages(resolvedConv.id);
-      setMessages(existingMsgs);
+      // The activeConversation?.id useEffect will automatically synchronize fresh messages safely
     } catch (err) {
       console.error('[ChatContext] Failed to resolve conversation in openChatWithContext:', err);
+      setIsLoadingMessages(false);
     }
   };
 
-  const selectConversation = async (conv: Conversation) => {
-    setActiveConversation(conv);
-    markConversationAsRead(conv.id);
-    try {
-      const msgs = await chatAndSafetyRepository.getMessages(conv.id);
-      setMessages(msgs);
-    } catch (err) {
-      console.error('[ChatContext] Failed to load messages for conversation:', err);
-    }
-  };
+  const selectConversation = useCallback(
+    async (conv: Conversation) => {
+      if (activeConversationRef.current?.id === conv.id) {
+        return;
+      }
+
+      // Immediately invalidate any in-flight requests from the previous conversation
+      fetchRequestIdRef.current += 1;
+
+      // 1. Immediately switch the active conversation ref & state
+      activeConversationRef.current = conv;
+      setActiveConversation(conv);
+
+      // 2. Synchronously clear or populate messages from cache in the SAME tick
+      const cached = messagesCacheRef.current.get(conv.id);
+      if (cached && cached.length > 0) {
+        setMessages(cached);
+        setIsLoadingMessages(false);
+      } else {
+        // Absolutely zero flash of previous conversation messages
+        setMessages([]);
+        setIsLoadingMessages(true);
+      }
+
+      // 3. Mark active conversation as read
+      markConversationAsRead(conv.id);
+
+      // Note: The activeConversation?.id useEffect will trigger and safely fetch fresh
+      // messages over the network with fetchRequestIdRef validation, updating cache and UI.
+    },
+    [markConversationAsRead]
+  );
 
   const sendMessage = async (text: string) => {
     if (!activeConversation || !currentUser) return;
@@ -621,9 +776,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       propertyContext: activeConversation.property_id
         ? {
             id: activeConversation.property_id,
-            title: activeConversation.property_title || '',
-            locality: 'Prayagraj',
-            rent: 0,
+            title: activeConversation.property_title || activeConversation.property_context?.title || '',
+            locality: activeConversation.property_context?.locality || 'Prayagraj',
+            rent: activeConversation.property_context?.rent || 0,
+            image_url: activeConversation.property_context?.image_url,
           }
         : undefined,
     });
@@ -631,18 +787,34 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Record sent message ID in processed cache to avoid handling our own echo twice
     processedMessageIdsRef.current.add(sent.id);
 
+    const targetId = isTempId ? (sent.conversation_id || activeConversation.id) : activeConversation.id;
+
     // If conversation was a placeholder, update to the newly assigned UUID
     if (isTempId && sent.conversation_id) {
       setActiveConversation((prev) => (prev ? { ...prev, id: sent.conversation_id } : prev));
+      if (activeConversationRef.current) {
+        activeConversationRef.current = { ...activeConversationRef.current, id: sent.conversation_id };
+      }
     }
 
-    // 1. Local state update
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === sent.id)) return prev;
-      return [...prev, sent];
-    });
+    // 1. Local state update (strictly verify that active conversation still points to targetId)
+    if (
+      activeConversationRef.current?.id === targetId ||
+      (isTempId && activeConversationRef.current?.id === activeConversation.id)
+    ) {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === sent.id)) return prev;
+        return [...prev, sent];
+      });
+    }
 
-    // 2. Peer WebSocket broadcast
+    // 2. Cache update
+    const cachedList = messagesCacheRef.current.get(targetId) || [];
+    if (!cachedList.some((m) => m.id === sent.id)) {
+      messagesCacheRef.current.set(targetId, [...cachedList, sent]);
+    }
+
+    // 3. Peer WebSocket broadcast
     if (activeChannelRef.current) {
       activeChannelRef.current.send({
         type: 'broadcast',
@@ -651,14 +823,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     }
 
-    // 3. Update conversations list & move to top
+    // 4. Update conversations list & move to top
     setConversations((prev) => {
-      const targetId = isTempId ? sent.conversation_id : activeConversation.id;
       const found = prev.find((c) => c.id === targetId);
       if (found) {
         const updated = {
           ...found,
-          id: sent.conversation_id,
+          id: sent.conversation_id || targetId,
           last_message: sent.text,
           last_message_time: sent.timestamp,
         };
@@ -705,8 +876,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const otherParticipantId =
       activeConversation.participant_ids.find((id) => id !== currentUser.id) || 'user-stud-1';
 
+    const isTempId = activeConversation.id.startsWith('temp-');
+
     const sent = await chatAndSafetyRepository.sendMessage({
-      conversationId: activeConversation.id.startsWith('temp-') ? undefined : activeConversation.id,
+      conversationId: isTempId ? undefined : activeConversation.id,
       senderId: currentUser.id,
       senderName: currentUser.full_name,
       receiverId: otherParticipantId,
@@ -714,9 +887,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       propertyContext: activeConversation.property_id
         ? {
             id: activeConversation.property_id,
-            title: activeConversation.property_title || '',
-            locality: 'Prayagraj',
-            rent: 0,
+            title: activeConversation.property_title || activeConversation.property_context?.title || '',
+            locality: activeConversation.property_context?.locality || 'Prayagraj',
+            rent: activeConversation.property_context?.rent || 0,
+            image_url: activeConversation.property_context?.image_url,
           }
         : undefined,
       locationShare,
@@ -724,10 +898,22 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     processedMessageIdsRef.current.add(sent.id);
 
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === sent.id)) return prev;
-      return [...prev, sent];
-    });
+    const targetId = isTempId ? (sent.conversation_id || activeConversation.id) : activeConversation.id;
+
+    if (
+      activeConversationRef.current?.id === targetId ||
+      activeConversationRef.current?.id === activeConversation.id
+    ) {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === sent.id)) return prev;
+        return [...prev, sent];
+      });
+    }
+
+    const cachedList = messagesCacheRef.current.get(targetId) || [];
+    if (!cachedList.some((m) => m.id === sent.id)) {
+      messagesCacheRef.current.set(targetId, [...cachedList, sent]);
+    }
 
     if (activeChannelRef.current) {
       activeChannelRef.current.send({
@@ -747,6 +933,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         conversations,
         messages,
+        isLoadingMessages,
         activeConversation,
         contactRequests,
         unreadCount,

@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  MessageSquare,
   Send,
   X,
   Building2,
   Phone,
   ShieldCheck,
-  CheckCircle2,
   Lock,
   MapPin,
   Navigation,
@@ -22,6 +20,8 @@ import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
 import { propertyRepository } from '../../services/propertyRepository';
+import { getOtherParticipant } from '../../utils/chatHelpers';
+import { Property } from '../../types';
 
 export const ChatModal: React.FC = () => {
   const {
@@ -31,6 +31,7 @@ export const ChatModal: React.FC = () => {
     activeConversation,
     selectConversation,
     messages,
+    isLoadingMessages,
     sendMessage,
     contactRequests,
     updateContactRequest,
@@ -41,6 +42,19 @@ export const ChatModal: React.FC = () => {
   const { currentUser } = useAuth();
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
+
+  // Dynamically resolve other participant (User B vs User A)
+  const otherUser = getOtherParticipant(activeConversation, currentUser?.id);
+
+  // Property state for active conversation (handles deleted/unavailable listings gracefully)
+  const [activeProperty, setActiveProperty] = useState<Property | null | 'deleted'>(null);
+
+  // Filter messages strictly to the active conversation to guarantee zero bleed during transitions
+  const activeConvId = activeConversation?.id;
+  const displayMessages = React.useMemo(() => {
+    if (!activeConvId) return [];
+    return messages.filter((m) => m.conversation_id === activeConvId);
+  }, [messages, activeConvId]);
 
   // Mobile navigation state: view list of threads vs active conversation
   const [mobileView, setMobileView] = useState<'threads' | 'chat'>('chat');
@@ -76,9 +90,9 @@ export const ChatModal: React.FC = () => {
     }
   }, [isChatModalOpen, activeConversation?.id, markConversationAsRead]);
 
-  // Smooth scroll to bottom sentinel
+  // Smooth scroll to bottom sentinel (only when messages are fully loaded)
   useEffect(() => {
-    if (isChatModalOpen) {
+    if (isChatModalOpen && !isLoadingMessages) {
       const timer = setTimeout(() => {
         if (window.innerWidth < 768) {
           mobileMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -88,7 +102,7 @@ export const ChatModal: React.FC = () => {
       }, 60);
       return () => clearTimeout(timer);
     }
-  }, [messages.length, isChatModalOpen, mobileView]);
+  }, [displayMessages.length, isChatModalOpen, mobileView, isLoadingMessages]);
 
   // Mobile body scroll lock and history back handling
   useEffect(() => {
@@ -111,42 +125,88 @@ export const ChatModal: React.FC = () => {
     }
   };
 
-  // Update default modal values when active conversation changes
+  // Update property details & directions when active conversation changes (gracefully handles deleted properties)
   useEffect(() => {
+    let isSubscribed = true;
+    // Immediately clear previous property context on conversation change to prevent visual bleed
+    setActiveProperty(null);
+
     if (activeConversation?.property_id) {
-      propertyRepository.getPropertyById(activeConversation.property_id, 'owner-101').then((prop) => {
-        if (prop) {
-          setExactAddress(
-            prop.address && prop.address !== `${prop.locality}, Prayagraj`
-              ? prop.address
-              : `House #14/B, ${prop.locality}, Prayagraj, UP 211002`
-          );
-          setLandmarkDirections(
-            prop.landmark
-              ? `Directions: Near ${prop.landmark}. Paved lane opposite main gate, 3rd house with yellow gate.`
-              : `Directions: Central ${prop.locality}, 200m from main market.`
-          );
-          setGoogleMapsUrl(
-            `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-              `${prop.locality} Prayagraj Uttar Pradesh India`
-            )}`
-          );
-          setWhatsappUrl(
-            prop.owner_phone
-              ? `https://wa.me/${prop.owner_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                  `Namaste, I am arriving for the visit to ${prop.title}`
-                )}`
-              : 'https://wa.me/919415238472?text=Namaste%2C%20I%20am%20arriving%20for%20the%20property%20visit'
-          );
-        }
-      });
+      propertyRepository
+        .getPropertyById(activeConversation.property_id, currentUser?.id)
+        .then((prop) => {
+          if (!isSubscribed) return;
+          if (prop) {
+            setActiveProperty(prop);
+            setExactAddress(
+              prop.address && prop.address !== `${prop.locality}, Prayagraj`
+                ? prop.address
+                : `House #14/B, ${prop.locality}, Prayagraj, UP 211002`
+            );
+            setLandmarkDirections(
+              prop.landmark
+                ? `Directions: Near ${prop.landmark}. Paved lane opposite main gate, 3rd house with yellow gate.`
+                : `Directions: Central ${prop.locality}, 200m from main market.`
+            );
+            setGoogleMapsUrl(
+              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                `${prop.locality} Prayagraj Uttar Pradesh India`
+              )}`
+            );
+            setWhatsappUrl(
+              prop.owner_phone
+                ? `https://wa.me/${prop.owner_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                    `Namaste, I am arriving for the visit to ${prop.title}`
+                  )}`
+                : 'https://wa.me/919415238472?text=Namaste%2C%20I%20am%20arriving%20for%20the%20property%20visit'
+            );
+          } else {
+            setActiveProperty('deleted');
+          }
+        })
+        .catch(() => {
+          if (!isSubscribed) return;
+          setActiveProperty('deleted');
+        });
     } else {
+      setActiveProperty(null);
       setExactAddress('14/B, Old Katra, Near Netram Chauraha, Prayagraj, UP 211002');
       setLandmarkDirections('Take the paved lane opposite Netram Chauraha, 3rd house on the left.');
       setGoogleMapsUrl('https://www.google.com/maps/search/?api=1&query=25.4578,81.8539');
       setWhatsappUrl('https://wa.me/919415238472?text=Namaste%20visiting%20property');
     }
-  }, [activeConversation?.id, activeConversation?.property_id]);
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [activeConversation?.id, activeConversation?.property_id, currentUser?.id]);
+
+  const handleSendQuickMessage = async (quickText: string) => {
+    if (isSending) return;
+    setIsSending(true);
+    try {
+      await sendMessage(quickText);
+    } catch (err) {
+      console.error('Failed to send quick message:', err);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const propertyCoverThumbnail =
+    activeProperty && activeProperty !== 'deleted'
+      ? activeProperty.images?.find((img) => img.is_cover)?.thumbnail_url ||
+        activeProperty.images?.find((img) => img.is_cover)?.url ||
+        activeProperty.images?.[0]?.thumbnail_url ||
+        activeProperty.images?.[0]?.url
+      : activeConversation?.property_context?.image_url;
+
+  const propertyPriceText =
+    activeProperty && activeProperty !== 'deleted'
+      ? `₹${activeProperty.rent.toLocaleString('en-IN')}/mo • ${activeProperty.locality}`
+      : activeConversation?.property_context?.rent
+      ? `₹${activeConversation.property_context.rent.toLocaleString('en-IN')}/mo • ${activeConversation.property_context.locality || 'Prayagraj'}`
+      : undefined;
 
   if (!isChatModalOpen) return null;
 
@@ -216,25 +276,38 @@ export const ChatModal: React.FC = () => {
         <div className="relative w-full max-w-3xl h-[85vh] sm:h-[650px] bg-white rounded-2xl shadow-2xl border border-[#E5E7EB] flex flex-col z-10 overflow-hidden">
           {/* Modal Header */}
           <div className="px-4 py-3 bg-[#101828] text-white flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#F59E0B] text-[#101828] flex items-center justify-center font-bold font-heading">
-                💬
-              </div>
-              <div>
-                <h3 className="font-bold text-sm font-heading">
-                  {activeConversation?.property_title
-                    ? activeConversation.property_title
-                    : 'In-Platform Messages'}
+            <div className="flex items-center gap-2.5 min-w-0">
+              {otherUser.avatar ? (
+                <img
+                  src={otherUser.avatar}
+                  alt={otherUser.name}
+                  className="w-9 h-9 rounded-full object-cover border border-amber-400/40 shrink-0"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs shrink-0 font-heading">
+                  {otherUser.initials}
+                </div>
+              )}
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm font-heading text-white truncate max-w-xs sm:max-w-md">
+                  {otherUser.name}
                 </h3>
-                <p className="text-[11px] text-[#94A3B8] flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-[#F59E0B]" />
-                  Privacy-Protected Communication
-                </p>
+                {activeConversation?.property_title ? (
+                  <p className="text-[11px] text-[#94A3B8] flex items-center gap-1 truncate max-w-xs sm:max-w-md">
+                    <Building2 className="w-3 h-3 text-[#F59E0B] shrink-0" />
+                    <span className="truncate">{activeConversation.property_title}</span>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[#94A3B8] flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-[#F59E0B] shrink-0" />
+                    <span>Privacy-Protected Communication</span>
+                  </p>
+                )}
               </div>
             </div>
             <button
               onClick={() => setIsChatModalOpen(false)}
-              className="p-1.5 text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+              className="p-1.5 text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -250,26 +323,41 @@ export const ChatModal: React.FC = () => {
               <div className="flex-1 overflow-y-auto divide-y divide-[#F1F5F9]">
                 {conversations.map((conv) => {
                   const isActive = activeConversation?.id === conv.id;
+                  const convOther = getOtherParticipant(conv, currentUser?.id);
                   return (
                     <button
                       key={conv.id}
                       onClick={() => selectConversation(conv)}
-                      className={`w-full p-3 text-left transition-colors flex items-start gap-2.5 ${
+                      className={`w-full p-3 text-left transition-colors flex items-start gap-2.5 cursor-pointer ${
                         isActive ? 'bg-white font-medium shadow-2xs' : 'hover:bg-white/60'
                       }`}
                     >
-                      <div className="w-8 h-8 rounded-full bg-[#E2E8F0] flex items-center justify-center text-xs font-bold shrink-0">
-                        {conv.property_title?.charAt(0) || 'P'}
-                      </div>
+                      {convOther.avatar ? (
+                        <img
+                          src={convOther.avatar}
+                          alt={convOther.name}
+                          className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 mt-0.5"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                          {convOther.initials}
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-baseline mb-0.5">
                           <span className="text-xs font-semibold text-[#111827] truncate">
-                            {conv.property_title || 'Chat'}
+                            {convOther.name}
                           </span>
-                          <span className="text-[10px] text-[#94A3B8] shrink-0">
+                          <span className="text-[10px] text-[#94A3B8] shrink-0 ml-1">
                             {conv.last_message_time}
                           </span>
                         </div>
+                        {conv.property_title ? (
+                          <div className="text-[10px] text-amber-700 font-medium truncate flex items-center gap-1 mb-0.5">
+                            <Building2 className="w-2.5 h-2.5 shrink-0 text-amber-600" />
+                            <span className="truncate">{conv.property_title}</span>
+                          </div>
+                        ) : null}
                         <div className="flex items-center justify-between gap-1">
                           <p className="text-[11px] text-[#64748B] truncate flex-1">
                             {conv.last_message || 'No messages yet'}
@@ -289,21 +377,57 @@ export const ChatModal: React.FC = () => {
 
             {/* Right Column: Message Thread */}
             <div className="flex-1 flex flex-col bg-white">
-              {/* Context Banner */}
-              {activeConversation?.property_title && (
-                <div className="p-2.5 px-4 bg-[#FFFBEB] border-b border-[#FDE68A] flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-2 truncate max-w-full sm:max-w-xs">
-                    <Building2 className="w-4 h-4 text-[#D97706] shrink-0" />
-                    <span className="text-[#92400E] font-medium truncate">
-                      Inquiry: <strong>{activeConversation.property_title}</strong>
-                    </span>
+              {/* Context Banner / Property Context Card */}
+              {(activeConversation?.property_title || activeProperty) && (
+                <div className="p-3 px-4 bg-[#FFFBEB] border-b border-[#FDE68A] flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-3 min-w-0 max-w-full sm:max-w-md">
+                    {propertyCoverThumbnail ? (
+                      <img
+                        src={propertyCoverThumbnail}
+                        alt="Property Thumbnail"
+                        className="w-11 h-11 rounded-lg object-cover border border-[#FDE68A] shrink-0 shadow-2xs"
+                      />
+                    ) : (
+                      <div className="w-11 h-11 rounded-lg bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
+                        <Building2 className="w-5 h-5 text-[#D97706]" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        <span className="font-bold text-[#92400E] truncate text-xs sm:text-sm">
+                          {activeProperty && activeProperty !== 'deleted'
+                            ? activeProperty.title
+                            : activeConversation?.property_title || 'Accommodation Inquiry'}
+                        </span>
+                        {/* Status Badge */}
+                        {activeProperty === 'deleted' ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                            Listing Unavailable
+                          </span>
+                        ) : activeProperty &&
+                          (activeProperty.availability_status === 'rented' ||
+                            activeProperty.availability_status === 'paused' ||
+                            activeProperty.vacancies === 0) ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                            Currently Occupied
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                            Available
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-[#B45309] font-medium truncate">
+                        {propertyPriceText || (activeProperty === 'deleted' ? 'Listing details archived' : 'Room in Prayagraj')}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap ml-auto">
                     {/* Share Exact Location Action Button */}
                     <button
                       onClick={() => setIsLocationModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#101828] text-white text-[11px] font-semibold hover:bg-[#F59E0B] hover:text-[#101828] shadow-2xs transition-all cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#101828] text-white text-[11px] font-semibold hover:bg-[#F59E0B] hover:text-[#101828] shadow-2xs transition-all cursor-pointer"
                       title="Send exact doorstep address and directions"
                     >
                       <MapPin className="w-3 h-3 text-[#F59E0B]" />
@@ -313,7 +437,7 @@ export const ChatModal: React.FC = () => {
                     {/* Contact Request Status Badge inside chat */}
                     {relevantRequest ? (
                       relevantRequest.status === 'accepted' ? (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A] flex items-center gap-1">
+                        <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A] flex items-center gap-1">
                           <Phone className="w-3 h-3 text-[#D97706]" />
                           Phone: {relevantRequest.receiver_phone || relevantRequest.requester_phone}
                         </span>
@@ -321,12 +445,12 @@ export const ChatModal: React.FC = () => {
                         currentUser && relevantRequest.receiver_id === currentUser.id ? (
                         <button
                           onClick={() => updateContactRequest(relevantRequest.id, 'accepted')}
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#101828] text-white hover:bg-[#F59E0B] hover:text-[#101828] transition-colors"
+                          className="text-[10px] font-bold px-2 py-1 rounded-md bg-[#101828] text-white hover:bg-[#F59E0B] hover:text-[#101828] transition-colors cursor-pointer"
                         >
                           Accept Phone Request
                         </button>
                       ) : (
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 flex items-center gap-1">
+                        <span className="text-[10px] font-medium px-2 py-1 rounded-md bg-amber-100 text-amber-900 flex items-center gap-1">
                           <Lock className="w-3 h-3" /> Phone Request Pending
                         </span>
                       )
@@ -337,12 +461,51 @@ export const ChatModal: React.FC = () => {
 
               {/* Messages Scroll Area */}
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F8FAFC]">
-                {messages.length === 0 ? (
-                  <div className="h-full flex items-center justify-center p-8 text-center text-slate-400 text-xs">
-                    Send a message to discuss room availability, amenities, and visit timings.
+                {isLoadingMessages ? (
+                  <div className="space-y-4 py-2 animate-in fade-in duration-150">
+                    <div className="flex flex-col items-start space-y-1">
+                      <div className="h-2.5 w-16 bg-slate-200 rounded animate-pulse" />
+                      <div className="h-10 w-48 bg-slate-200/80 rounded-2xl rounded-bl-xs animate-pulse" />
+                    </div>
+                    <div className="flex flex-col items-end space-y-1">
+                      <div className="h-2.5 w-12 bg-slate-200 rounded animate-pulse" />
+                      <div className="h-12 w-64 bg-slate-200 rounded-2xl rounded-br-xs animate-pulse" />
+                    </div>
+                    <div className="flex flex-col items-start space-y-1">
+                      <div className="h-2.5 w-20 bg-slate-200 rounded animate-pulse" />
+                      <div className="h-9 w-52 bg-slate-200/80 rounded-2xl rounded-bl-xs animate-pulse" />
+                    </div>
+                    <div className="flex flex-col items-end space-y-1">
+                      <div className="h-2.5 w-10 bg-slate-200 rounded animate-pulse" />
+                      <div className="h-10 w-44 bg-slate-200 rounded-2xl rounded-br-xs animate-pulse" />
+                    </div>
+                  </div>
+                ) : displayMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-12 h-12 rounded-full bg-amber-100/60 text-amber-700 flex items-center justify-center mb-3 text-xl">
+                      🏠
+                    </div>
+                    <h4 className="font-bold text-slate-800 text-sm mb-1">
+                      Start conversation with {otherUser.name}
+                    </h4>
+                    <p className="text-slate-500 text-xs max-w-xs mb-4 leading-relaxed">
+                      {activeConversation?.property_title
+                        ? `Ask about availability, visit timings, or amenities for ${activeConversation.property_title}.`
+                        : 'Send a message to discuss room details and visit schedule.'}
+                    </p>
+                    {activeConversation?.property_title && (
+                      <button
+                        type="button"
+                        onClick={() => handleSendQuickMessage('Is this property available?')}
+                        disabled={isSending}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#101828] text-white hover:bg-[#F59E0B] hover:text-[#101828] transition-colors text-xs font-semibold shadow-2xs cursor-pointer active:scale-95"
+                      >
+                        <span>💬 Ask: &quot;Is this property available?&quot;</span>
+                      </button>
+                    )}
                   </div>
                 ) : (
-                  messages.map((msg) => {
+                  displayMessages.map((msg) => {
                     const isMe = currentUser ? msg.sender_id === currentUser.id : false;
                   return (
                     <div
@@ -361,6 +524,27 @@ export const ChatModal: React.FC = () => {
                             : 'bg-white text-[#111827] border border-[#E5E7EB] rounded-bl-xs shadow-2xs'
                         }`}
                       >
+                        {/* In-Message Property Context Badge */}
+                        {msg.property_context && (
+                          <div
+                            className={`mb-2 px-2.5 py-1.5 rounded-lg text-[10px] font-medium flex items-center gap-1.5 border ${
+                              isMe
+                                ? 'bg-white/10 text-amber-200 border-white/20'
+                                : 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]'
+                            }`}
+                          >
+                            <Building2 className="w-3 h-3 shrink-0 text-[#F59E0B]" />
+                            <span className="truncate font-semibold">
+                              Regarding: {msg.property_context.title}
+                            </span>
+                            {msg.property_context.rent && (
+                              <span className="shrink-0 font-bold ml-auto pl-1">
+                                ₹{msg.property_context.rent.toLocaleString('en-IN')}/mo
+                              </span>
+                            )}
+                          </div>
+                        )}
+
                         <div>{msg.text}</div>
 
                         {/* Rich Location Card if location was shared */}
@@ -451,6 +635,29 @@ export const ChatModal: React.FC = () => {
                 )}
                 <div ref={desktopMessagesEndRef} />
               </div>
+
+              {/* Quick Action Chips (Desktop) */}
+              {activeConversation?.property_title && (
+                <div className="px-3 py-1.5 bg-[#F8FAFC] border-t border-[#E5E7EB] flex items-center gap-2 overflow-x-auto no-scrollbar">
+                  <span className="text-[10px] font-bold text-[#64748B] shrink-0 uppercase tracking-wider">Quick:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSendQuickMessage('Is this property available?')}
+                    disabled={isSending}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white hover:bg-[#FFFBEB] hover:text-[#92400E] hover:border-[#FDE68A] border border-[#E5E7EB] text-[#334155] text-[11px] font-medium transition-colors shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
+                  >
+                    💬 Is this property available?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSendQuickMessage('When can I visit to inspect the room?')}
+                    disabled={isSending}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white hover:bg-[#FFFBEB] hover:text-[#92400E] hover:border-[#FDE68A] border border-[#E5E7EB] text-[#334155] text-[11px] font-medium transition-colors shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
+                  >
+                    🕒 When can I visit?
+                  </button>
+                </div>
+              )}
 
               {/* Message Input Box */}
               <form
@@ -609,21 +816,45 @@ export const ChatModal: React.FC = () => {
               </button>
             )}
 
+            {mobileView === 'chat' && (
+              otherUser.avatar ? (
+                <img
+                  src={otherUser.avatar}
+                  alt={otherUser.name}
+                  className="w-8 h-8 rounded-full object-cover border border-amber-400/40 shrink-0"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-slate-800 text-amber-400 border border-slate-700 flex items-center justify-center font-bold text-xs shrink-0 font-heading">
+                  {otherUser.initials}
+                </div>
+              )
+            )}
+
             <div className="min-w-0">
               <h3 className="font-bold text-sm text-white font-heading truncate">
                 {mobileView === 'threads'
                   ? 'All Inquiries & Chats'
-                  : activeConversation?.property_title
-                  ? activeConversation.property_title
-                  : 'Messages'}
+                  : otherUser.name}
               </h3>
               <p className="text-[11px] text-amber-400 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3 text-amber-400 shrink-0" />
-                <span className="truncate">
-                  {mobileView === 'threads'
-                    ? `${conversations.length} active discussion${conversations.length === 1 ? '' : 's'}`
-                    : 'Privacy-Protected Direct Chat'}
-                </span>
+                {mobileView === 'threads' ? (
+                  <>
+                    <ShieldCheck className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span className="truncate">
+                      {conversations.length} active discussion{conversations.length === 1 ? '' : 's'}
+                    </span>
+                  </>
+                ) : activeConversation?.property_title ? (
+                  <>
+                    <Building2 className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span className="truncate">{activeConversation.property_title}</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span className="truncate">Privacy-Protected Direct Chat</span>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -663,6 +894,7 @@ export const ChatModal: React.FC = () => {
             ) : (
               conversations.map((conv) => {
                 const isActive = activeConversation?.id === conv.id;
+                const convOther = getOtherParticipant(conv, currentUser?.id);
                 return (
                   <button
                     key={conv.id}
@@ -674,18 +906,32 @@ export const ChatModal: React.FC = () => {
                       isActive ? 'bg-slate-900 font-medium' : 'hover:bg-slate-900/60'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-full bg-slate-800 text-amber-400 flex items-center justify-center font-bold text-sm shrink-0 border border-slate-700">
-                      {conv.property_title?.charAt(0) || 'P'}
-                    </div>
+                    {convOther.avatar ? (
+                      <img
+                        src={convOther.avatar}
+                        alt={convOther.name}
+                        className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-700"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-slate-800 text-amber-400 flex items-center justify-center font-bold text-sm shrink-0 border border-slate-700">
+                        {convOther.initials}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline mb-0.5">
                         <span className="text-xs font-semibold text-slate-100 truncate">
-                          {conv.property_title || 'Accommodation Inquiry'}
+                          {convOther.name}
                         </span>
                         <span className="text-[10px] text-slate-400 shrink-0 ml-1">
                           {conv.last_message_time}
                         </span>
                       </div>
+                      {conv.property_title ? (
+                        <div className="text-[11px] text-amber-400 font-medium truncate flex items-center gap-1 mb-0.5">
+                          <Building2 className="w-3 h-3 shrink-0 text-amber-400" />
+                          <span className="truncate">{conv.property_title}</span>
+                        </div>
+                      ) : null}
                       <div className="flex items-center justify-between gap-1">
                         <p className="text-[11px] text-slate-400 truncate flex-1">
                           {conv.last_message || 'No messages yet'}
@@ -705,24 +951,59 @@ export const ChatModal: React.FC = () => {
           </div>
         ) : (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-950">
-            {/* Property Inquiry Context Banner */}
-            {activeConversation?.property_title && (
-              <div className="px-3.5 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0 text-xs">
-                <div className="flex items-center gap-1.5 truncate max-w-[200px]">
-                  <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="text-amber-300 font-medium truncate text-xs">
-                    {activeConversation.property_title}
-                  </span>
+            {/* Property Inquiry Context Banner / Card */}
+            {(activeConversation?.property_title || activeProperty) && (
+              <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0 text-xs">
+                <div className="flex items-center gap-2 truncate min-w-0 flex-1">
+                  {propertyCoverThumbnail ? (
+                    <img
+                      src={propertyCoverThumbnail}
+                      alt="Property"
+                      className="w-8 h-8 rounded-lg object-cover border border-slate-700 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                      <Building2 className="w-4 h-4 text-amber-400" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="text-amber-300 font-bold truncate text-xs">
+                        {activeProperty && activeProperty !== 'deleted'
+                          ? activeProperty.title
+                          : activeConversation?.property_title || 'Accommodation Inquiry'}
+                      </span>
+                      {activeProperty === 'deleted' ? (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 shrink-0">
+                          Unavailable
+                        </span>
+                      ) : activeProperty &&
+                        (activeProperty.availability_status === 'rented' ||
+                          activeProperty.availability_status === 'paused' ||
+                          activeProperty.vacancies === 0) ? (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-red-950 text-red-400 shrink-0">
+                          Occupied
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 shrink-0">
+                          Available
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      {propertyPriceText || (activeProperty === 'deleted' ? 'Listing archived' : 'Room in Prayagraj')}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
                     onClick={() => setIsLocationModalOpen(true)}
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500 text-slate-950 text-[10px] font-bold hover:bg-amber-400 transition-all cursor-pointer"
                   >
                     <MapPin className="w-3 h-3 text-slate-950" />
-                    <span>Share Location</span>
+                    <span>Location</span>
                   </button>
 
                   {relevantRequest ? (
@@ -753,12 +1034,51 @@ export const ChatModal: React.FC = () => {
 
             {/* Scrollable Messages Container */}
             <div className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-3 overscroll-contain bg-slate-950">
-              {messages.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 text-xs">
-                  Send your first message to discuss room availability and visit timings.
+              {isLoadingMessages ? (
+                <div className="space-y-4 py-2 animate-in fade-in duration-150">
+                  <div className="flex flex-col items-start space-y-1">
+                    <div className="h-2.5 w-16 bg-slate-800 rounded animate-pulse" />
+                    <div className="h-10 w-48 bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-xs animate-pulse" />
+                  </div>
+                  <div className="flex flex-col items-end space-y-1">
+                    <div className="h-2.5 w-12 bg-slate-800 rounded animate-pulse" />
+                    <div className="h-12 w-64 bg-amber-500/15 border border-amber-500/20 rounded-2xl rounded-br-xs animate-pulse" />
+                  </div>
+                  <div className="flex flex-col items-start space-y-1">
+                    <div className="h-2.5 w-20 bg-slate-800 rounded animate-pulse" />
+                    <div className="h-9 w-52 bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-xs animate-pulse" />
+                  </div>
+                  <div className="flex flex-col items-end space-y-1">
+                    <div className="h-2.5 w-10 bg-slate-800 rounded animate-pulse" />
+                    <div className="h-10 w-44 bg-amber-500/15 border border-amber-500/20 rounded-2xl rounded-br-xs animate-pulse" />
+                  </div>
+                </div>
+              ) : displayMessages.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center px-4">
+                  <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 text-amber-400 flex items-center justify-center mb-2.5 text-lg">
+                    🏠
+                  </div>
+                  <h4 className="font-bold text-slate-200 text-xs mb-1">
+                    Chat with {otherUser.name}
+                  </h4>
+                  <p className="text-slate-400 text-[11px] max-w-xs mb-3">
+                    {activeConversation?.property_title
+                      ? `Ask about availability, visit timings, or amenities for ${activeConversation.property_title}.`
+                      : 'Send your first message to discuss room details and visit schedule.'}
+                  </p>
+                  {activeConversation?.property_title && (
+                    <button
+                      type="button"
+                      onClick={() => handleSendQuickMessage('Is this property available?')}
+                      disabled={isSending}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold active:scale-95 transition-all cursor-pointer"
+                    >
+                      <span>💬 Ask: &quot;Is this property available?&quot;</span>
+                    </button>
+                  )}
                 </div>
               ) : (
-                messages.map((msg) => {
+                displayMessages.map((msg) => {
                   const isMe = currentUser ? msg.sender_id === currentUser.id : false;
                   return (
                     <div
@@ -776,6 +1096,27 @@ export const ChatModal: React.FC = () => {
                             : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-bl-xs shadow-xs'
                         }`}
                       >
+                        {/* Mobile In-Message Property Badge */}
+                        {msg.property_context && (
+                          <div
+                            className={`mb-2 px-2 py-1 rounded-lg text-[10px] font-medium flex items-center gap-1 border ${
+                              isMe
+                                ? 'bg-slate-950/20 text-slate-950 border-slate-950/30'
+                                : 'bg-slate-950 border border-amber-500/30 text-amber-300'
+                            }`}
+                          >
+                            <Building2 className="w-3 h-3 shrink-0" />
+                            <span className="truncate font-semibold">
+                              Regarding: {msg.property_context.title}
+                            </span>
+                            {msg.property_context.rent && (
+                              <span className="shrink-0 font-bold ml-auto pl-1">
+                                ₹{msg.property_context.rent.toLocaleString('en-IN')}/mo
+                              </span>
+                            )}
+                          </div>
+                        )}
+
                         <div>{msg.text}</div>
 
                         {/* Location Details Card */}
@@ -863,6 +1204,29 @@ export const ChatModal: React.FC = () => {
               )}
               <div ref={mobileMessagesEndRef} />
             </div>
+
+            {/* Mobile Quick Action Chips */}
+            {activeConversation?.property_title && (
+              <div className="shrink-0 px-3 py-1.5 bg-slate-950 border-t border-slate-800 flex items-center gap-2 overflow-x-auto no-scrollbar">
+                <span className="text-[10px] font-bold text-slate-400 shrink-0 uppercase tracking-wider">Quick:</span>
+                <button
+                  type="button"
+                  onClick={() => handleSendQuickMessage('Is this property available?')}
+                  disabled={isSending}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-medium transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  💬 Is this property available?
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSendQuickMessage('When can I visit to inspect the room?')}
+                  disabled={isSending}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-medium transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  🕒 When can I visit?
+                </button>
+              </div>
+            )}
 
             {/* Mobile Bottom Input Dock */}
             <form

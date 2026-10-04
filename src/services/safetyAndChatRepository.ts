@@ -54,11 +54,37 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
       }
     }
 
-    return (data || []).map((c: any) => {
-      const nameA = c.profile_a?.full_name || 'User A';
-      const nameB = c.profile_b?.full_name || 'User B';
-      const avatarA = c.profile_a?.avatar_url;
-      const avatarB = c.profile_b?.avatar_url;
+    const rows = data || [];
+    const missingProfileIds = new Set<string>();
+    for (const c of rows) {
+      if (!c.profile_a?.full_name && c.participant_a) missingProfileIds.add(c.participant_a);
+      if (!c.profile_b?.full_name && c.participant_b) missingProfileIds.add(c.participant_b);
+    }
+
+    // Direct fallback to profiles table if relations failed or returned null
+    const profilesFallbackMap: Record<string, { full_name?: string; avatar_url?: string }> = {};
+    if (missingProfileIds.size > 0) {
+      try {
+        const { data: fallbackProfiles } = await client
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .in('id', Array.from(missingProfileIds));
+
+        if (fallbackProfiles && fallbackProfiles.length > 0) {
+          for (const p of fallbackProfiles) {
+            profilesFallbackMap[p.id] = { full_name: p.full_name, avatar_url: p.avatar_url };
+          }
+        }
+      } catch (err) {
+        console.warn('[safetyAndChatRepository] Profiles fallback fetch error:', err);
+      }
+    }
+
+    return rows.map((c: any) => {
+      const nameA = c.profile_a?.full_name || profilesFallbackMap[c.participant_a]?.full_name || 'User';
+      const nameB = c.profile_b?.full_name || profilesFallbackMap[c.participant_b]?.full_name || 'User';
+      const avatarA = c.profile_a?.avatar_url || profilesFallbackMap[c.participant_a]?.avatar_url;
+      const avatarB = c.profile_b?.avatar_url || profilesFallbackMap[c.participant_b]?.avatar_url;
 
       return {
         id: c.id,

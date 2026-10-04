@@ -318,6 +318,14 @@ export interface Conversation {
   unread_count: number;
   property_id?: string;
   property_title?: string;
+  property_context?: {
+    id: string;
+    title: string;
+    locality?: string;
+    rent?: number;
+    image_url?: string;
+    is_available?: boolean;
+  };
   exact_location_share?: ExactLocationShare;
 }
 
