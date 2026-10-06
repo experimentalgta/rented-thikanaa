@@ -137,6 +137,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         adminStatus = await serverAuth.verifySuperAdminAuthorization(authUser.id, authUser.email);
         setIsSuperAdmin(adminStatus);
+        if (adminStatus) {
+          serverAuth.markVerifiedAdmin(authUser.id);
+        }
       } catch (err) {
         console.warn('[AuthContext] Super admin verification failed:', err);
       }

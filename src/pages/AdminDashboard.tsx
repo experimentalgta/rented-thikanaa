@@ -73,23 +73,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
 
+  // Check cached data for instantaneous (0ms) render on return/subsequent visits
+  const cachedStats = adminRepository.getCachedStats();
+  const cachedListings = adminRepository.getCachedListings();
+  const cachedUsers = adminRepository.getCachedUsers();
+  const cachedReports = adminRepository.getCachedReports();
+  const cachedChats = adminRepository.getCachedConversations();
+
+  const isPreAuthorized = Boolean(
+    isSuperAdmin ||
+    (currentUser && serverAuth.isSuperAdmin(currentUser.id, currentUser.email))
+  );
+
   // Loading & Authorization states
-  const [loading, setLoading] = useState(true);
-  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState<boolean>(!cachedStats && !isPreAuthorized);
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(isPreAuthorized ? true : null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Data states
-  const [stats, setStats] = useState<AdminPlatformStats | null>(null);
-  const [users, setUsers] = useState<AdminUserRecord[]>([]);
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [announcements, setAnnouncements] = useState<AdminAnnouncement[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
-  const [platformSettings, setPlatformSettings] = useState<PlatformSettings>(
+  // Data states initialized with cached data if available
+  const [stats, setStats] = useState<AdminPlatformStats | null>(cachedStats);
+  const [users, setUsers] = useState<AdminUserRecord[]>(cachedUsers || []);
+  const [properties, setProperties] = useState<Property[]>(cachedListings || []);
+  const [reports, setReports] = useState<Report[]>(cachedReports || []);
+  const [conversations, setConversations] = useState<any[]>(cachedChats || []);
+  const [announcements, setAnnouncements] = useState<AdminAnnouncement[]>(() =>
+    adminRepository.getAnnouncements()
+  );
+  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>(() =>
+    adminRepository.getAuditLogs()
+  );
+  const [platformSettings, setPlatformSettings] = useState<PlatformSettings>(() =>
     adminRepository.getPlatformSettings()
   );
+
+  // Progressive background loading indicators
+  const [usersLoading, setUsersLoading] = useState<boolean>(!cachedUsers);
+  const [reportsLoading, setReportsLoading] = useState<boolean>(!cachedReports);
+  const [chatsLoading, setChatsLoading] = useState<boolean>(!cachedChats);
+
+  // Keep authorization state synced when user or super admin flag changes
+  useEffect(() => {
+    if (isSuperAdmin || (currentUser && serverAuth.isSuperAdmin(currentUser.id, currentUser.email))) {
+      setIsAuthorized(true);
+    }
+  }, [isSuperAdmin, currentUser]);
 
   // Search & Filters
   const [userSearch, setUserSearch] = useState('');
@@ -130,45 +159,84 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const loadAllAdminData = async () => {
-    setLoading(true);
+  const loadAllAdminData = async (forceRefresh = false) => {
+    const hasInitialData = Boolean(stats || properties.length > 0 || adminRepository.getCachedStats());
+    if (!hasInitialData) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
+
     try {
-      const authorized = await serverAuth.verifySuperAdminAuthorization(
-        currentUser?.id,
-        currentUser?.email
-      );
-      setIsAuthorized(authorized);
+      let authorized = isAuthorized === true || isSuperAdmin;
+      if (!authorized) {
+        authorized = await serverAuth.verifySuperAdminAuthorization(
+          currentUser?.id,
+          currentUser?.email
+        );
+        setIsAuthorized(authorized);
+      }
 
       if (authorized && currentUser?.id) {
-        // Parallel data fetch
-        const [
-          statsData,
-          usersData,
-          propsData,
-          reportsData,
-          chatsData,
-        ] = await Promise.all([
-          adminRepository.getPlatformStats(currentUser.id),
-          adminRepository.getAllUsers(currentUser.id),
-          adminRepository.getAllListings(currentUser.id),
-          adminRepository.getReports(currentUser.id),
-          adminRepository.getModerationConversations(currentUser.id),
+        // FAST STAGE 1: Parallel fetch for overview metrics & listings
+        const [statsData, propsData] = await Promise.all([
+          adminRepository.getPlatformStats(currentUser.id, forceRefresh),
+          adminRepository.getAllListings(currentUser.id, forceRefresh),
         ]);
 
         setStats(statsData);
-        setUsers(usersData);
         setProperties(propsData);
-        setReports(reportsData);
-        setConversations(chatsData);
         setAnnouncements(adminRepository.getAnnouncements());
         setAuditLogs(adminRepository.getAuditLogs());
         setPlatformSettings(adminRepository.getPlatformSettings());
+
+        // Overview tab is completely ready to view! Unblock UI immediately
+        setLoading(false);
+
+        // FAST STAGE 2: Progressively fetch users, reports, and moderation conversations in background
+        if (!cachedUsers || forceRefresh) setUsersLoading(true);
+        if (!cachedReports || forceRefresh) setReportsLoading(true);
+        if (!cachedChats || forceRefresh) setChatsLoading(true);
+
+        adminRepository
+          .getAllUsers(currentUser.id, forceRefresh)
+          .then((usersData) => {
+            setUsers(usersData);
+            setUsersLoading(false);
+          })
+          .catch((err) => {
+            console.warn('[AdminDashboard] Users fetch error:', err);
+            setUsersLoading(false);
+          });
+
+        adminRepository
+          .getReports(currentUser.id, forceRefresh)
+          .then((reportsData) => {
+            setReports(reportsData);
+            setReportsLoading(false);
+          })
+          .catch((err) => {
+            console.warn('[AdminDashboard] Reports fetch error:', err);
+            setReportsLoading(false);
+          });
+
+        adminRepository
+          .getModerationConversations(currentUser.id, forceRefresh)
+          .then((chatsData) => {
+            setConversations(chatsData);
+            setChatsLoading(false);
+          })
+          .catch((err) => {
+            console.warn('[AdminDashboard] Chats fetch error:', err);
+            setChatsLoading(false);
+          });
       }
     } catch (e) {
       console.error('[AdminDashboard] Failed to load data:', e);
-      setIsAuthorized(false);
+      if (isAuthorized !== true) setIsAuthorized(false);
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -201,7 +269,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             currentUser?.full_name
           );
           showToast(`User ${user.full_name} has been ${isBlocking ? 'suspended' : 'reinstated'}.`);
-          await loadAllAdminData();
+          await loadAllAdminData(true);
         } catch (err: any) {
           alert(`Error: ${err.message}`);
         } finally {
@@ -223,7 +291,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         currentUser?.full_name
       );
       showToast(`User ${user.full_name} verification status updated.`);
-      await loadAllAdminData();
+      await loadAllAdminData(true);
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     } finally {
@@ -251,7 +319,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             currentUser?.full_name
           );
           showToast(`Role for ${user.full_name} updated to ${newRole}.`);
-          await loadAllAdminData();
+          await loadAllAdminData(true);
         } catch (err: any) {
           alert(`Error: ${err.message}`);
         } finally {
@@ -268,7 +336,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       await adminRepository.verifyListing(prop.id, prop.title, currentUser?.id, currentUser?.full_name);
       showToast(`Verified: "${prop.title}" received Platform Verified badge.`);
-      await loadAllAdminData();
+      await loadAllAdminData(true);
     } catch (e: any) {
       alert(`Error: ${e.message}`);
     } finally {
@@ -281,7 +349,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       await adminRepository.unverifyListing(prop.id, prop.title, currentUser?.id, currentUser?.full_name);
       showToast(`Verification badge removed from "${prop.title}".`);
-      await loadAllAdminData();
+      await loadAllAdminData(true);
     } catch (e: any) {
       alert(`Error: ${e.message}`);
     } finally {
@@ -299,7 +367,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         currentUser?.full_name
       );
       showToast(`Listing status updated to ${status}.`);
-      await loadAllAdminData();
+      await loadAllAdminData(true);
     } catch (e: any) {
       alert(`Error: ${e.message}`);
     } finally {
@@ -319,7 +387,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         try {
           await adminRepository.deleteListing(prop.id, prop.title, currentUser?.id, currentUser?.full_name);
           showToast(`Listing "${prop.title}" permanently deleted.`);
-          await loadAllAdminData();
+          await loadAllAdminData(true);
         } catch (err: any) {
           alert(`Error: ${err.message}`);
         } finally {
@@ -346,7 +414,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
       showToast(`Listing "${editTitle}" successfully updated.`);
       setEditingProperty(null);
-      await loadAllAdminData();
+      await loadAllAdminData(true);
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     } finally {
@@ -366,7 +434,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         currentUser?.full_name
       );
       showToast(`Report updated to "${status}".`);
-      await loadAllAdminData();
+      await loadAllAdminData(true);
     } catch (e: any) {
       alert(`Error: ${e.message}`);
     } finally {
@@ -499,13 +567,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // GUARD SCREEN: LOADING & 403 ACCESS DENIED
   // =========================================================================
 
-  if (loading) {
+  if (loading && !stats) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-12 h-12 border-3 border-amber-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <h3 className="font-bold text-slate-900 text-lg">Verifying Administrative Privileges</h3>
-        <p className="text-xs text-slate-500 mt-1 max-w-sm">
-          Strictly confirming cryptographic identity and server-side Supabase Super Admin authorization...
+      <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-100">
+        <div className="w-10 h-10 border-3 border-amber-500 border-t-transparent rounded-full animate-spin mb-3" />
+        <h3 className="font-bold text-slate-900 text-sm">Opening Rentit Super Admin...</h3>
+        <p className="text-[11px] text-slate-500 mt-1 max-w-sm">
+          Loading platform dashboard and moderation controls
         </p>
       </div>
     );
@@ -637,12 +705,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <button
-              onClick={() => loadAllAdminData()}
-              disabled={actionLoading}
+              onClick={() => loadAllAdminData(true)}
+              disabled={actionLoading || isRefreshing}
               className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
               title="Refresh Platform Data"
             >
-              <RefreshCw className={`w-4 h-4 ${actionLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isRefreshing || actionLoading ? 'animate-spin text-amber-400' : ''}`} />
             </button>
           </div>
         </div>
@@ -963,7 +1031,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredUsers.map((user) => (
+                  {usersLoading && users.length === 0 ? (
+                    [1, 2, 3, 4, 5].map((n) => (
+                      <tr key={n} className="animate-pulse">
+                        <td className="py-3.5 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-slate-200" />
+                            <div className="space-y-1">
+                              <div className="w-24 h-3 bg-slate-200 rounded" />
+                              <div className="w-36 h-2.5 bg-slate-100 rounded" />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-3"><div className="w-16 h-4 bg-slate-200 rounded-full" /></td>
+                        <td className="py-3.5 px-3"><div className="w-6 h-4 bg-slate-200 rounded" /></td>
+                        <td className="py-3.5 px-3"><div className="w-16 h-4 bg-slate-200 rounded" /></td>
+                        <td className="py-3.5 px-3"><div className="w-14 h-4 bg-slate-200 rounded" /></td>
+                        <td className="py-3.5 px-3 text-right"><div className="w-16 h-6 bg-slate-200 rounded ml-auto" /></td>
+                      </tr>
+                    ))
+                  ) : filteredUsers.map((user) => (
                     <tr key={user.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-3">
                         <div className="flex items-center gap-2.5">
@@ -1299,7 +1386,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="space-y-3.5">
-              {filteredReports.map((report) => (
+              {reportsLoading && reports.length === 0 ? (
+                [1, 2, 3].map((n) => (
+                  <div key={n} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3 animate-pulse">
+                    <div className="flex items-center justify-between">
+                      <div className="w-48 h-4 bg-slate-200 rounded" />
+                      <div className="w-24 h-3 bg-slate-200 rounded" />
+                    </div>
+                    <div className="w-full h-8 bg-slate-100 rounded-xl" />
+                  </div>
+                ))
+              ) : filteredReports.map((report) => (
                 <div
                   key={report.id}
                   className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3"
@@ -1387,7 +1484,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="divide-y divide-slate-100">
-              {conversations.map((conv) => (
+              {chatsLoading && conversations.length === 0 ? (
+                [1, 2, 3, 4].map((n) => (
+                  <div key={n} className="py-4 space-y-2 animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="w-36 h-3.5 bg-slate-200 rounded" />
+                      <div className="w-28 h-3.5 bg-slate-100 rounded-full" />
+                    </div>
+                    <div className="w-64 h-3 bg-slate-100 rounded" />
+                  </div>
+                ))
+              ) : conversations.map((conv) => (
                 <div key={conv.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -1409,7 +1516,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               ))}
 
-              {conversations.length === 0 && (
+              {!chatsLoading && conversations.length === 0 && (
                 <div className="py-12 text-center text-xs text-slate-500">
                   <MessageSquare className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                   No chat conversations on record yet.

@@ -79,15 +79,10 @@ export class PropertyRepository implements IPropertyRepository {
   private async applyPrivacyEnforcement(
     property: Property,
     currentUserId?: string,
-    preloadedContactStatus?: ContactRequestStatus
+    preloadedContactStatus?: ContactRequestStatus,
+    checkLocationSharedInChat = false
   ): Promise<Property> {
     const cloned = { ...property };
-    const requestStatus =
-      preloadedContactStatus !== undefined
-        ? preloadedContactStatus
-        : await this.getContactRequestStatus(cloned.id, currentUserId);
-
-    cloned.contact_request_status = requestStatus;
 
     const isOwnerOrAdmin = Boolean(
       currentUserId &&
@@ -96,21 +91,55 @@ export class PropertyRepository implements IPropertyRepository {
           serverAuth.isSuperAdmin(currentUserId))
     );
 
-    const isLocationShared = await this.hasSharedExactLocation(cloned.id, currentUserId);
-    cloned.is_exact_location_shared = isLocationShared;
+    // Fast-path: Owner and Super Admin have full unfiltered access (0ms latency, zero DB calls)
+    if (isOwnerOrAdmin) {
+      cloned.contact_request_status = 'none';
+      cloned.is_exact_location_shared = true;
+      cloned.exact_address_shared = property.address;
+
+      const activePhone = cloned.phone_number || cloned.owner_phone || cloned.lister_phone || null;
+      cloned.phone_number = activePhone;
+      cloned.owner_phone = activePhone;
+      cloned.lister_phone = activePhone;
+
+      const canonicalLat = property.latitude || 25.4563;
+      const canonicalLng = property.longitude || 81.8546;
+      const fuzzed = getPublicDisplayCoordinates(canonicalLat, canonicalLng, cloned.id);
+      cloned.display_latitude = fuzzed.latitude;
+      cloned.display_longitude = fuzzed.longitude;
+
+      return cloned;
+    }
+
+    // Public visitor access:
+    cloned.contact_request_status = preloadedContactStatus || 'none';
+
+    // Optional single-item check if exact location was shared in chat for this individual viewer
+    if (checkLocationSharedInChat && currentUserId) {
+      const isLocationShared = await this.hasSharedExactLocation(cloned.id, currentUserId);
+      cloned.is_exact_location_shared = isLocationShared;
+      if (isLocationShared) {
+        cloned.exact_address_shared = property.address;
+      }
+    } else {
+      cloned.is_exact_location_shared = false;
+    }
 
     // 1. Direct Phone Privacy
-    // Phone number is revealed ONLY when:
-    // show_phone_number === true OR phone_privacy === 'public' OR user is owner/admin
     const isPhoneAuthorized =
       cloned.show_phone_number === true ||
-      cloned.phone_privacy === 'public' ||
-      isOwnerOrAdmin;
+      cloned.phone_privacy === 'public';
 
     if (!isPhoneAuthorized) {
       cloned.owner_phone = null;
       cloned.lister_phone = null;
       cloned.phone_number = null;
+      if ((cloned as any).owner) {
+        (cloned as any).owner = {
+          ...(cloned as any).owner,
+          phone_number: undefined,
+        };
+      }
     } else {
       const activePhone = cloned.phone_number || cloned.owner_phone || cloned.lister_phone || null;
       cloned.phone_number = activePhone;
@@ -126,17 +155,12 @@ export class PropertyRepository implements IPropertyRepository {
     cloned.display_longitude = fuzzed.longitude;
 
     // 3. Coordinate & Address Sanitization for Public Clients
-    if (!isOwnerOrAdmin) {
-      // Stripped at repository layer: public clients NEVER receive canonical latitude/longitude
-      delete (cloned as any).latitude;
-      delete (cloned as any).longitude;
+    delete (cloned as any).latitude;
+    delete (cloned as any).longitude;
 
-      // Always sanitize public address to locality level (e.g. "Katra, Prayagraj", "Gomti Nagar, Lucknow")
+    if (!cloned.is_exact_location_shared) {
       cloned.address = `${cloned.locality}, ${cloned.city || 'India'}`;
       cloned.exact_address_shared = null;
-    } else {
-      // Owner/admin keeps full canonical access for maintenance & verification
-      cloned.exact_address_shared = property.address;
     }
 
     return cloned;
@@ -567,7 +591,7 @@ export class PropertyRepository implements IPropertyRepository {
     if (!data) return null;
 
     const prop = this.mapRowToProperty(data);
-    return this.applyPrivacyEnforcement(prop, currentUserId);
+    return this.applyPrivacyEnforcement(prop, currentUserId, undefined, true);
   }
 
   async createProperty(data: Partial<Property>): Promise<Property> {

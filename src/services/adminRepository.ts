@@ -51,7 +51,19 @@ const DEFAULT_ANNOUNCEMENTS: AdminAnnouncement[] = [
   },
 ];
 
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
 export class AdminRepository {
+  private statsCache: CacheEntry<AdminPlatformStats> | null = null;
+  private usersCache: CacheEntry<AdminUserRecord[]> | null = null;
+  private listingsCache: CacheEntry<Property[]> | null = null;
+  private reportsCache: CacheEntry<Report[]> | null = null;
+  private chatsCache: CacheEntry<any[]> | null = null;
+  private readonly CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
   private assertSupabaseClient() {
     if (!isSupabaseConfigured || !supabase) {
       throw new Error('Supabase client is not configured.');
@@ -59,10 +71,43 @@ export class AdminRepository {
     return supabase;
   }
 
+  // Fast synchronous cached data getters for instant UI mount
+  getCachedStats(): AdminPlatformStats | null {
+    return this.statsCache?.data || null;
+  }
+
+  getCachedListings(): Property[] | null {
+    return this.listingsCache?.data || null;
+  }
+
+  getCachedUsers(): AdminUserRecord[] | null {
+    return this.usersCache?.data || null;
+  }
+
+  getCachedReports(): Report[] | null {
+    return this.reportsCache?.data || null;
+  }
+
+  getCachedConversations(): any[] | null {
+    return this.chatsCache?.data || null;
+  }
+
+  clearCache(): void {
+    this.statsCache = null;
+    this.usersCache = null;
+    this.listingsCache = null;
+    this.reportsCache = null;
+    this.chatsCache = null;
+  }
+
   // =========================================================================
   // 1. PLATFORM STATISTICS
   // =========================================================================
-  async getPlatformStats(adminUserId?: string): Promise<AdminPlatformStats> {
+  async getPlatformStats(adminUserId?: string, forceRefresh = false): Promise<AdminPlatformStats> {
+    if (!forceRefresh && this.statsCache && Date.now() - this.statsCache.timestamp < this.CACHE_TTL_MS) {
+      return this.statsCache.data;
+    }
+
     await serverAuth.assertSuperAdmin(adminUserId);
     const client = this.assertSupabaseClient();
 
@@ -92,7 +137,7 @@ export class AdminRepository {
       const uniqueCities = new Set(properties.map((p) => (p.city || '').trim().toLowerCase()).filter(Boolean));
       const uniqueLocalities = new Set(properties.map((p) => (p.locality || '').trim().toLowerCase()).filter(Boolean));
 
-      return {
+      const stats: AdminPlatformStats = {
         totalUsers: profiles.length,
         totalStudents: roommates.length,
         totalOwners: Math.max(0, profiles.length - roommates.length),
@@ -109,10 +154,13 @@ export class AdminRepository {
         totalCities: Math.max(1, uniqueCities.size),
         activeLocalities: Math.max(1, uniqueLocalities.size),
       };
+
+      this.statsCache = { data: stats, timestamp: Date.now() };
+      return stats;
     } catch (err) {
       console.error('[AdminRepository] Failed to calculate platform statistics:', err);
       // Sensible baseline stats fallback
-      return {
+      const fallbackStats: AdminPlatformStats = {
         totalUsers: 27,
         totalStudents: 5,
         totalOwners: 22,
@@ -129,13 +177,19 @@ export class AdminRepository {
         totalCities: 4,
         activeLocalities: 12,
       };
+      this.statsCache = { data: fallbackStats, timestamp: Date.now() };
+      return fallbackStats;
     }
   }
 
   // =========================================================================
   // 2. USER MANAGEMENT
   // =========================================================================
-  async getAllUsers(adminUserId?: string): Promise<AdminUserRecord[]> {
+  async getAllUsers(adminUserId?: string, forceRefresh = false): Promise<AdminUserRecord[]> {
+    if (!forceRefresh && this.usersCache && Date.now() - this.usersCache.timestamp < this.CACHE_TTL_MS) {
+      return this.usersCache.data;
+    }
+
     await serverAuth.assertSuperAdmin(adminUserId);
     const client = this.assertSupabaseClient();
 
@@ -177,7 +231,7 @@ export class AdminRepository {
         }
       });
 
-      return profiles.map((p) => ({
+      const mappedUsers = profiles.map((p) => ({
         id: p.id,
         email: p.email,
         full_name: p.full_name || 'Anonymous User',
@@ -197,6 +251,9 @@ export class AdminRepository {
         listings_count: listingsCountMap[p.id] || 0,
         reports_count: reportsCountMap[p.id] || 0,
       }));
+
+      this.usersCache = { data: mappedUsers, timestamp: Date.now() };
+      return mappedUsers;
     } catch (err) {
       console.error('[AdminRepository] Failed to fetch users:', err);
       throw err;
@@ -263,8 +320,14 @@ export class AdminRepository {
   // =========================================================================
   // 3. LISTINGS & CONTENT MANAGEMENT
   // =========================================================================
-  async getAllListings(adminUserId?: string): Promise<Property[]> {
-    return propertyRepository.getAllPropertiesAdmin(adminUserId);
+  async getAllListings(adminUserId?: string, forceRefresh = false): Promise<Property[]> {
+    if (!forceRefresh && this.listingsCache && Date.now() - this.listingsCache.timestamp < this.CACHE_TTL_MS) {
+      return this.listingsCache.data;
+    }
+
+    const listings = await propertyRepository.getAllPropertiesAdmin(adminUserId);
+    this.listingsCache = { data: listings, timestamp: Date.now() };
+    return listings;
   }
 
   async updateListing(
@@ -274,6 +337,8 @@ export class AdminRepository {
     adminName = 'Super Admin'
   ): Promise<Property> {
     const updated = await propertyRepository.updateProperty(propertyId, updates, adminUserId);
+    this.listingsCache = null; // Invalidate cache
+    this.statsCache = null;
     await this.logAction({
       admin_id: adminUserId || 'system',
       admin_name: adminName,
@@ -293,6 +358,8 @@ export class AdminRepository {
     adminName = 'Super Admin'
   ): Promise<boolean> {
     const res = await propertyRepository.deleteProperty(propertyId, adminUserId);
+    this.listingsCache = null; // Invalidate cache
+    this.statsCache = null;
     await this.logAction({
       admin_id: adminUserId || 'system',
       admin_name: adminName,
@@ -312,6 +379,8 @@ export class AdminRepository {
     adminName = 'Super Admin'
   ): Promise<Property> {
     const updated = await propertyRepository.verifyProperty(propertyId, 'platform_verified', adminUserId);
+    this.listingsCache = null; // Invalidate cache
+    this.statsCache = null;
     await this.logAction({
       admin_id: adminUserId || 'system',
       admin_name: adminName,
@@ -335,6 +404,8 @@ export class AdminRepository {
       { is_verified: false, verification_badge: undefined },
       adminUserId
     );
+    this.listingsCache = null; // Invalidate cache
+    this.statsCache = null;
     await this.logAction({
       admin_id: adminUserId || 'system',
       admin_name: adminName,
@@ -350,8 +421,14 @@ export class AdminRepository {
   // =========================================================================
   // 4. REPORTS & SAFETY MANAGEMENT
   // =========================================================================
-  async getReports(adminUserId?: string): Promise<Report[]> {
-    return chatAndSafetyRepository.getReports(adminUserId);
+  async getReports(adminUserId?: string, forceRefresh = false): Promise<Report[]> {
+    if (!forceRefresh && this.reportsCache && Date.now() - this.reportsCache.timestamp < this.CACHE_TTL_MS) {
+      return this.reportsCache.data;
+    }
+
+    const reports = await chatAndSafetyRepository.getReports(adminUserId);
+    this.reportsCache = { data: reports, timestamp: Date.now() };
+    return reports;
   }
 
   async updateReportStatus(
@@ -362,6 +439,8 @@ export class AdminRepository {
     adminName = 'Super Admin'
   ): Promise<Report> {
     const updated = await chatAndSafetyRepository.updateReportStatus(reportId, status, adminUserId);
+    this.reportsCache = null; // Invalidate cache
+    this.statsCache = null;
     await this.logAction({
       admin_id: adminUserId || 'system',
       admin_name: adminName,
@@ -377,7 +456,11 @@ export class AdminRepository {
   // =========================================================================
   // 5. CHAT & MESSAGE AUDIT
   // =========================================================================
-  async getModerationConversations(adminUserId?: string) {
+  async getModerationConversations(adminUserId?: string, forceRefresh = false) {
+    if (!forceRefresh && this.chatsCache && Date.now() - this.chatsCache.timestamp < this.CACHE_TTL_MS) {
+      return this.chatsCache.data;
+    }
+
     await serverAuth.assertSuperAdmin(adminUserId);
     const client = this.assertSupabaseClient();
 
@@ -397,7 +480,7 @@ export class AdminRepository {
         return [];
       }
 
-      return (data || []).map((c: any) => ({
+      const mapped = (data || []).map((c: any) => ({
         id: c.id,
         participant_a_name: c.user_a?.full_name || 'Participant 1',
         participant_a_email: c.user_a?.email || '',
@@ -410,6 +493,9 @@ export class AdminRepository {
           : 'Recently',
         unread_count: c.unread_count || 0,
       }));
+
+      this.chatsCache = { data: mapped, timestamp: Date.now() };
+      return mapped;
     } catch (e) {
       console.warn('[AdminRepository] Failed to load chat moderation data:', e);
       return [];
