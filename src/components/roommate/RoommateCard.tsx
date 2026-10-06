@@ -17,13 +17,11 @@ import { Button } from '../common/Button';
 interface RoommateCardProps {
   roommate: StudentProfile;
   onMessage: (roommate: StudentProfile) => void;
-  onRequestContact: (roommate: StudentProfile) => void;
 }
 
 export const RoommateCard: React.FC<RoommateCardProps> = ({
   roommate,
   onMessage,
-  onRequestContact,
 }) => {
   const compatibilityScore = roommate.compatibility_score || 85;
 
@@ -159,31 +157,17 @@ export const RoommateCard: React.FC<RoommateCardProps> = ({
         )}
       </div>
 
-      {/* Phone Privacy Notice & Actions */}
+      {/* Direct Messaging Action */}
       <div className="pt-3 border-t border-[#F1F5F9]">
-        <div className="flex items-center gap-1 text-[11px] text-[#64748B] mb-3">
-          <Lock className="w-3 h-3 text-[#F59E0B]" />
-          <span>Phone number private until contact request accepted</span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onMessage(roommate)}
-            icon={<MessageSquare className="w-3.5 h-3.5" />}
-          >
-            Message
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => onRequestContact(roommate)}
-            icon={<Phone className="w-3.5 h-3.5" />}
-          >
-            Request Contact
-          </Button>
-        </div>
+        <Button
+          variant="primary"
+          size="sm"
+          fullWidth
+          onClick={() => onMessage(roommate)}
+          icon={<MessageSquare className="w-3.5 h-3.5" />}
+        >
+          Message on Rented Thikanaa
+        </Button>
       </div>
     </div>
   );

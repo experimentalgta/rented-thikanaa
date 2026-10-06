@@ -33,8 +33,6 @@ export const ChatModal: React.FC = () => {
     messages,
     isLoadingMessages,
     sendMessage,
-    contactRequests,
-    updateContactRequest,
     shareExactLocation,
     markConversationAsRead,
   } = useChat();
@@ -252,14 +250,6 @@ export const ChatModal: React.FC = () => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Find if there's an associated contact request with this conversation's property/participants
-  const relevantRequest = contactRequests.find(
-    (r) =>
-      r.property_id === activeConversation?.property_id ||
-      (activeConversation?.participant_ids.includes(r.requester_id) &&
-        activeConversation?.participant_ids.includes(r.receiver_id))
-  );
-
   return (
     <>
       {/* ========================================================================= */}
@@ -433,28 +423,6 @@ export const ChatModal: React.FC = () => {
                       <MapPin className="w-3 h-3 text-[#F59E0B]" />
                       <span>Share Exact Location</span>
                     </button>
-
-                    {/* Contact Request Status Badge inside chat */}
-                    {relevantRequest ? (
-                      relevantRequest.status === 'accepted' ? (
-                        <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A] flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-[#D97706]" />
-                          Phone: {relevantRequest.receiver_phone || relevantRequest.requester_phone}
-                        </span>
-                      ) : relevantRequest.status === 'pending' &&
-                        currentUser && relevantRequest.receiver_id === currentUser.id ? (
-                        <button
-                          onClick={() => updateContactRequest(relevantRequest.id, 'accepted')}
-                          className="text-[10px] font-bold px-2 py-1 rounded-md bg-[#101828] text-white hover:bg-[#F59E0B] hover:text-[#101828] transition-colors cursor-pointer"
-                        >
-                          Accept Phone Request
-                        </button>
-                      ) : (
-                        <span className="text-[10px] font-medium px-2 py-1 rounded-md bg-amber-100 text-amber-900 flex items-center gap-1">
-                          <Lock className="w-3 h-3" /> Phone Request Pending
-                        </span>
-                      )
-                    ) : null}
                   </div>
                 </div>
               )}
@@ -1005,29 +973,6 @@ export const ChatModal: React.FC = () => {
                     <MapPin className="w-3 h-3 text-slate-950" />
                     <span>Location</span>
                   </button>
-
-                  {relevantRequest ? (
-                    relevantRequest.status === 'accepted' ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/30 flex items-center gap-1">
-                        <Phone className="w-3 h-3 text-amber-400" />
-                        {relevantRequest.receiver_phone || relevantRequest.requester_phone}
-                      </span>
-                    ) : relevantRequest.status === 'pending' &&
-                      currentUser &&
-                      relevantRequest.receiver_id === currentUser.id ? (
-                      <button
-                        type="button"
-                        onClick={() => updateContactRequest(relevantRequest.id, 'accepted')}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500 text-slate-950"
-                      >
-                        Accept Phone
-                      </button>
-                    ) : (
-                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-800 text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <Lock className="w-3 h-3" /> Phone Pending
-                      </span>
-                    )
-                  ) : null}
                 </div>
               </div>
             )}

@@ -188,6 +188,8 @@ CREATE TABLE IF NOT EXISTS public.properties (
   amenities TEXT[] NOT NULL DEFAULT '{}',
   rules TEXT[] NOT NULL DEFAULT '{}',
   phone_privacy phone_privacy_level NOT NULL DEFAULT 'private',
+  phone_number TEXT,
+  show_phone_number BOOLEAN NOT NULL DEFAULT false,
   
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

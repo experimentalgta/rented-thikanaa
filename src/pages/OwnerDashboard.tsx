@@ -32,7 +32,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   onNavigate,
 }) => {
   const { currentUser } = useAuth();
-  const { contactRequests, updateContactRequest, setIsChatModalOpen } = useChat();
+  const { setIsChatModalOpen } = useChat();
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,8 +74,6 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       console.error(e);
     }
   };
-
-  const incomingRequests = contactRequests.filter((r) => r.receiver_role === 'owner');
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28">
@@ -130,12 +128,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
         <div className="p-5 rounded-2xl bg-white border border-[#E5E7EB] shadow-xs">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] block mb-1">
-            Contact Requests
+            In-App Messages
           </span>
           <div className="text-2xl sm:text-3xl font-black text-[#101828] font-heading">
-            {incomingRequests.length}
+            Live
           </div>
-          <span className="text-[11px] text-[#667085]">Pending student inquiries</span>
+          <span className="text-[11px] text-[#667085]">Instant student chat</span>
         </div>
 
         <div className="p-5 rounded-2xl bg-white border border-[#E5E7EB] shadow-xs">
@@ -244,72 +242,34 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           </div>
         </div>
 
-        {/* Right 1 Col: Student Contact Requests */}
+        {/* Right 1 Col: Student Chat Inquiries */}
         <div className="lg:col-span-1 space-y-4">
           <h2 className="text-lg font-bold text-[#101828] font-heading">
-            Student Inquiries &amp; Requests
+            Direct Messaging
           </h2>
 
-          <div className="space-y-3">
-            {incomingRequests.map((req) => (
-              <div
-                key={req.id}
-                className="bg-white rounded-2xl border border-[#E5E7EB] p-4 shadow-xs space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs text-[#111827]">
-                    {req.requester_name}
-                  </span>
-                  <span
-                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                      req.status === 'accepted'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-amber-100 text-amber-800'
-                    }`}
-                  >
-                    {req.status.toUpperCase()}
-                  </span>
-                </div>
-
-                <div className="text-xs text-[#667085]">
-                  Inquiring about:{' '}
-                  <span className="font-semibold text-[#111827]">
-                    {req.property_title || 'Room in Katra'}
-                  </span>
-                </div>
-
-                {req.status === 'accepted' ? (
-                  <div className="p-2.5 bg-emerald-50 rounded-xl text-xs font-bold text-emerald-900 flex items-center gap-1.5 border border-emerald-200">
-                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Student Phone: {req.requester_phone || '+91 98394 55123'}</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 pt-1">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      fullWidth
-                      onClick={() => updateContactRequest(req.id, 'accepted')}
-                    >
-                      Accept &amp; Share Phone
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => updateContactRequest(req.id, 'rejected')}
-                    >
-                      Decline
-                    </Button>
-                  </div>
-                )}
+          <div className="bg-white rounded-2xl border border-[#E5E7EB] p-5 shadow-xs space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#FFFBEB] text-[#92400E] flex items-center justify-center shrink-0">
+                <MessageSquare className="w-5 h-5 text-[#F59E0B]" />
               </div>
-            ))}
-
-            {incomingRequests.length === 0 && (
-              <div className="p-6 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] text-center text-xs text-[#667085]">
-                No pending contact requests at this moment.
+              <div>
+                <h4 className="text-xs font-bold text-[#101828]">Student Inquiries</h4>
+                <p className="text-[11px] text-[#667085] mt-1 leading-relaxed">
+                  Students connect with you through instant messaging. If you enable phone visibility, they can also reach you directly via phone call and WhatsApp.
+                </p>
               </div>
-            )}
+            </div>
+
+            <Button
+              variant="primary"
+              size="sm"
+              fullWidth
+              onClick={() => setIsChatModalOpen(true)}
+              icon={<MessageSquare className="w-4 h-4" />}
+            >
+              Open Direct Messages
+            </Button>
           </div>
         </div>
       </div>

@@ -146,8 +146,11 @@ export interface Property {
   rules: string[];
   images: PropertyImage[];
 
-  phone_privacy: PhonePrivacy;
-  contact_request_status?: ContactRequestStatus;
+  // Direct Contact & Privacy Settings
+  phone_number?: string | null; // Direct host phone (masked when private)
+  show_phone_number?: boolean; // If true: Call & WhatsApp enabled. If false: Message only
+  phone_privacy: PhonePrivacy; // Backwards compatibility alias ('public' when show_phone_number is true)
+  contact_request_status?: ContactRequestStatus; // Deprecated: contact requests removed in favor of direct contact
   is_exact_location_shared?: boolean;
   exact_address_shared?: string | null;
 

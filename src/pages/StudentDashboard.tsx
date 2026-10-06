@@ -31,7 +31,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const { savedItems, toggleSave } = useSaved();
-  const { contactRequests, setIsChatModalOpen } = useChat();
+  const { setIsChatModalOpen } = useChat();
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [phonePrivacy, setPhonePrivacy] = useState<'private' | 'on_request' | 'public'>('private');
@@ -84,14 +84,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             Saved Rooms ({savedItems.length})
           </button>
           <button
-            onClick={() => setActiveTab('requests')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              activeTab === 'requests'
-                ? 'bg-[#101828] text-white shadow-xs'
-                : 'bg-[#F8FAFC] text-[#667085] hover:text-[#101828] border border-[#E2E8F0]'
-            }`}
+            onClick={() => setIsChatModalOpen(true)}
+            className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#F8FAFC] text-[#667085] hover:text-[#101828] border border-[#E2E8F0] flex items-center gap-1.5 transition-all"
           >
-            Contact Requests ({contactRequests.length})
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>Messages</span>
           </button>
           <button
             onClick={() => setActiveTab('privacy')}
@@ -155,67 +152,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         </div>
       )}
 
-      {/* Tab 2: Contact Requests */}
-      {activeTab === 'requests' && (
-        <div className="space-y-6">
-          <h2 className="text-lg font-bold text-[#101828] font-heading">
-            Contact Requests &amp; Phone Sharing
-          </h2>
-
-          <div className="space-y-3">
-            {contactRequests.map((req) => (
-              <div
-                key={req.id}
-                className="bg-white rounded-2xl border border-[#E5E7EB] p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs"
-              >
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-bold text-sm text-[#111827]">
-                      {req.property_title || 'Direct Contact Request'}
-                    </span>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        req.status === 'accepted'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : req.status === 'pending'
-                          ? 'bg-amber-100 text-amber-900'
-                          : 'bg-rose-100 text-rose-800'
-                      }`}
-                    >
-                      {req.status.toUpperCase()}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-[#667085]">
-                    Host: <span className="font-semibold text-[#111827]">{req.receiver_name}</span>
-                  </p>
-
-                  {/* Phone reveal if accepted */}
-                  {req.status === 'accepted' && (
-                    <div className="mt-2 text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Unlocked Phone: {req.receiver_phone || '+91 94152 38472'}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsChatModalOpen(true)}
-                    icon={<MessageSquare className="w-4 h-4" />}
-                  >
-                    Open Chat
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 3: Phone Privacy Settings */}
+      {/* Tab 2: Phone Privacy Settings */}
       {activeTab === 'privacy' && (
         <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 sm:p-8 space-y-6 max-w-2xl">
           <div className="pb-4 border-b border-[#F1F5F9]">

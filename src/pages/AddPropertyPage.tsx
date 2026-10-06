@@ -9,7 +9,9 @@ import {
   X,
   Navigation,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Phone,
+  Lock,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from '../context/LocationContext';
@@ -26,6 +28,7 @@ import { propertyRepository } from '../services/propertyRepository';
 import { uploadPropertyImage, deletePropertyImage } from '../utils/imageUpload';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { LocationPickerMap } from '../components/map/LocationPickerMap';
+import { isValidIndianPhoneNumber } from '../utils/phoneUtils';
 
 interface AddPropertyPageProps {
   onSuccess: (newProperty: Property) => void;
@@ -81,6 +84,8 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       amenities: ['wifi', 'ro_water', 'power_backup', 'food_available', 'study_table'],
       rules: ['gate_timings', 'no_smoking', 'quiet_hours'],
       phone_privacy: 'private', // Default private by specification
+      show_phone_number: false, // Default private by specification
+      phone_number: currentUser?.phone_number || '',
       owner_phone: currentUser?.phone_number || '',
       images: [
         {
@@ -391,16 +396,30 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       return;
     }
 
+    if (formData.show_phone_number) {
+      if (!formData.phone_number || !isValidIndianPhoneNumber(formData.phone_number)) {
+        alert("Please enter a valid 10-digit Indian mobile number to enable direct phone calls and WhatsApp, or choose 'No (Keep Private)'.");
+        setCurrentStep(7);
+        return;
+      }
+    }
+
     if (!currentUser) return;
     setIsSubmitting(true);
     try {
+      const isPublic = Boolean(formData.show_phone_number);
+      const cleanPhone = formData.phone_number?.trim() || null;
       const created = await propertyRepository.createProperty({
         ...formData,
+        phone_number: cleanPhone,
+        show_phone_number: isPublic,
+        phone_privacy: isPublic ? 'public' : 'private',
         owner_id: currentUser.id,
         owner_name: currentUser.full_name,
         created_by: currentUser.id,
         lister_name: currentUser.full_name,
-        lister_phone: currentUser.phone_number,
+        lister_phone: isPublic ? cleanPhone : null,
+        owner_phone: isPublic ? cleanPhone : null,
         lister_avatar: currentUser.avatar_url,
       });
       localStorage.removeItem(DRAFT_STORAGE_KEY);
@@ -413,14 +432,19 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   };
 
   // Construct a preview property representation for the live student preview
+  const isPreviewPhoneVisible = Boolean(formData.show_phone_number);
+  const previewPhone = isPreviewPhoneVisible ? formData.phone_number : null;
+
   const previewProperty: Property = {
     id: 'preview-sample',
     owner_id: currentUser?.id || 'pending',
     owner_name: currentUser?.full_name || 'Owner',
-    owner_phone: formData.phone_privacy === 'public' ? formData.owner_phone : null,
+    phone_number: previewPhone,
+    show_phone_number: isPreviewPhoneVisible,
+    owner_phone: previewPhone,
     created_by: currentUser?.id || 'pending',
     lister_name: currentUser?.full_name || 'Owner',
-    lister_phone: formData.phone_privacy === 'public' ? formData.owner_phone : null,
+    lister_phone: previewPhone,
     lister_avatar: currentUser?.avatar_url || '',
     title: formData.title || 'Student Accommodation Title',
     slug: 'preview',
@@ -453,7 +477,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
     amenities: formData.amenities || ['wifi'],
     rules: formData.rules || ['quiet_hours'],
     images: formData.images || [],
-    phone_privacy: (formData.phone_privacy as PhonePrivacy) || 'private',
+    phone_privacy: isPreviewPhoneVisible ? 'public' : 'private',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     distance_formatted: 'In your locality',
@@ -480,7 +504,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
               {currentStep === 4 && 'Room Specs & Amenities'}
               {currentStep === 5 && 'House & Gate Rules'}
               {currentStep === 6 && 'Photos & Cover Image'}
-              {currentStep === 7 && 'Phone Privacy & Student Live Preview'}
+              {currentStep === 7 && 'Direct Contact, Phone Privacy & Live Preview'}
             </h1>
           </div>
           <button
@@ -1325,53 +1349,123 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
           </div>
         )}
 
-        {/* STEP 7: PRIVACY & PREVIEW */}
+        {/* STEP 7: DIRECT CONTACT, PRIVACY & PREVIEW */}
         {currentStep === 7 && (
           <div className="space-y-6">
-            {/* Phone Privacy Selector */}
-            <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-[#E5E7EB] space-y-3">
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#101828]">
-                Phone Number Visibility Setting
-              </label>
-              <div className="space-y-2">
-                {[
-                  {
-                    id: 'private',
-                    label: 'Private by Default (Recommended)',
-                    desc: 'Your phone number is hidden. Students connect via in-app chat first.',
-                  },
-                  {
-                    id: 'on_request',
-                    label: 'On Request (Mutual Exchange)',
-                    desc: 'Your phone number is unlocked only when you accept a contact request.',
-                  },
-                  {
-                    id: 'public',
-                    label: 'Publicly Visible',
-                    desc: 'Students can directly see and call your phone number immediately.',
-                  },
-                ].map((opt) => (
+            {/* Contact Information & Privacy Section */}
+            <div className="p-5 bg-white rounded-2xl border border-[#E5E7EB] space-y-5 shadow-xs">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-[#101828] font-heading flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-[#F59E0B]" />
+                  <span>Contact Information & Phone Visibility</span>
+                </h3>
+                <p className="text-xs text-[#667085] mt-1">
+                  Decide whether interested students and renters can contact you directly via phone call and WhatsApp, or strictly through in-app messaging.
+                </p>
+              </div>
+
+              {/* Direct Phone Number Input */}
+              <div>
+                <label className="block text-xs font-bold text-[#101828] mb-1.5">
+                  Host Mobile Number (Optional / For Direct Contact)
+                </label>
+                <div className="flex items-center rounded-xl border border-[#CBD5E1] bg-white overflow-hidden focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-[#F59E0B]/20 transition-all">
+                  <span className="px-3 py-2.5 bg-slate-100 text-xs font-bold text-slate-700 border-r border-[#CBD5E1] select-none">
+                    +91 (India)
+                  </span>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={formData.phone_number || ''}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      updateField('phone_number', val);
+                      updateField('owner_phone', val);
+                    }}
+                    placeholder="Enter 10-digit mobile number (e.g. 9876543210)"
+                    className="flex-1 px-3 py-2.5 text-xs text-[#101828] placeholder:text-[#94A3B8] focus:outline-none"
+                  />
+                </div>
+                {formData.phone_number && !isValidIndianPhoneNumber(formData.phone_number) && (
+                  <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    Please enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).
+                  </p>
+                )}
+              </div>
+
+              {/* Show Phone Number to other users? (Yes / No) */}
+              <div className="pt-3 border-t border-[#F1F5F9] space-y-3">
+                <label className="block text-xs font-bold text-[#101828]">
+                  Show phone number to other users?
+                </label>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Option NO: Keep Private (Default) */}
                   <label
-                    key={opt.id}
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer ${
-                      formData.phone_privacy === opt.id
-                        ? 'border-[#101828] bg-white font-medium'
-                        : 'border-[#E5E7EB]'
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      !formData.show_phone_number
+                        ? 'border-[#101828] bg-[#F8FAFC] shadow-xs'
+                        : 'border-[#E5E7EB] hover:bg-slate-50'
                     }`}
                   >
                     <input
                       type="radio"
-                      name="phone_privacy_add"
-                      checked={formData.phone_privacy === opt.id}
-                      onChange={() => updateField('phone_privacy', opt.id)}
-                      className="mt-0.5 text-[#101828] focus:ring-[#101828]"
+                      name="show_phone_number_choice"
+                      checked={!formData.show_phone_number}
+                      onChange={() => {
+                        updateField('show_phone_number', false);
+                        updateField('phone_privacy', 'private');
+                      }}
+                      className="mt-1 text-[#101828] focus:ring-[#101828]"
                     />
                     <div>
-                      <div className="text-xs font-bold text-[#111827]">{opt.label}</div>
-                      <div className="text-[11px] text-[#667085]">{opt.desc}</div>
+                      <div className="text-xs font-bold text-[#111827] flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-slate-500" />
+                        <span>No (Keep Private - Recommended)</span>
+                      </div>
+                      <div className="text-[11px] text-[#667085] mt-1 leading-relaxed">
+                        Your phone number will NOT be shown on the website. Interested users can only reach you through in-app messages on Rented Thikanaa.
+                      </div>
                     </div>
                   </label>
-                ))}
+
+                  {/* Option YES: Show Phone */}
+                  <label
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      formData.show_phone_number
+                        ? 'border-emerald-600 bg-emerald-50/50 shadow-xs'
+                        : 'border-[#E5E7EB] hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="show_phone_number_choice"
+                      checked={Boolean(formData.show_phone_number)}
+                      onChange={() => {
+                        updateField('show_phone_number', true);
+                        updateField('phone_privacy', 'public');
+                      }}
+                      className="mt-1 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-[#111827] flex items-center gap-1.5">
+                        <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Yes (Show Phone Number)</span>
+                      </div>
+                      <div className="text-[11px] text-[#667085] mt-1 leading-relaxed">
+                        Interested users can call you directly and chat with you on WhatsApp from your listing page.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                {formData.show_phone_number && (!formData.phone_number || !isValidIndianPhoneNumber(formData.phone_number)) && (
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                    <span>Please enter a valid 10-digit mobile number above so users can reach you via Call &amp; WhatsApp.</span>
+                  </div>
+                )}
               </div>
             </div>
 

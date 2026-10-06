@@ -501,7 +501,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 { step: '1', title: 'Select City or Area', desc: 'Choose your city and locality, or auto-detect with one tap.' },
                 { step: '2', title: 'Compare Verified Options', desc: 'Filter by rent, Wi-Fi, food, gender, or attached washroom.' },
                 { step: '3', title: 'Inquire In-Platform', desc: 'Send a message directly to the lister without exposing your personal phone number.' },
-                { step: '4', title: 'Request Contact or Visit', desc: 'Exchange contact details securely and schedule an in-person room visit.' },
+                { step: '4', title: 'Connect & Schedule Visit', desc: 'Call, WhatsApp, or chat in-platform to schedule an in-person room visit.' },
                 { step: '5', title: 'Move In & Stay Safe', desc: 'Finalize your stay with transparent pricing and no broker commissions.' },
               ].map((item) => (
                 <div key={item.step} className="flex items-start gap-3">

@@ -4,7 +4,6 @@ import { RoommateCard } from '../components/roommate/RoommateCard';
 import { StudentProfile } from '../types';
 import { roommateRepository } from '../services/roommateRepository';
 import { useChat } from '../context/ChatContext';
-import { ContactRequestModal } from '../components/safety/ContactRequestModal';
 
 export const RoommatePage: React.FC = () => {
   const [roommates, setRoommates] = useState<StudentProfile[]>([]);
@@ -157,7 +156,6 @@ export const RoommatePage: React.FC = () => {
               key={rm.id}
               roommate={rm}
               onMessage={handleMessage}
-              onRequestContact={() => handleMessage(rm)}
             />
           ))}
         </div>

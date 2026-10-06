@@ -99,15 +99,23 @@ export class PropertyRepository implements IPropertyRepository {
     const isLocationShared = await this.hasSharedExactLocation(cloned.id, currentUserId);
     cloned.is_exact_location_shared = isLocationShared;
 
-    // 1. Phone Privacy
+    // 1. Direct Phone Privacy
+    // Phone number is revealed ONLY when:
+    // show_phone_number === true OR phone_privacy === 'public' OR user is owner/admin
     const isPhoneAuthorized =
+      cloned.show_phone_number === true ||
       cloned.phone_privacy === 'public' ||
-      requestStatus === 'accepted' ||
       isOwnerOrAdmin;
 
     if (!isPhoneAuthorized) {
       cloned.owner_phone = null;
       cloned.lister_phone = null;
+      cloned.phone_number = null;
+    } else {
+      const activePhone = cloned.phone_number || cloned.owner_phone || cloned.lister_phone || null;
+      cloned.phone_number = activePhone;
+      cloned.owner_phone = activePhone;
+      cloned.lister_phone = activePhone;
     }
 
     // 2. Approximate Presentation Coordinates (Neighborhood jitter)
@@ -173,14 +181,22 @@ export class PropertyRepository implements IPropertyRepository {
       lat = row.location.coordinates[1];
     }
 
+    const isPublicPhone =
+      row.show_phone_number !== undefined && row.show_phone_number !== null
+        ? Boolean(row.show_phone_number)
+        : row.phone_privacy === 'public';
+    const rawPhone = row.phone_number || row.owner?.phone_number || row.owner_phone || null;
+
     return {
       id: row.id,
       owner_id: row.owner_id,
       created_by: row.created_by || row.owner_id,
       owner_name: row.owner?.full_name || row.owner_name || 'Host / Owner',
       lister_name: row.owner?.full_name || row.owner_name || 'Host / Owner',
-      owner_phone: row.owner?.phone_number || row.phone_number || null,
-      lister_phone: row.owner?.phone_number || row.phone_number || null,
+      phone_number: rawPhone,
+      show_phone_number: isPublicPhone,
+      owner_phone: rawPhone,
+      lister_phone: rawPhone,
       owner_avatar: row.owner?.avatar_url || undefined,
       lister_avatar: row.owner?.avatar_url || undefined,
       lister_type: row.lister_type || 'individual',
@@ -222,7 +238,7 @@ export class PropertyRepository implements IPropertyRepository {
       amenities: row.amenities || [],
       rules: row.rules || [],
       images,
-      phone_privacy: row.phone_privacy || 'private',
+      phone_privacy: isPublicPhone ? 'public' : 'private',
       created_at: row.created_at || new Date().toISOString(),
       updated_at: row.updated_at || new Date().toISOString(),
     };
@@ -560,6 +576,9 @@ export class PropertyRepository implements IPropertyRepository {
     const lat = data.latitude || 25.4563;
     const lon = data.longitude || 81.8546;
 
+    const isPublicPhone = Boolean(data.show_phone_number ?? (data.phone_privacy === 'public'));
+    const directPhone = data.phone_number || data.owner_phone || null;
+
     const insertData: any = {
       title: data.title,
       slug:
@@ -593,7 +612,9 @@ export class PropertyRepository implements IPropertyRepository {
       location: `POINT(${lon} ${lat})`,
       amenities: data.amenities || [],
       rules: data.rules || [],
-      phone_privacy: data.phone_privacy || 'private',
+      phone_privacy: isPublicPhone ? 'public' : 'private',
+      show_phone_number: isPublicPhone,
+      phone_number: directPhone,
       is_demo: false,
     };
 
@@ -602,7 +623,10 @@ export class PropertyRepository implements IPropertyRepository {
       insertData.created_by = data.created_by || data.owner_id;
     }
 
-    const { data: created, error } = await client
+    let created;
+    let createError;
+
+    const res = await client
       .from('properties')
       .insert(insertData)
       .select(`
@@ -611,8 +635,27 @@ export class PropertyRepository implements IPropertyRepository {
       `)
       .single();
 
-    if (error) {
-      throw new Error(`Failed to create property in Supabase: ${error.message}`);
+    if (res.error && (res.error.message?.includes('show_phone_number') || res.error.message?.includes('phone_number'))) {
+      const fallbackData = { ...insertData };
+      delete fallbackData.show_phone_number;
+      delete fallbackData.phone_number;
+      const retryRes = await client
+        .from('properties')
+        .insert(fallbackData)
+        .select(`
+          *,
+          property_images (id, url, caption, is_cover, sort_order)
+        `)
+        .single();
+      created = retryRes.data;
+      createError = retryRes.error;
+    } else {
+      created = res.data;
+      createError = res.error;
+    }
+
+    if (createError || !created) {
+      throw new Error(`Failed to create property in Supabase: ${createError?.message}`);
     }
 
     // Insert images if provided
@@ -661,9 +704,19 @@ export class PropertyRepository implements IPropertyRepository {
     if (updates.description !== undefined) updatePayload.description = updates.description;
     if (updates.amenities !== undefined) updatePayload.amenities = updates.amenities;
     if (updates.rules !== undefined) updatePayload.rules = updates.rules;
-    if (updates.phone_privacy !== undefined) updatePayload.phone_privacy = updates.phone_privacy;
+    if (updates.phone_privacy !== undefined) {
+      updatePayload.phone_privacy = updates.phone_privacy;
+      updatePayload.show_phone_number = updates.phone_privacy === 'public';
+    }
+    if (updates.show_phone_number !== undefined) {
+      updatePayload.show_phone_number = Boolean(updates.show_phone_number);
+      updatePayload.phone_privacy = updates.show_phone_number ? 'public' : 'private';
+    }
+    if (updates.phone_number !== undefined) {
+      updatePayload.phone_number = updates.phone_number;
+    }
 
-    const { data, error } = await client
+    const res = await client
       .from('properties')
       .update(updatePayload)
       .eq('id', id)
@@ -673,8 +726,28 @@ export class PropertyRepository implements IPropertyRepository {
       `)
       .single();
 
-    if (error) {
-      throw new Error(`Failed to update property in Supabase: ${error.message}`);
+    let data = res.data;
+    let updateError = res.error;
+
+    if (updateError && (updateError.message?.includes('show_phone_number') || updateError.message?.includes('phone_number'))) {
+      const fallbackPayload = { ...updatePayload };
+      delete fallbackPayload.show_phone_number;
+      delete fallbackPayload.phone_number;
+      const retry = await client
+        .from('properties')
+        .update(fallbackPayload)
+        .eq('id', id)
+        .select(`
+          *,
+          property_images (id, url, caption, is_cover, sort_order)
+        `)
+        .single();
+      data = retry.data;
+      updateError = retry.error;
+    }
+
+    if (updateError || !data) {
+      throw new Error(`Failed to update property in Supabase: ${updateError?.message}`);
     }
 
     return this.mapRowToProperty(data);

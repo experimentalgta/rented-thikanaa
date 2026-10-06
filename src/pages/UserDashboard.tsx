@@ -49,7 +49,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 }) => {
   const { currentUser, updateProfile, signOut } = useAuth();
   const { savedItems, toggleSave } = useSaved();
-  const { contactRequests, updateContactRequest, setIsChatModalOpen } = useChat();
+  const { setIsChatModalOpen } = useChat();
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -146,15 +146,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     setTimeout(() => setProfileSuccessMsg(false), 3000);
   };
 
-  // Segregate contact requests: Received on user's listings vs Sent to other listers
-  const receivedInquiries = currentUser
-    ? contactRequests.filter((r) => r.receiver_id === currentUser.id)
-    : [];
-
-  const sentInquiries = currentUser
-    ? contactRequests.filter((r) => r.requester_id === currentUser.id)
-    : [];
-
   const filteredProperties = properties.filter((p) => {
     if (listingFilter === 'all') return true;
     return p.availability_status === listingFilter;
@@ -242,7 +233,6 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           { id: 'listings', label: `My Listings (${properties.length})` },
           { id: 'saved', label: `Saved Rooms (${savedItems.length})` },
           { id: 'messages', label: 'Messages' },
-          { id: 'requests', label: `Contact Requests (${receivedInquiries.length + sentInquiries.length})` },
           { id: 'roommates', label: 'Roommate Matches' },
           { id: 'privacy', label: 'Location & Privacy' },
           { id: 'settings', label: 'Settings' },
@@ -290,13 +280,13 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
             <div className="p-5 rounded-2xl bg-white border border-[#E5E7EB] shadow-xs">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] block mb-1">
-                Inquiries &amp; Requests
+                Direct Messaging
               </span>
               <div className="text-2xl sm:text-3xl font-black text-[#101828] font-heading">
-                {receivedInquiries.length + sentInquiries.length}
+                Active
               </div>
               <span className="text-[11px] text-[#667085]">
-                {receivedInquiries.length} received • {sentInquiries.length} sent
+                Real-time chats &amp; inquiries
               </span>
             </div>
 
@@ -536,7 +526,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                     </div>
 
                     <div className="text-[11px] text-[#94A3B8] mt-1 flex flex-wrap items-center gap-2">
-                      <span>Phone Privacy: {prop.phone_privacy}</span>
+                      <span>Phone: {prop.show_phone_number ? 'Visible (Call & WhatsApp)' : 'Private (In-App Only)'}</span>
                       <span>•</span>
                       <span>Coordinates: Private &amp; Fuzzed on Map</span>
                     </div>
@@ -701,158 +691,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 5: CONTACT REQUESTS & INQUIRIES */}
-      {activeTab === 'requests' && (
-        <div className="space-y-8">
-          {/* Section 1: Received Inquiries */}
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-bold text-[#101828] font-heading">
-                Received Inquiries (On Your Listings)
-              </h2>
-              <p className="text-xs text-[#667085]">
-                Members interested in your rooms. Accept to exchange direct contact numbers.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {receivedInquiries.map((req) => (
-                <div
-                  key={req.id}
-                  className="bg-white rounded-2xl border border-[#E5E7EB] p-5 shadow-xs space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-[#111827]">
-                      {req.requester_name}
-                    </span>
-                    <span
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                        req.status === 'accepted'
-                          ? 'bg-amber-100 text-amber-900 border border-amber-200'
-                          : req.status === 'pending'
-                          ? 'bg-amber-50 text-amber-800'
-                          : 'bg-rose-100 text-rose-800'
-                      }`}
-                    >
-                      {req.status.toUpperCase()}
-                    </span>
-                  </div>
-
-                  <div className="text-xs text-[#667085]">
-                    Inquiring about:{' '}
-                    <span className="font-semibold text-[#111827]">
-                      {req.property_title || 'Room Listing'}
-                    </span>
-                  </div>
-
-                  {req.status === 'accepted' ? (
-                    <div className="p-2.5 bg-[#FFFBEB] rounded-xl text-xs font-bold text-[#92400E] flex items-center gap-1.5 border border-[#FDE68A]">
-                      <Phone className="w-3.5 h-3.5 text-[#F59E0B]" />
-                      <span>Member Phone: {req.requester_phone || '+91 98394 55123'}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 pt-1">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        fullWidth
-                        onClick={() => updateContactRequest(req.id, 'accepted')}
-                      >
-                        Accept &amp; Share Phone
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => updateContactRequest(req.id, 'rejected')}
-                      >
-                        Decline
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {receivedInquiries.length === 0 && (
-                <div className="col-span-full p-8 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] text-center text-xs text-[#667085]">
-                  No received contact requests on your listings yet.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Section 2: Sent Inquiries */}
-          <div className="space-y-4 pt-4 border-t border-[#E5E7EB]">
-            <div>
-              <h2 className="text-lg font-bold text-[#101828] font-heading">
-                Sent Contact Requests (To Other Listers)
-              </h2>
-              <p className="text-xs text-[#667085]">
-                Requests you submitted to view contact numbers or schedule room visits.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {sentInquiries.map((req) => (
-                <div
-                  key={req.id}
-                  className="bg-white rounded-2xl border border-[#E5E7EB] p-5 shadow-xs space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-[#111827]">
-                      {req.property_title || 'Contact Request'}
-                    </span>
-                    <span
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                        req.status === 'accepted'
-                          ? 'bg-amber-100 text-amber-900 border border-amber-200'
-                          : req.status === 'pending'
-                          ? 'bg-amber-50 text-amber-800'
-                          : 'bg-rose-100 text-rose-800'
-                      }`}
-                    >
-                      {req.status.toUpperCase()}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-[#667085]">
-                    Listed by: <span className="font-semibold text-[#111827]">{req.receiver_name}</span>
-                  </p>
-
-                  {req.status === 'accepted' ? (
-                    <div className="p-2.5 bg-[#FFFBEB] rounded-xl text-xs font-bold text-[#92400E] flex items-center gap-1.5 border border-[#FDE68A]">
-                      <Phone className="w-3.5 h-3.5 text-[#F59E0B]" />
-                      <span>Unlocked Phone: {req.receiver_phone || '+91 94152 38472'}</span>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-[#94A3B8]">
-                      Awaiting response from lister. You can message them in chat anytime.
-                    </p>
-                  )}
-
-                  <div className="pt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsChatModalOpen(true)}
-                      icon={<MessageSquare className="w-3.5 h-3.5" />}
-                    >
-                      Open Chat
-                    </Button>
-                  </div>
-                </div>
-              ))}
-
-              {sentInquiries.length === 0 && (
-                <div className="col-span-full p-8 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] text-center text-xs text-[#667085]">
-                  You have not sent any direct contact requests yet.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 6: ROOMMATE MATCHES & PROFILE */}
+      {/* TAB 5: ROOMMATE MATCHES & PROFILE */}
       {activeTab === 'roommates' && (
         <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 sm:p-8 space-y-6 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#F1F5F9]">
