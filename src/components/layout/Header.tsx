@@ -3,6 +3,7 @@ import {
   Heart,
   MessageSquare,
   PlusCircle,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useSaved } from '../../context/SavedContext';
@@ -15,7 +16,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
-  const { currentUser, isAuthenticated, requireAuth } = useAuth();
+  const { currentUser, isAuthenticated, isSuperAdmin, requireAuth } = useAuth();
   const { savedCount } = useSaved();
   const { unreadCount, setIsChatModalOpen } = useChat();
 
@@ -130,6 +131,18 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
               <PlusCircle className="w-4 h-4 text-[#F59E0B]" />
               List Property
             </button>
+
+            {/* Super Admin Quick Launch Button */}
+            {isSuperAdmin && (
+              <button
+                onClick={() => onNavigate('admin-panel')}
+                className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Super Admin Moderation Panel"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                <span>Super Admin</span>
+              </button>
+            )}
 
             {/* Authenticated User Menu vs Anonymous Sign In */}
             {isAuthenticated && currentUser ? (

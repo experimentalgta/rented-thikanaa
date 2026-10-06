@@ -445,3 +445,67 @@ export interface PendingAction {
   };
   subTab?: string;
 }
+
+// ============================================================================
+// SUPER ADMIN DASHBOARD TYPES
+// ============================================================================
+
+export interface AdminPlatformStats {
+  totalUsers: number;
+  totalStudents: number;
+  totalOwners: number;
+  verifiedUsers: number;
+  blockedUsers: number;
+  totalProperties: number;
+  verifiedProperties: number;
+  rentedProperties: number;
+  availableProperties: number;
+  activeRoommates: number;
+  pendingReports: number;
+  resolvedReports: number;
+  totalConversations: number;
+  totalCities: number;
+  activeLocalities: number;
+}
+
+export interface AdminUserRecord extends User {
+  student_profile?: StudentProfile;
+  listings_count?: number;
+  reports_count?: number;
+}
+
+export interface AdminAnnouncement {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'warning' | 'promo' | 'emergency';
+  target_audience: 'all' | 'students' | 'owners';
+  is_active: boolean;
+  created_at: string;
+  author_name: string;
+  expires_at?: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  admin_id: string;
+  admin_name: string;
+  action: 'verify_listing' | 'unverify_listing' | 'delete_listing' | 'update_listing' | 'ban_user' | 'unban_user' | 'verify_user' | 'change_role' | 'resolve_report' | 'dismiss_report' | 'broadcast_created' | 'settings_updated';
+  target_type: 'property' | 'user' | 'report' | 'broadcast' | 'settings';
+  target_id: string;
+  target_title: string;
+  details: string;
+  created_at: string;
+}
+
+export interface PlatformSettings {
+  platform_name: string;
+  support_phone: string;
+  support_email: string;
+  emergency_whatsapp: string;
+  require_phone_for_chat: boolean;
+  auto_verify_trusted_owners: boolean;
+  maintenance_mode: boolean;
+  announcement_banner_enabled: boolean;
+}
+

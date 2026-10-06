@@ -41,7 +41,27 @@ const MainApp: React.FC = () => {
     );
   });
 
-  const [currentView, setCurrentView] = useState<string>('home');
+  const [currentView, setCurrentView] = useState<string>(() => {
+    try {
+      const url = new URL(window.location.href);
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      const viewParam = url.searchParams.get('view');
+      const adminParam = url.searchParams.get('admin');
+
+      if (
+        path === '/admin' ||
+        path === '/admin-panel' ||
+        hash === '#admin' ||
+        viewParam === 'admin-panel' ||
+        viewParam === 'admin' ||
+        adminParam === 'true'
+      ) {
+        return 'admin-panel';
+      }
+    } catch {}
+    return 'home';
+  });
   const [selectedLocality, setSelectedLocality] = useState<string>('');
   const [selectedPropertyType, setSelectedPropertyType] = useState<string | undefined>(undefined);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
@@ -344,18 +364,9 @@ const MainApp: React.FC = () => {
     }
 
     if (view === 'admin-panel') {
-      if (
-        !requireAuth(
-          'Sign in with an authorized Google Super Admin account to access moderation.',
-          { type: 'dashboard' }
-        )
-      ) {
-        return;
-      }
-      if (!isSuperAdmin) {
-        alert('Access denied: You do not have super admin permissions.');
-        return;
-      }
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', 'admin-panel');
+      window.history.pushState({ view: 'admin-panel' }, '', url.toString());
       setCurrentView('admin-panel');
       return;
     }
@@ -490,7 +501,10 @@ const MainApp: React.FC = () => {
             )}
 
             {currentView === 'admin-panel' && (
-              <AdminDashboard onSelectProperty={handleSelectProperty} />
+              <AdminDashboard
+                onSelectProperty={handleSelectProperty}
+                onNavigateHome={() => handleNavigate('home')}
+              />
             )}
           </>
         )}

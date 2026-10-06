@@ -135,9 +135,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       try {
-        adminStatus = await serverAuth.verifySuperAdminAuthorization(authUser.id);
+        adminStatus = await serverAuth.verifySuperAdminAuthorization(authUser.id, authUser.email);
         setIsSuperAdmin(adminStatus);
-      } catch {}
+      } catch (err) {
+        console.warn('[AuthContext] Super admin verification failed:', err);
+      }
     }
 
     // ── DEBUG: Print every value used in identity resolution ──
