@@ -772,6 +772,25 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         isOpen={isFilterSheetOpen}
         onClose={() => setIsFilterSheetOpen(false)}
         title="Filter Student Accommodations"
+        footer={
+          <div className="flex items-center gap-3 w-full">
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="px-4 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs shrink-0 cursor-pointer transition-colors"
+            >
+              Reset
+            </button>
+            <Button
+              variant="primary"
+              fullWidth
+              onClick={() => setIsFilterSheetOpen(false)}
+              className="py-3 text-xs sm:text-sm font-bold shadow-md cursor-pointer"
+            >
+              Show {searchResult?.total_found || 0} Accommodations
+            </Button>
+          </div>
+        }
       >
         <FilterSidebar
           filters={filters}
@@ -779,15 +798,6 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           onReset={handleResetFilters}
           totalResults={searchResult?.total_found || 0}
         />
-        <div className="pt-4 mt-4 border-t border-slate-100">
-          <Button
-            variant="primary"
-            fullWidth
-            onClick={() => setIsFilterSheetOpen(false)}
-          >
-            Show {searchResult?.total_found || 0} Properties
-          </Button>
-        </div>
       </BottomSheet>
     </div>
   );
