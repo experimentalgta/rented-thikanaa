@@ -33,6 +33,7 @@ import { propertyRepository } from '../services/propertyRepository';
 import { PropertyCard } from '../components/property/PropertyCard';
 import { Button } from '../components/common/Button';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
+import { sanitizeIndianPhoneNumber, isValidIndianPhoneNumber } from '../utils/phoneUtils';
 
 interface UserDashboardProps {
   initialTab?: string;
@@ -111,9 +112,58 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     }
   };
 
+  // Quick Phone Setup States (available directly on mobile & desktop overview/listings)
+  const [quickPhoneInput, setQuickPhoneInput] = useState('');
+  const [quickPhoneError, setQuickPhoneError] = useState<string | null>(null);
+  const [isSavingQuickPhone, setIsSavingQuickPhone] = useState(false);
+  const [quickPhoneSuccess, setQuickPhoneSuccess] = useState(false);
+
+  // Property-specific phone modal state
+  const [phoneModalProperty, setPhoneModalProperty] = useState<Property | null>(null);
+  const [propertyPhoneInput, setPropertyPhoneInput] = useState('');
+  const [propertyPhoneError, setPropertyPhoneError] = useState<string | null>(null);
+  const [isSavingPropertyPhone, setIsSavingPropertyPhone] = useState(false);
+
+  const handleSaveQuickPhone = async () => {
+    if (!currentUser) return;
+    const sanitized = sanitizeIndianPhoneNumber(quickPhoneInput);
+    if (!sanitized) {
+      setQuickPhoneError('Please enter a valid 10-digit Indian mobile number (e.g. 9876543210)');
+      return;
+    }
+
+    setIsSavingQuickPhone(true);
+    setQuickPhoneError(null);
+    try {
+      await updateProfile({
+        phone_number: sanitized,
+        phone_privacy: 'public',
+      });
+      setPhoneNumber(sanitized);
+      setQuickPhoneInput('');
+      setQuickPhoneSuccess(true);
+      setTimeout(() => setQuickPhoneSuccess(false), 4000);
+      await loadMemberProperties();
+    } catch (e) {
+      console.error('Failed to update phone number:', e);
+      setQuickPhoneError('Could not save phone number. Please try again.');
+    } finally {
+      setIsSavingQuickPhone(false);
+    }
+  };
+
   const handleTogglePhoneVisibility = async (property: Property) => {
     if (!currentUser) return;
     const newShowPhone = !property.show_phone_number;
+
+    // If enabling phone visibility, but neither the listing nor the profile has a phone number:
+    if (newShowPhone && !property.phone_number && !currentUser.phone_number) {
+      setPhoneModalProperty(property);
+      setPropertyPhoneInput('');
+      setPropertyPhoneError(null);
+      return;
+    }
+
     try {
       await propertyRepository.updateProperty(
         property.id,
@@ -128,6 +178,42 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     } catch (e) {
       console.error('Failed to toggle phone visibility:', e);
       alert('Could not update phone visibility. Please try again.');
+    }
+  };
+
+  const handleSavePropertyPhone = async () => {
+    if (!currentUser || !phoneModalProperty) return;
+    const sanitized = sanitizeIndianPhoneNumber(propertyPhoneInput);
+    if (!sanitized) {
+      setPropertyPhoneError('Please enter a valid 10-digit Indian mobile number (e.g. 9876543210)');
+      return;
+    }
+
+    setIsSavingPropertyPhone(true);
+    setPropertyPhoneError(null);
+    try {
+      await propertyRepository.updateProperty(
+        phoneModalProperty.id,
+        {
+          show_phone_number: true,
+          phone_privacy: 'public',
+          phone_number: sanitized,
+          owner_phone: sanitized,
+        },
+        currentUser.id
+      );
+      await updateProfile({
+        phone_number: sanitized,
+        phone_privacy: 'public',
+      });
+      setPhoneNumber(sanitized);
+      await loadMemberProperties();
+      setPhoneModalProperty(null);
+    } catch (e) {
+      console.error('Failed to update property phone:', e);
+      setPropertyPhoneError('Failed to save phone number. Please try again.');
+    } finally {
+      setIsSavingPropertyPhone(false);
     }
   };
 
@@ -155,13 +241,15 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   };
 
   const handleSaveProfile = () => {
+    const cleanPhone = sanitizeIndianPhoneNumber(phoneNumber) || phoneNumber.replace(/\D/g, '').slice(0, 10);
     updateProfile({
       full_name: fullName,
-      phone_number: phoneNumber,
+      phone_number: cleanPhone,
       occupation,
       college,
       budget: Number(budget),
     });
+    setPhoneNumber(cleanPhone);
     setProfileSuccessMsg(true);
     setTimeout(() => setProfileSuccessMsg(false), 3000);
   };
@@ -209,6 +297,32 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
               <ShieldCheck className="w-3.5 h-3.5 text-[#F59E0B]" />
               <span>Verified Identity • All-India Member Account</span>
             </div>
+
+            {/* Direct Mobile Contact Quick Status */}
+            {currentUser.phone_number ? (
+              <div className="flex items-center gap-2 text-xs text-slate-700 font-semibold mt-2">
+                <span className="flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px]">
+                  <Phone className="w-3 h-3 text-emerald-600" />
+                  +91 {currentUser.phone_number}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('settings')}
+                  className="text-[11px] text-amber-600 hover:text-amber-700 hover:underline font-bold cursor-pointer"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className="inline-flex items-center gap-1.5 mt-2 px-3 py-1 rounded-full bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer shadow-2xs"
+              >
+                <Phone className="w-3.5 h-3.5 text-amber-600" />
+                <span>+ Add Mobile Number for Renters</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -255,7 +369,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           { id: 'messages', label: 'Messages' },
           { id: 'roommates', label: 'Roommate Matches' },
           { id: 'privacy', label: 'Location & Privacy' },
-          { id: 'settings', label: 'Settings' },
+          { id: 'settings', label: 'Settings & Contact' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -274,6 +388,65 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       {/* TAB 1: OVERVIEW / MY ACTIVITY */}
       {activeTab === 'overview' && (
         <div className="space-y-8">
+          {/* Direct Mobile Setup Alert Banner (Prominent on Mobile) */}
+          {!currentUser.phone_number && (
+            <div className="p-4 sm:p-5 rounded-3xl bg-amber-50 border border-amber-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Phone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-amber-950 font-heading">
+                    Add Your Contact Number
+                  </h3>
+                  <p className="text-xs text-amber-800/90 mt-0.5 leading-relaxed">
+                    Students and renters can only reach you via Call &amp; WhatsApp once your 10-digit mobile number is saved.
+                  </p>
+                </div>
+              </div>
+              <div className="w-full md:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex items-center rounded-xl border border-amber-300 bg-white overflow-hidden shadow-2xs">
+                  <span className="px-2.5 py-2 bg-amber-100/60 text-xs font-bold text-amber-900 border-r border-amber-200 select-none">
+                    +91
+                  </span>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={quickPhoneInput}
+                    onChange={(e) => {
+                      setQuickPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10));
+                      setQuickPhoneError(null);
+                    }}
+                    placeholder="10-digit mobile"
+                    className="px-2.5 py-2 text-xs text-slate-900 focus:outline-none w-36"
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={isSavingQuickPhone}
+                  onClick={handleSaveQuickPhone}
+                  className="font-bold whitespace-nowrap"
+                >
+                  {isSavingQuickPhone ? 'Saving...' : 'Save Number'}
+                </Button>
+              </div>
+              {quickPhoneError && (
+                <div className="w-full text-xs text-rose-600 font-semibold flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  {quickPhoneError}
+                </div>
+              )}
+            </div>
+          )}
+
+          {quickPhoneSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-2xl flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              Phone number saved successfully! Call and WhatsApp buttons are now enabled on your listings.
+            </div>
+          )}
+
           {/* Quick Metrics */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-5 rounded-2xl bg-white border border-[#E5E7EB] shadow-xs">
@@ -467,6 +640,58 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       {/* TAB 2: MY LISTINGS */}
       {activeTab === 'listings' && (
         <div className="space-y-6">
+          {/* Direct Mobile Setup Alert Banner on Listings Tab */}
+          {!currentUser.phone_number && (
+            <div className="p-4 sm:p-5 rounded-3xl bg-amber-50 border border-amber-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Phone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-amber-950 font-heading">
+                    Add Your Contact Number
+                  </h3>
+                  <p className="text-xs text-amber-800/90 mt-0.5 leading-relaxed">
+                    Students and renters can only reach you via Call &amp; WhatsApp once your 10-digit mobile number is saved.
+                  </p>
+                </div>
+              </div>
+              <div className="w-full md:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex items-center rounded-xl border border-amber-300 bg-white overflow-hidden shadow-2xs">
+                  <span className="px-2.5 py-2 bg-amber-100/60 text-xs font-bold text-amber-900 border-r border-amber-200 select-none">
+                    +91
+                  </span>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={quickPhoneInput}
+                    onChange={(e) => {
+                      setQuickPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10));
+                      setQuickPhoneError(null);
+                    }}
+                    placeholder="10-digit mobile"
+                    className="px-2.5 py-2 text-xs text-slate-900 focus:outline-none w-36"
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={isSavingQuickPhone}
+                  onClick={handleSaveQuickPhone}
+                  className="font-bold whitespace-nowrap"
+                >
+                  {isSavingQuickPhone ? 'Saving...' : 'Save Number'}
+                </Button>
+              </div>
+              {quickPhoneError && (
+                <div className="w-full text-xs text-rose-600 font-semibold flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  {quickPhoneError}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-bold text-[#101828] font-heading">
@@ -574,6 +799,23 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                     <Share2 className="w-3.5 h-3.5" />
                     <span>{copiedPropertyId === prop.id ? 'Copied!' : 'Share'}</span>
                   </button>
+
+                  {/* If no phone number is attached to listing or profile, show direct Add Phone button */}
+                  {!prop.phone_number && !currentUser?.phone_number && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneModalProperty(prop);
+                        setPropertyPhoneInput('');
+                        setPropertyPhoneError(null);
+                      }}
+                      className="text-xs px-2.5 py-1.5 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                      title="Add Contact Number to Listing"
+                    >
+                      <Phone className="w-3.5 h-3.5 text-white" />
+                      <span>+ Add Number</span>
+                    </button>
+                  )}
 
                   {/* Phone Visibility Quick Toggle */}
                   <button
@@ -919,14 +1161,24 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
             <div>
               <label className="block font-bold text-[#667085] uppercase tracking-wider mb-1">
-                Verified Phone Number
+                Verified Phone Number (10-Digit Mobile)
               </label>
-              <input
-                type="text"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                className="w-full p-3 rounded-xl border border-[#E5E7EB] text-xs focus:outline-none focus:border-[#F59E0B]"
-              />
+              <div className="flex items-center rounded-xl border border-[#E5E7EB] bg-white overflow-hidden focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-[#F59E0B]/20 transition-all">
+                <span className="px-3 py-2.5 bg-slate-100 text-xs font-bold text-slate-700 border-r border-[#E5E7EB] select-none">
+                  +91
+                </span>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="Enter 10-digit mobile number"
+                  className="w-full p-2.5 text-xs text-[#101828] focus:outline-none"
+                />
+              </div>
+              <p className="text-[11px] text-[#64748B] mt-1">
+                Used for direct Call and WhatsApp buttons on your published listings when visibility is enabled.
+              </p>
             </div>
 
             <div>
@@ -990,6 +1242,88 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             >
               Sign Out
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Property-Specific Phone Setup Modal */}
+      {phoneModalProperty && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Phone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 font-heading">
+                    Add Mobile Number
+                  </h3>
+                  <p className="text-xs text-slate-500 truncate max-w-[200px] sm:max-w-[250px]">
+                    For: <strong className="text-slate-800">{phoneModalProperty.title}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhoneModalProperty(null)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Enter your 10-digit Indian mobile number to enable direct <strong>Call Host</strong> and <strong>WhatsApp</strong> buttons for interested students and tenants.
+            </p>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Mobile Number
+              </label>
+              <div className="flex items-center rounded-xl border border-slate-300 bg-white overflow-hidden focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all">
+                <span className="px-3 py-2.5 bg-slate-100 text-xs font-bold text-slate-700 border-r border-slate-300 select-none">
+                  +91
+                </span>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={propertyPhoneInput}
+                  onChange={(e) => {
+                    setPropertyPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10));
+                    setPropertyPhoneError(null);
+                  }}
+                  placeholder="Enter 10-digit mobile number"
+                  className="flex-1 px-3 py-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+              {propertyPhoneError && (
+                <p className="text-xs text-rose-600 font-semibold mt-1.5 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  {propertyPhoneError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPhoneModalProperty(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={isSavingPropertyPhone}
+                onClick={handleSavePropertyPhone}
+                className="font-bold"
+              >
+                {isSavingPropertyPhone ? 'Saving...' : 'Save & Enable Phone'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

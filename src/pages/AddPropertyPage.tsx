@@ -634,6 +634,69 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                 className="w-full p-3 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-xs"
               />
             </div>
+
+            {/* Host Direct Contact Information in Step 1 */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-[#F59E0B]" />
+                  <span className="font-bold text-xs text-[#101828] uppercase tracking-wider">
+                    Host Mobile Number (For Call &amp; WhatsApp)
+                  </span>
+                </div>
+                <span className="text-[10px] font-semibold text-[#667085]">
+                  Recommended
+                </span>
+              </div>
+              <p className="text-[11px] text-[#667085]">
+                Enter your 10-digit mobile number so students can contact you directly. You can choose whether to display it publicly or keep it private.
+              </p>
+
+              <div>
+                <div className="flex items-center rounded-xl border border-[#CBD5E1] bg-white overflow-hidden focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-[#F59E0B]/20 transition-all">
+                  <span className="px-3 py-2.5 bg-slate-100 text-xs font-bold text-slate-700 border-r border-[#CBD5E1] select-none">
+                    +91
+                  </span>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={formData.phone_number || ''}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      updateField('phone_number', val);
+                      updateField('owner_phone', val);
+                    }}
+                    placeholder="Enter 10-digit mobile number (e.g. 9876543210)"
+                    className="flex-1 px-3 py-2.5 text-xs text-[#101828] placeholder:text-[#94A3B8] focus:outline-none"
+                  />
+                </div>
+                {formData.phone_number && !isValidIndianPhoneNumber(formData.phone_number) && (
+                  <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    Please enter a valid 10-digit Indian mobile number.
+                  </p>
+                )}
+              </div>
+
+              {/* Show Phone Toggle in Step 1 */}
+              <div className="pt-1">
+                <label className="flex items-start gap-2 text-xs text-[#101828] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.show_phone_number}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      updateField('show_phone_number', checked);
+                      updateField('phone_privacy', checked ? 'public' : 'private');
+                    }}
+                    className="mt-0.5 w-4 h-4 rounded text-[#F59E0B] focus:ring-[#F59E0B]"
+                  />
+                  <span>
+                    <strong>Make phone number visible on listing:</strong> Renters can directly call and message you on WhatsApp.
+                  </span>
+                </label>
+              </div>
+            </div>
           </div>
         )}
 

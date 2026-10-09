@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Check,
   Ban,
+  Edit3,
 } from 'lucide-react';
 import { Property } from '../types';
 import { useSaved } from '../context/SavedContext';
@@ -25,7 +26,11 @@ import { PropertyMap } from '../components/map/PropertyMap';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { getThumbnailUrl } from '../utils/imageProcessor';
-import { getPhoneContactDetails } from '../utils/phoneUtils';
+import {
+  getPhoneContactDetails,
+  sanitizeIndianPhoneNumber,
+  isValidIndianPhoneNumber,
+} from '../utils/phoneUtils';
 import { propertyRepository } from '../services/propertyRepository';
 
 interface PropertyDetailPageProps {
@@ -41,7 +46,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 
   const { isSaved, toggleSave } = useSaved();
   const { openChatForListing } = useChat();
-  const { currentUser, requireAuth } = useAuth();
+  const { currentUser, requireAuth, updateProfile } = useAuth();
 
   // Sync state if initialProperty prop changes
   React.useEffect(() => {
@@ -112,6 +117,76 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
     isPhoneAuthorized && rawPhone
       ? getPhoneContactDetails(rawPhone, property.title)
       : null;
+
+  // Owner in-place contact editing states
+  const [isOwnerEditingPhone, setIsOwnerEditingPhone] = useState(false);
+  const [ownerPhoneInput, setOwnerPhoneInput] = useState('');
+  const [ownerPhoneVisible, setOwnerPhoneVisible] = useState(
+    property.show_phone_number ?? (property.phone_privacy === 'public')
+  );
+  const [isSavingOwnerPhone, setIsSavingOwnerPhone] = useState(false);
+  const [ownerPhoneSuccessMsg, setOwnerPhoneSuccessMsg] = useState<string | null>(null);
+  const [ownerPhoneError, setOwnerPhoneError] = useState<string | null>(null);
+
+  // Sync owner phone input state with property or user profile
+  React.useEffect(() => {
+    if (rawPhone) {
+      setOwnerPhoneInput(sanitizeIndianPhoneNumber(rawPhone) || rawPhone);
+    }
+    setOwnerPhoneVisible(property.show_phone_number ?? (property.phone_privacy === 'public'));
+  }, [rawPhone, property.show_phone_number, property.phone_privacy]);
+
+  const handleSaveOwnerPhone = async () => {
+    if (!ownerPhoneInput.trim()) {
+      setOwnerPhoneError('Please enter a 10-digit mobile number.');
+      return;
+    }
+    const sanitized = sanitizeIndianPhoneNumber(ownerPhoneInput);
+    if (!sanitized) {
+      setOwnerPhoneError('Please enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).');
+      return;
+    }
+
+    setIsSavingOwnerPhone(true);
+    setOwnerPhoneError(null);
+    try {
+      const updates = {
+        phone_number: sanitized,
+        owner_phone: sanitized,
+        show_phone_number: ownerPhoneVisible,
+        phone_privacy: (ownerPhoneVisible ? 'public' : 'private') as 'public' | 'private',
+      };
+
+      if (currentUser?.id) {
+        await propertyRepository.updateProperty(property.id, updates, currentUser.id);
+        await updateProfile({
+          phone_number: sanitized,
+          phone_privacy: updates.phone_privacy,
+        });
+      }
+
+      setProperty((prev) => ({
+        ...prev,
+        ...updates,
+        phone_number: sanitized,
+        lister_phone: sanitized,
+        owner_phone: sanitized,
+      }));
+
+      setIsOwnerEditingPhone(false);
+      setOwnerPhoneSuccessMsg(
+        ownerPhoneVisible
+          ? 'Contact number saved! Call & WhatsApp buttons are now enabled.'
+          : 'Contact number saved and kept private.'
+      );
+      setTimeout(() => setOwnerPhoneSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error('Failed to update contact number:', err);
+      setOwnerPhoneError('Failed to save contact number. Please try again.');
+    } finally {
+      setIsSavingOwnerPhone(false);
+    }
+  };
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -531,60 +606,202 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
             </div>
 
             {/* Direct Phone & Contact Details Box */}
-            <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-[#101828]">Direct Contact:</span>
-                {contactDetails ? (
-                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Phone Visible
+            {isOwner ? (
+              <div className="p-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] space-y-3 shadow-xs">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#92400E] flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-amber-600" />
+                    Host Contact &amp; Visibility:
                   </span>
-                ) : isPhoneAuthorized ? (
-                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <Phone className="w-2.5 h-2.5 text-amber-600" /> Phone Enabled
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                    Host Mode
                   </span>
+                </div>
+
+                {!isOwnerEditingPhone && rawPhone ? (
+                  <div className="space-y-2.5">
+                    <div className="p-3 bg-white rounded-xl border border-amber-200 flex items-center justify-between gap-3 shadow-2xs">
+                      <div>
+                        <span className="text-[10px] text-[#64748B] font-medium block">
+                          Your Active Mobile Number:
+                        </span>
+                        <span className="text-sm font-bold text-[#101828] font-heading flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                          {contactDetails ? contactDetails.formattedDisplay : rawPhone}
+                        </span>
+                        <span className="text-[10px] font-medium text-emerald-700 mt-0.5 block">
+                          {property.show_phone_number || property.phone_privacy === 'public'
+                            ? '✓ Phone Visible (Call & WhatsApp active for renters)'
+                            : '🔒 Phone Private (In-App chat only)'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOwnerPhoneInput(rawPhone ? (sanitizeIndianPhoneNumber(rawPhone) || rawPhone) : '');
+                          setIsOwnerEditingPhone(true);
+                        }}
+                        className="px-2.5 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors cursor-pointer shrink-0"
+                      >
+                        Change
+                      </button>
+                    </div>
+
+                    {/* Host Preview of Buttons Renters See */}
+                    {(property.show_phone_number || property.phone_privacy === 'public') && contactDetails && (
+                      <div className="pt-1">
+                        <span className="text-[10px] font-bold text-[#92400E] uppercase tracking-wider block mb-1">
+                          Preview (What renters see):
+                        </span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white opacity-90 shadow-xs select-none">
+                            <Phone className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Call Host</span>
+                          </div>
+                          <div className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#25D366] text-white opacity-90 shadow-xs select-none">
+                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                            </svg>
+                            <span>WhatsApp</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <Lock className="w-2.5 h-2.5 text-slate-500" /> Private
-                  </span>
+                  <div className="space-y-3 bg-white p-3.5 rounded-xl border border-amber-200">
+                    <div>
+                      <div className="text-xs font-bold text-[#101828]">
+                        {rawPhone ? 'Update Mobile Number' : 'Enter Your Mobile Number'}
+                      </div>
+                      <p className="text-[11px] text-[#64748B] mt-0.5">
+                        Provide your 10-digit mobile number so renters can call or message you on WhatsApp.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#475569] mb-1">
+                        Mobile Number
+                      </label>
+                      <div className="flex items-center rounded-xl border border-[#CBD5E1] bg-white overflow-hidden focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-[#F59E0B]/20 transition-all">
+                        <span className="px-3 py-2 bg-slate-100 text-xs font-bold text-slate-700 border-r border-[#CBD5E1] select-none">
+                          +91
+                        </span>
+                        <input
+                          type="tel"
+                          maxLength={10}
+                          value={ownerPhoneInput}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                            setOwnerPhoneInput(val);
+                            setOwnerPhoneError(null);
+                          }}
+                          placeholder="10-digit mobile number"
+                          className="flex-1 px-3 py-2 text-xs text-[#101828] placeholder:text-[#94A3B8] focus:outline-none"
+                        />
+                      </div>
+                      {ownerPhoneError && (
+                        <p className="text-[10px] text-rose-600 font-semibold mt-1 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          {ownerPhoneError}
+                        </p>
+                      )}
+                    </div>
+
+                    <label className="flex items-start gap-2 text-xs text-[#101828] cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        checked={ownerPhoneVisible}
+                        onChange={(e) => setOwnerPhoneVisible(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded text-[#F59E0B] focus:ring-[#F59E0B]"
+                      />
+                      <span className="leading-tight">
+                        <strong>Make visible on listing:</strong> Allow renters to contact me directly via Call &amp; WhatsApp.
+                      </span>
+                    </label>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={isSavingOwnerPhone}
+                        onClick={handleSaveOwnerPhone}
+                        className="font-bold flex-1"
+                      >
+                        {isSavingOwnerPhone ? 'Saving...' : 'Save Contact Number'}
+                      </Button>
+                      {rawPhone && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setIsOwnerEditingPhone(false);
+                            setOwnerPhoneError(null);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+
+                    {ownerPhoneSuccessMsg && (
+                      <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold rounded-lg flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        {ownerPhoneSuccessMsg}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#101828]">Direct Contact:</span>
+                  {contactDetails ? (
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Phone Visible
+                    </span>
+                  ) : isPhoneAuthorized ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Phone className="w-2.5 h-2.5 text-amber-600" /> Phone Enabled
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5 text-slate-500" /> Private
+                    </span>
+                  )}
+                </div>
 
-              {contactDetails ? (
-                <div className="p-3 bg-white rounded-xl border border-emerald-200 text-center shadow-xs">
-                  <div className="text-[11px] text-[#64748B] font-medium mb-1">
-                    Host Direct Phone:
+                {contactDetails ? (
+                  <div className="p-3 bg-white rounded-xl border border-emerald-200 text-center shadow-xs">
+                    <div className="text-[11px] text-[#64748B] font-medium mb-1">
+                      Host Direct Phone:
+                    </div>
+                    <a
+                      href={contactDetails.telUrl}
+                      className="text-base font-bold text-[#101828] hover:text-[#D97706] hover:underline flex items-center justify-center gap-1.5 font-heading"
+                    >
+                      <Phone className="w-4 h-4 text-emerald-600" />
+                      <span>{contactDetails.formattedDisplay}</span>
+                    </a>
                   </div>
-                  <a
-                    href={contactDetails.telUrl}
-                    className="text-base font-bold text-[#101828] hover:text-[#D97706] hover:underline flex items-center justify-center gap-1.5 font-heading"
-                  >
-                    <Phone className="w-4 h-4 text-emerald-600" />
-                    <span>{contactDetails.formattedDisplay}</span>
-                  </a>
-                </div>
-              ) : isOwner && isPhoneAuthorized ? (
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-center text-xs text-amber-800 leading-relaxed">
-                  <Phone className="w-4 h-4 text-amber-600 mx-auto mb-1" />
-                  <span>
-                    Phone visibility is enabled for this listing, but no mobile number is on file. Please update your phone number in Settings to display Call and WhatsApp buttons.
-                  </span>
-                </div>
-              ) : isPhoneAuthorized ? (
-                <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
-                  <MessageSquare className="w-4 h-4 text-amber-500 mx-auto mb-1" />
-                  <span>
-                    Direct contact via in-app message. You can message the host directly below.
-                  </span>
-                </div>
-              ) : (
-                <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
-                  <Lock className="w-4 h-4 text-slate-400 mx-auto mb-1" />
-                  <span>
-                    Phone number is kept private by host. You can message them directly below.
-                  </span>
-                </div>
-              )}
-            </div>
+                ) : isPhoneAuthorized ? (
+                  <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
+                    <MessageSquare className="w-4 h-4 text-amber-500 mx-auto mb-1" />
+                    <span>
+                      Direct contact via in-app message. You can message the host directly below.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
+                    <Lock className="w-4 h-4 text-slate-400 mx-auto mb-1" />
+                    <span>
+                      Phone number is kept private by host. You can message them directly below.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Primary Action Buttons */}
             <div className="space-y-2.5 pt-2">
