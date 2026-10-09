@@ -41,7 +41,7 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   onSuccess,
   onCancel,
 }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, updateProfile } = useAuth();
   const { userLocation } = useLocation();
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 7;
@@ -60,10 +60,10 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       gender_preference: 'male',
       room_type: 'double',
       country: 'India',
-      state: 'Uttar Pradesh',
-      state_code: 'UP',
-      city: 'Prayagraj',
-      city_slug: 'prayagraj',
+      state: '',
+      state_code: '',
+      city: '',
+      city_slug: '',
       locality: '',
       locality_slug: '',
       sub_locality: '',
@@ -98,6 +98,17 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       description: '',
     };
   });
+
+  // Automatically sync profile phone into formData once auth loads if form field is empty
+  useEffect(() => {
+    if (currentUser?.phone_number && !formData.phone_number) {
+      setFormData((prev) => ({
+        ...prev,
+        phone_number: currentUser.phone_number,
+        owner_phone: currentUser.phone_number,
+      }));
+    }
+  }, [currentUser?.phone_number]);
 
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -409,6 +420,19 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
     try {
       const isPublic = Boolean(formData.show_phone_number);
       const cleanPhone = formData.phone_number?.trim() || null;
+
+      // Proactively persist phone to profile if user provided one
+      if (cleanPhone && cleanPhone !== currentUser.phone_number) {
+        try {
+          await updateProfile({
+            phone_number: cleanPhone,
+            phone_privacy: isPublic ? 'public' : 'private',
+          });
+        } catch (profileErr) {
+          console.warn('Could not update profile with phone:', profileErr);
+        }
+      }
+
       const created = await propertyRepository.createProperty({
         ...formData,
         phone_number: cleanPhone,

@@ -97,7 +97,12 @@ export class PropertyRepository implements IPropertyRepository {
       cloned.is_exact_location_shared = true;
       cloned.exact_address_shared = property.address;
 
-      const activePhone = cloned.phone_number || cloned.owner_phone || cloned.lister_phone || null;
+      const activePhone =
+        cloned.phone_number ||
+        cloned.owner_phone ||
+        cloned.lister_phone ||
+        (cloned as any).owner?.phone_number ||
+        null;
       cloned.phone_number = activePhone;
       cloned.owner_phone = activePhone;
       cloned.lister_phone = activePhone;
@@ -141,7 +146,12 @@ export class PropertyRepository implements IPropertyRepository {
         };
       }
     } else {
-      const activePhone = cloned.phone_number || cloned.owner_phone || cloned.lister_phone || null;
+      const activePhone =
+        cloned.phone_number ||
+        cloned.owner_phone ||
+        cloned.lister_phone ||
+        (cloned as any).owner?.phone_number ||
+        null;
       cloned.phone_number = activePhone;
       cloned.owner_phone = activePhone;
       cloned.lister_phone = activePhone;
@@ -208,8 +218,13 @@ export class PropertyRepository implements IPropertyRepository {
     const isPublicPhone =
       row.show_phone_number !== undefined && row.show_phone_number !== null
         ? Boolean(row.show_phone_number)
-        : row.phone_privacy === 'public';
-    const rawPhone = row.phone_number || row.owner?.phone_number || row.owner_phone || null;
+        : (row.phone_privacy === 'public' || row.owner?.phone_privacy === 'public');
+    const rawPhone =
+      row.phone_number ||
+      row.owner?.phone_number ||
+      row.owner_phone ||
+      row.lister_phone ||
+      null;
 
     return {
       id: row.id,
@@ -386,13 +401,33 @@ export class PropertyRepository implements IPropertyRepository {
 
     if (!rpcError && Array.isArray(rpcRows)) {
       rawListings = rpcRows;
+      const ownerIds = Array.from(new Set(rawListings.map((r: any) => r.owner_id).filter(Boolean)));
+      if (ownerIds.length > 0) {
+        try {
+          const { data: ownerProfiles } = await client
+            .from('profiles')
+            .select('id, full_name, avatar_url, phone_number, phone_privacy')
+            .in('id', ownerIds);
+          if (ownerProfiles) {
+            const profileMap = new Map(ownerProfiles.map((p: any) => [p.id, p]));
+            rawListings.forEach((row: any) => {
+              if (row.owner_id && profileMap.has(row.owner_id) && !row.owner) {
+                row.owner = profileMap.get(row.owner_id);
+              }
+            });
+          }
+        } catch (e) {
+          console.warn('Could not batch-fetch owner profiles for search RPC:', e);
+        }
+      }
     } else {
       // Fallback to direct table query if RPC is unavailable
       let query = client
         .from('properties')
         .select(`
           *,
-          property_images (id, url, caption, is_cover, sort_order)
+          property_images (id, url, caption, is_cover, sort_order),
+          owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
         `)
         .in('availability_status', ['available', 'limited']);
 
@@ -547,7 +582,8 @@ export class PropertyRepository implements IPropertyRepository {
       .from('properties')
       .select(`
         *,
-        property_images (id, url, caption, is_cover, sort_order)
+        property_images (id, url, caption, is_cover, sort_order),
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
       `)
       .in('availability_status', ['available', 'limited'])
       .order('created_at', { ascending: false })
@@ -580,7 +616,7 @@ export class PropertyRepository implements IPropertyRepository {
       .select(`
         *,
         property_images (id, url, caption, is_cover, sort_order),
-        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number)
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
       `)
       .eq('id', id)
       .maybeSingle();
@@ -647,6 +683,22 @@ export class PropertyRepository implements IPropertyRepository {
       insertData.created_by = data.created_by || data.owner_id;
     }
 
+    // Proactively persist phone number to owner's profile so it is available across all joins
+    if (data.owner_id && directPhone) {
+      try {
+        await client
+          .from('profiles')
+          .update({
+            phone_number: directPhone,
+            phone_privacy: isPublicPhone ? 'public' : 'private',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', data.owner_id);
+      } catch (err) {
+        console.warn('Could not sync profile phone in createProperty:', err);
+      }
+    }
+
     let created;
     let createError;
 
@@ -655,7 +707,8 @@ export class PropertyRepository implements IPropertyRepository {
       .insert(insertData)
       .select(`
         *,
-        property_images (id, url, caption, is_cover, sort_order)
+        property_images (id, url, caption, is_cover, sort_order),
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
       `)
       .single();
 
@@ -668,7 +721,8 @@ export class PropertyRepository implements IPropertyRepository {
         .insert(fallbackData)
         .select(`
           *,
-          property_images (id, url, caption, is_cover, sort_order)
+          property_images (id, url, caption, is_cover, sort_order),
+          owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
         `)
         .single();
       created = retryRes.data;
@@ -695,7 +749,24 @@ export class PropertyRepository implements IPropertyRepository {
       await client.from('property_images').insert(imageInserts);
     }
 
-    return this.mapRowToProperty(created);
+    // Ensure the returned property instance retains the newly entered phone number & visibility
+    const createdWithPhone = {
+      ...created,
+      phone_number: directPhone,
+      owner_phone: directPhone,
+      lister_phone: directPhone,
+      show_phone_number: isPublicPhone,
+      phone_privacy: isPublicPhone ? 'public' : 'private',
+      owner: created.owner || {
+        id: data.owner_id,
+        full_name: data.owner_name,
+        avatar_url: data.lister_avatar,
+        phone_number: directPhone,
+        phone_privacy: isPublicPhone ? 'public' : 'private',
+      },
+    };
+
+    return this.mapRowToProperty(createdWithPhone);
   }
 
   async updateProperty(
@@ -705,10 +776,13 @@ export class PropertyRepository implements IPropertyRepository {
   ): Promise<Property> {
     const client = this.assertSupabaseClient();
 
+    let targetOwnerId: string | undefined;
+
     if (requestingUserId) {
       const current = await this.getPropertyById(id, requestingUserId);
       if (!current) throw new Error(`Property ${id} not found`);
 
+      targetOwnerId = current.owner_id || current.created_by;
       const isOwner = current.owner_id === requestingUserId || current.created_by === requestingUserId;
       const isAdmin = serverAuth.isSuperAdmin(requestingUserId);
       if (!isOwner && !isAdmin) {
@@ -740,13 +814,36 @@ export class PropertyRepository implements IPropertyRepository {
       updatePayload.phone_number = updates.phone_number;
     }
 
+    const isPublicUpdate =
+      updates.show_phone_number !== undefined
+        ? Boolean(updates.show_phone_number)
+        : (updates.phone_privacy ? updates.phone_privacy === 'public' : undefined);
+
+    // Sync phone number to owner profile if provided
+    const targetUserId = requestingUserId || updates.owner_id || targetOwnerId;
+    if (targetUserId && updates.phone_number) {
+      try {
+        await client
+          .from('profiles')
+          .update({
+            phone_number: updates.phone_number,
+            ...(isPublicUpdate !== undefined ? { phone_privacy: isPublicUpdate ? 'public' : 'private' } : {}),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', targetUserId);
+      } catch (err) {
+        console.warn('Could not sync profile phone in updateProperty:', err);
+      }
+    }
+
     const res = await client
       .from('properties')
       .update(updatePayload)
       .eq('id', id)
       .select(`
         *,
-        property_images (id, url, caption, is_cover, sort_order)
+        property_images (id, url, caption, is_cover, sort_order),
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
       `)
       .single();
 
@@ -763,7 +860,8 @@ export class PropertyRepository implements IPropertyRepository {
         .eq('id', id)
         .select(`
           *,
-          property_images (id, url, caption, is_cover, sort_order)
+          property_images (id, url, caption, is_cover, sort_order),
+          owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
         `)
         .single();
       data = retry.data;
@@ -774,7 +872,17 @@ export class PropertyRepository implements IPropertyRepository {
       throw new Error(`Failed to update property in Supabase: ${updateError?.message}`);
     }
 
-    return this.mapRowToProperty(data);
+    const mapped = this.mapRowToProperty(data);
+    if (updates.phone_number !== undefined) {
+      mapped.phone_number = updates.phone_number;
+      mapped.owner_phone = updates.phone_number;
+      mapped.lister_phone = updates.phone_number;
+    }
+    if (updates.show_phone_number !== undefined) {
+      mapped.show_phone_number = Boolean(updates.show_phone_number);
+      mapped.phone_privacy = updates.show_phone_number ? 'public' : 'private';
+    }
+    return mapped;
   }
 
   async deleteProperty(id: string, requestingUserId?: string): Promise<boolean> {
@@ -805,7 +913,8 @@ export class PropertyRepository implements IPropertyRepository {
       .from('properties')
       .select(`
         *,
-        property_images (id, url, caption, is_cover, sort_order)
+        property_images (id, url, caption, is_cover, sort_order),
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
       `)
       .or(`owner_id.eq.${ownerId},created_by.eq.${ownerId}`);
 
@@ -829,7 +938,8 @@ export class PropertyRepository implements IPropertyRepository {
       .from('properties')
       .select(`
         *,
-        property_images (id, url, caption, is_cover, sort_order)
+        property_images (id, url, caption, is_cover, sort_order),
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
       `)
       .order('created_at', { ascending: false });
 

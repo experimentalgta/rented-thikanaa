@@ -26,6 +26,7 @@ import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { getThumbnailUrl } from '../utils/imageProcessor';
 import { getPhoneContactDetails } from '../utils/phoneUtils';
+import { propertyRepository } from '../services/propertyRepository';
 
 interface PropertyDetailPageProps {
   property: Property;
@@ -33,12 +34,35 @@ interface PropertyDetailPageProps {
 }
 
 export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
-  property,
+  property: initialProperty,
   onBack,
 }) => {
+  const [property, setProperty] = useState<Property>(initialProperty);
+
   const { isSaved, toggleSave } = useSaved();
   const { openChatForListing } = useChat();
   const { currentUser, requireAuth } = useAuth();
+
+  // Sync state if initialProperty prop changes
+  React.useEffect(() => {
+    setProperty(initialProperty);
+  }, [initialProperty]);
+
+  // Proactively fetch latest property details (including owner contact data)
+  React.useEffect(() => {
+    if (initialProperty?.id) {
+      propertyRepository
+        .getPropertyById(initialProperty.id, currentUser?.id)
+        .then((fresh) => {
+          if (fresh) {
+            setProperty(fresh);
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not refresh property details:', err);
+        });
+    }
+  }, [initialProperty?.id, currentUser?.id]);
 
   const isOwner = Boolean(
     currentUser?.id &&
@@ -78,8 +102,16 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
     property.phone_privacy === 'public' ||
     isOwner;
 
-  const rawPhone = property.phone_number || property.lister_phone || property.owner_phone;
-  const contactDetails = isPhoneAuthorized ? getPhoneContactDetails(rawPhone, property.title) : null;
+  const rawPhone =
+    property.phone_number ||
+    property.lister_phone ||
+    property.owner_phone ||
+    (isOwner ? currentUser?.phone_number : null);
+
+  const contactDetails =
+    isPhoneAuthorized && rawPhone
+      ? getPhoneContactDetails(rawPhone, property.title)
+      : null;
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -506,6 +538,10 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                   <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Phone Visible
                   </span>
+                ) : isPhoneAuthorized ? (
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Phone className="w-2.5 h-2.5 text-amber-600" /> Phone Enabled
+                  </span>
                 ) : (
                   <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Lock className="w-2.5 h-2.5 text-slate-500" /> Private
@@ -526,11 +562,25 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                     <span>{contactDetails.formattedDisplay}</span>
                   </a>
                 </div>
+              ) : isOwner && isPhoneAuthorized ? (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-center text-xs text-amber-800 leading-relaxed">
+                  <Phone className="w-4 h-4 text-amber-600 mx-auto mb-1" />
+                  <span>
+                    Phone visibility is enabled for this listing, but no mobile number is on file. Please update your phone number in Settings to display Call and WhatsApp buttons.
+                  </span>
+                </div>
+              ) : isPhoneAuthorized ? (
+                <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
+                  <MessageSquare className="w-4 h-4 text-amber-500 mx-auto mb-1" />
+                  <span>
+                    Direct contact via in-app message. You can message the host directly below.
+                  </span>
+                </div>
               ) : (
                 <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
                   <Lock className="w-4 h-4 text-slate-400 mx-auto mb-1" />
                   <span>
-                    Phone number is kept private by the host. You can message them directly below.
+                    Phone number is kept private by host. You can message them directly below.
                   </span>
                 </div>
               )}

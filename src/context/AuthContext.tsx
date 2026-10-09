@@ -288,6 +288,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .update({
             full_name: updated.full_name,
             phone_number: updated.phone_number,
+            phone_privacy: updated.phone_privacy,
             college: updated.college,
             occupation: updated.occupation,
             bio: updated.bio,

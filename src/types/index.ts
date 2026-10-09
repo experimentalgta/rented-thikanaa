@@ -12,6 +12,7 @@ export interface User {
   role?: UserRole | string; // Backwards compatibility
   avatar_url?: string;
   phone_number?: string;
+  phone_privacy?: PhonePrivacy;
   is_verified: boolean;
   is_blocked?: boolean;
   created_at: string;

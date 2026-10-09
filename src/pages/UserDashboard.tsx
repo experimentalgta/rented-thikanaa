@@ -111,6 +111,26 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     }
   };
 
+  const handleTogglePhoneVisibility = async (property: Property) => {
+    if (!currentUser) return;
+    const newShowPhone = !property.show_phone_number;
+    try {
+      await propertyRepository.updateProperty(
+        property.id,
+        {
+          show_phone_number: newShowPhone,
+          phone_privacy: newShowPhone ? 'public' : 'private',
+          phone_number: currentUser.phone_number || property.phone_number,
+        },
+        currentUser.id
+      );
+      await loadMemberProperties();
+    } catch (e) {
+      console.error('Failed to toggle phone visibility:', e);
+      alert('Could not update phone visibility. Please try again.');
+    }
+  };
+
   const handleDeleteListing = async (propertyId: string, title: string) => {
     if (!currentUser) return;
     const confirmed = window.confirm(`Are you sure you want to delete the listing "${title}"? This action cannot be undone.`);
@@ -553,6 +573,29 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                   >
                     <Share2 className="w-3.5 h-3.5" />
                     <span>{copiedPropertyId === prop.id ? 'Copied!' : 'Share'}</span>
+                  </button>
+
+                  {/* Phone Visibility Quick Toggle */}
+                  <button
+                    onClick={() => handleTogglePhoneVisibility(prop)}
+                    className={`text-xs px-2.5 py-1.5 rounded-xl font-semibold border transition-colors flex items-center gap-1 cursor-pointer ${
+                      prop.show_phone_number
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                        : 'bg-[#F8FAFC] border-[#E2E8F0] text-[#475569] hover:bg-slate-100'
+                    }`}
+                    title={prop.show_phone_number ? 'Phone is Visible. Click to make Private.' : 'Phone is Private. Click to show Call & WhatsApp.'}
+                  >
+                    {prop.show_phone_number ? (
+                      <>
+                        <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Phone Visible</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Phone Private</span>
+                      </>
+                    )}
                   </button>
 
                   {/* Availability Toggles */}

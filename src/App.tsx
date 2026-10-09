@@ -25,7 +25,7 @@ import { propertyRepository } from './services/propertyRepository';
 import { roommateRepository } from './services/roommateRepository';
 
 const MainApp: React.FC = () => {
-  const { isAuthenticated, requireAuth, isSuperAdmin, consumePendingAction } = useAuth();
+  const { isAuthenticated, requireAuth, isSuperAdmin, consumePendingAction, currentUser } = useAuth();
   const { openChatForListing, openChatWithContext, isChatModalOpen, setIsChatModalOpen } = useChat();
 
   const isChatModalOpenRef = useRef(isChatModalOpen);
@@ -398,6 +398,20 @@ const MainApp: React.FC = () => {
 
   const handleSelectProperty = useCallback((property: Property) => {
     setSelectedProperty(property);
+
+    // Refresh complete property details with owner contact details in background
+    if (property?.id) {
+      propertyRepository
+        .getPropertyById(property.id, currentUser?.id)
+        .then((fresh) => {
+          if (fresh) {
+            setSelectedProperty(fresh);
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not refresh selected property details:', err);
+        });
+    }
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
