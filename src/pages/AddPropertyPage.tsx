@@ -130,6 +130,13 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   const [searchLocationQuery, setSearchLocationQuery] = useState('');
   const [isManualAreaEntry, setIsManualAreaEntry] = useState(false);
   const [pincodePostOffices, setPincodePostOffices] = useState<string[]>([]);
+  const [showMapPreview, setShowMapPreview] = useState(false);
+  const [showLivePreview, setShowLivePreview] = useState(false);
+
+  const handleStepChange = (newStep: number) => {
+    setCurrentStep(newStep);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const applyDetectedLocation = (loc: {
     country?: string;
@@ -393,24 +400,24 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
   const handlePublish = async () => {
     if (!formData.locality?.trim()) {
       alert("Please enter your property's area/locality before publishing.");
-      setCurrentStep(2);
+      handleStepChange(2);
       return;
     }
     if (!formData.city?.trim()) {
       alert("Please select a city before publishing.");
-      setCurrentStep(2);
+      handleStepChange(2);
       return;
     }
     if (!formData.state?.trim()) {
       alert("Please select a state before publishing.");
-      setCurrentStep(2);
+      handleStepChange(2);
       return;
     }
 
     if (formData.show_phone_number) {
       if (!formData.phone_number || !isValidIndianPhoneNumber(formData.phone_number)) {
         alert("Please enter a valid 10-digit Indian mobile number to enable direct phone calls and WhatsApp, or choose 'No (Keep Private)'.");
-        setCurrentStep(7);
+        handleStepChange(7);
         return;
       }
     }
@@ -513,235 +520,178 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
       fallbackDescription="Please sign in with Google to create and publish verified rooms, PGs, or student flats."
       pendingAction={{ type: 'add-property' }}
     >
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-28">
-      {/* Wizard Progress Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <span className="text-xs font-bold text-[#F59E0B] uppercase tracking-wider">
-              Step {currentStep} of {totalSteps}
-            </span>
-            <h1 className="text-xl sm:text-2xl font-bold text-[#101828] font-heading">
-              {currentStep === 1 && 'Basic Property Information'}
-              {currentStep === 2 && `Location & Landmarks in ${formData.city || 'Prayagraj'}`}
-              {currentStep === 3 && 'Rent, Deposit & Billing'}
-              {currentStep === 4 && 'Room Specs & Amenities'}
-              {currentStep === 5 && 'House & Gate Rules'}
-              {currentStep === 6 && 'Photos & Cover Image'}
-              {currentStep === 7 && 'Direct Contact, Phone Privacy & Live Preview'}
-            </h1>
+      <div className="max-w-4xl mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-28">
+        {/* Wizard Progress Header */}
+        <div className="mb-4 sm:mb-5">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <span className="text-[10px] font-bold text-[#F59E0B] uppercase tracking-wider bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                Step {currentStep} of {totalSteps}
+              </span>
+              <h1 className="text-base sm:text-xl font-bold text-[#101828] font-heading mt-1">
+                {currentStep === 1 && 'Basic Property Information'}
+                {currentStep === 2 && `Location & Landmarks in ${formData.city || 'Prayagraj'}`}
+                {currentStep === 3 && 'Rent, Deposit & Billing'}
+                {currentStep === 4 && 'Room Specs & Amenities'}
+                {currentStep === 5 && 'House & Gate Rules'}
+                {currentStep === 6 && 'Photos & Cover Image'}
+                {currentStep === 7 && 'Direct Contact, Phone Privacy & Publish'}
+              </h1>
+            </div>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="text-xs text-[#667085] hover:text-[#101828] font-semibold py-1 px-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition cursor-pointer"
+            >
+              Cancel
+            </button>
           </div>
-          <button
-            onClick={onCancel}
-            className="text-xs text-[#667085] hover:text-[#101828] font-medium"
-          >
-            Cancel
-          </button>
+
+          {/* Progress Bar */}
+          <div className="w-full bg-[#E2E8F0] h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-[#101828] h-full transition-all duration-300"
+              style={{ width: `${(currentStep / totalSteps) * 100}%` }}
+            />
+          </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="w-full bg-[#E2E8F0] h-2 rounded-full overflow-hidden">
-          <div
-            className="bg-[#101828] h-full transition-all duration-300"
-            style={{ width: `${(currentStep / totalSteps) * 100}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Main Step Container */}
-      <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 sm:p-8 shadow-xs space-y-6">
-        {/* STEP 1: BASICS */}
-        {currentStep === 1 && (
-          <div className="space-y-5">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                Property Name / Title *
-              </label>
-              <input
-                type="text"
-                value={formData.title}
-                onChange={(e) => updateField('title', e.target.value)}
-                placeholder="e.g. Sunrise Student PG & Co-Living or Modern 2BHK Flat"
-                className="w-full p-3.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-2">
-                Property Type
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                {[
-                  { id: 'pg', label: 'Student PG', desc: 'Managed PG with facilities' },
-                  { id: 'hostel', label: 'Student Hostel', desc: 'Hostel with mess & warden' },
-                  { id: 'room', label: 'Independent Room', desc: 'Single room in family house' },
-                  { id: 'flat', label: 'Flat / 1BHK / 2BHK', desc: 'Apartment for sharing' },
-                  { id: 'shared_room', label: 'Shared Room', desc: 'Bed sharing in room' },
-                  { id: 'homestay', label: 'Homestay', desc: 'Living with local family' },
-                ].map((type) => (
-                  <button
-                    key={type.id}
-                    type="button"
-                    onClick={() => updateField('property_type', type.id)}
-                    className={`p-3 rounded-2xl text-left border transition-all ${
-                      formData.property_type === type.id
-                        ? 'border-[#101828] bg-[#F8FAFC]'
-                        : 'border-[#E5E7EB] hover:bg-[#FAFAFA]'
-                    }`}
-                  >
-                    <div className="font-bold text-xs text-[#111827]">{type.label}</div>
-                    <div className="text-[10px] text-[#667085] mt-0.5">{type.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-2">
-                Gender Suitability
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {[
-                  { id: 'male', label: 'Boys Only' },
-                  { id: 'female', label: 'Girls Only' },
-                  { id: 'any', label: 'Co-ed / Any' },
-                ].map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => updateField('gender_preference', g.id)}
-                    className={`p-3 rounded-xl text-center text-xs font-bold border transition-all ${
-                      formData.gender_preference === g.id
-                        ? 'bg-[#101828] text-white border-[#101828]'
-                        : 'bg-[#F8FAFC] text-[#475569] border-[#E5E7EB]'
-                    }`}
-                  >
-                    {g.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                Short Description for Students
-              </label>
-              <textarea
-                rows={3}
-                value={formData.description}
-                onChange={(e) => updateField('description', e.target.value)}
-                placeholder="Mention highlights: silent study atmosphere, nearby library, healthy mess food, distance to Allahabad University..."
-                className="w-full p-3 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-xs"
-              />
-            </div>
-
-            {/* Host Direct Contact Information in Step 1 */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-[#F59E0B]" />
-                  <span className="font-bold text-xs text-[#101828] uppercase tracking-wider">
-                    Host Mobile Number (For Call &amp; WhatsApp)
-                  </span>
+        {/* Main Step Container */}
+        <div className="bg-white rounded-2xl sm:rounded-3xl border border-[#E5E7EB] p-4 sm:p-6 shadow-xs space-y-4">
+          {/* STEP 1: BASICS */}
+          {currentStep === 1 && (
+            <div className="space-y-3.5 sm:space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085]">
+                    Property Name / Title *
+                  </label>
+                  <span className="text-[10px] text-[#94A3B8]">Required</span>
                 </div>
-                <span className="text-[10px] font-semibold text-[#667085]">
-                  Recommended
-                </span>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => updateField('title', e.target.value)}
+                  placeholder="e.g. Sunrise Student PG & Co-Living or Modern 2BHK Flat"
+                  className="w-full p-2.5 sm:p-3 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-xs sm:text-sm font-medium"
+                />
               </div>
-              <p className="text-[11px] text-[#667085]">
-                Enter your 10-digit mobile number so students can contact you directly. You can choose whether to display it publicly or keep it private.
-              </p>
 
               <div>
-                <div className="flex items-center rounded-xl border border-[#CBD5E1] bg-white overflow-hidden focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-[#F59E0B]/20 transition-all">
-                  <span className="px-3 py-2.5 bg-slate-100 text-xs font-bold text-slate-700 border-r border-[#CBD5E1] select-none">
-                    +91
-                  </span>
-                  <input
-                    type="tel"
-                    maxLength={10}
-                    value={formData.phone_number || ''}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      updateField('phone_number', val);
-                      updateField('owner_phone', val);
-                    }}
-                    placeholder="Enter 10-digit mobile number (e.g. 9876543210)"
-                    className="flex-1 px-3 py-2.5 text-xs text-[#101828] placeholder:text-[#94A3B8] focus:outline-none"
-                  />
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1.5">
+                  Property Type
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                  {[
+                    { id: 'pg', label: 'Student PG' },
+                    { id: 'hostel', label: 'Hostel' },
+                    { id: 'room', label: 'Single Room' },
+                    { id: 'flat', label: 'Flat / 2BHK' },
+                    { id: 'shared_room', label: 'Shared Bed' },
+                    { id: 'homestay', label: 'Homestay' },
+                  ].map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => updateField('property_type', type.id)}
+                      className={`py-2 px-1.5 sm:px-2 rounded-xl text-center border font-bold text-xs transition-all cursor-pointer ${
+                        formData.property_type === type.id
+                          ? 'border-[#101828] bg-[#101828] text-white shadow-xs'
+                          : 'border-[#E5E7EB] bg-[#F8FAFC] text-[#334155] hover:bg-slate-100'
+                      }`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
                 </div>
-                {formData.phone_number && !isValidIndianPhoneNumber(formData.phone_number) && (
-                  <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3 shrink-0" />
-                    Please enter a valid 10-digit Indian mobile number.
-                  </p>
-                )}
               </div>
 
-              {/* Show Phone Toggle in Step 1 */}
-              <div className="pt-1">
-                <label className="flex items-start gap-2 text-xs text-[#101828] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.show_phone_number}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      updateField('show_phone_number', checked);
-                      updateField('phone_privacy', checked ? 'public' : 'private');
-                    }}
-                    className="mt-0.5 w-4 h-4 rounded text-[#F59E0B] focus:ring-[#F59E0B]"
-                  />
-                  <span>
-                    <strong>Make phone number visible on listing:</strong> Renters can directly call and message you on WhatsApp.
-                  </span>
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1.5">
+                  Gender Suitability
                 </label>
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                  {[
+                    { id: 'male', label: 'Boys Only' },
+                    { id: 'female', label: 'Girls Only' },
+                    { id: 'any', label: 'Co-ed / Any' },
+                  ].map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => updateField('gender_preference', g.id)}
+                      className={`py-2 px-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer ${
+                        formData.gender_preference === g.id
+                          ? 'bg-[#101828] text-white border-[#101828] shadow-xs'
+                          : 'bg-[#F8FAFC] text-[#475569] border-[#E5E7EB] hover:bg-slate-100'
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1">
+                  Short Description for Students (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={formData.description}
+                  onChange={(e) => updateField('description', e.target.value)}
+                  placeholder="Mention highlights: silent study atmosphere, nearby library, healthy mess food, distance to campus..."
+                  className="w-full p-2.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-xs resize-none"
+                />
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* STEP 2: LOCATION */}
-        {currentStep === 2 && (
-          <div className="space-y-6">
-            {/* Quick GPS Capture Card (High Accuracy Satellite Lock) */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#101828] to-[#1E293B] text-white p-4 sm:p-5 shadow-sm border border-white/10">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#F59E0B]/20 text-[#F59E0B] flex items-center justify-center shrink-0 border border-[#F59E0B]/30">
-                    <Navigation className="w-5 h-5" />
+          {/* STEP 2: LOCATION */}
+          {currentStep === 2 && (
+            <div className="space-y-3.5 sm:space-y-4">
+              {/* Quick GPS Capture Card (Compact 1-Tap Bar) */}
+              <div className="p-2.5 sm:p-3 rounded-xl bg-slate-900 text-white flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shadow-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-[#F59E0B]/20 text-[#F59E0B] flex items-center justify-center shrink-0 border border-[#F59E0B]/30">
+                    <Navigation className="w-3.5 h-3.5" />
                   </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-white font-heading flex items-center gap-2">
-                      <span>Standing at the property right now?</span>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#F59E0B] bg-[#F59E0B]/15 px-2 py-0.5 rounded-full border border-[#F59E0B]/20">
-                        Doorstep GPS
-                      </span>
-                    </h4>
-                    <p className="text-xs text-[#94A3B8] mt-0.5 max-w-md">
-                      Locks onto high-accuracy GPS satellites to attach exact doorstep coordinates and auto-detect your neighborhood.
+                  <div className="min-w-0">
+                    <p className="font-bold text-xs text-white truncate">
+                      {isGpsDetecting ? (gpsStatusMessage || 'Detecting satellite GPS...') : 'Standing at the property now?'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      Auto-locks exact doorstep walking coordinates
                     </p>
                   </div>
                 </div>
 
-                <Button
+                <button
                   type="button"
-                  variant="primary"
-                  size="md"
                   onClick={handleUseCurrentGps}
                   disabled={isGpsDetecting}
-                  loading={isGpsDetecting}
-                  icon={isGpsDetecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
-                  className="shrink-0 font-bold text-xs w-full sm:w-auto"
+                  className="px-3 py-1.5 bg-[#F59E0B] hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs shrink-0 cursor-pointer transition active:scale-95 flex items-center justify-center gap-1.5"
                 >
-                  {isGpsDetecting ? (gpsStatusMessage || '📍 Detecting your location...') : '📍 Detect My Location'}
-                </Button>
+                  {isGpsDetecting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Detecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span>📍 Auto-fill GPS</span>
+                    </>
+                  )}
+                </button>
               </div>
 
+              {/* Ready GPS from LocationProvider banner if available */}
               {userLocation.latitude && userLocation.source === 'gps' && (!formData.latitude || formData.latitude !== userLocation.latitude) && (
-                <div className="mt-3 p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2 text-amber-200">
-                    <Navigation className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>Phone location ready: <strong className="text-white">{userLocation.locality || userLocation.city}</strong></span>
+                <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-1.5 text-amber-900 min-w-0">
+                    <Navigation className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span className="truncate">Ready GPS: <strong className="text-slate-900">{userLocation.locality || userLocation.city}</strong></span>
                   </div>
                   <button
                     type="button"
@@ -758,549 +708,470 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                       latitude: userLocation.latitude,
                       longitude: userLocation.longitude,
                     })}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shrink-0 transition text-xs cursor-pointer shadow-sm"
+                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shrink-0 transition text-[11px] cursor-pointer shadow-xs"
                   >
                     1-Tap Auto-fill
                   </button>
                 </div>
               )}
 
-              {isLocationDetected && formData.latitude && formData.longitude && !isGpsDetecting && (
-                <div className="mt-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span className="font-bold">✓ Location detected:</span>
-                    <span className="text-white font-semibold">
-                      {[formData.locality, formData.city, formData.state].filter(Boolean).join(', ')}{formData.pincode ? ` - ${formData.pincode}` : ''}
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-emerald-300 font-medium">
-                    {accuracyLabel}
-                  </span>
-                </div>
-              )}
-
               {gpsError && (
-                <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                   <span>{gpsError}</span>
                 </div>
               )}
-            </div>
 
-            {/* City & Predefined / Manual Area Selection */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                  City *
-                </label>
-                <select
-                  value={formData.city_slug || 'prayagraj'}
-                  onChange={(e) => {
-                    const selectedSlug = e.target.value;
-                    const cfg = getCityConfig(selectedSlug);
-                    if (cfg) {
-                      updateField('city', cfg.name);
-                      updateField('city_slug', cfg.slug);
-                      updateField('state', cfg.state);
-                      updateField('state_code', cfg.stateCode);
-                      // Only set default coordinates if GPS was not already captured
-                      if (!formData.latitude || !formData.longitude) {
-                        updateField('latitude', cfg.defaultLat);
-                        updateField('longitude', cfg.defaultLon);
-                      }
-                      // Reset locality if not in the new city's area list
-                      const newCityAreas = cfg.areas;
-                      if (!newCityAreas.includes(formData.locality || '')) {
-                        updateField('locality', '');
-                        updateField('locality_slug', '');
-                      }
-                    }
-                  }}
-                  className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
-                >
-                  {getSupportedCities().map((c) => (
-                    <option key={c.id} value={c.slug}>
-                      {c.name} ({c.state})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-[#667085]">
-                    Area / Locality *
+              {/* City & Predefined / Manual Area Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1">
+                    City *
                   </label>
-                  <div className="flex items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={handleUseCurrentGps}
-                      disabled={isGpsDetecting}
-                      className="text-xs text-amber-600 hover:text-amber-700 font-semibold cursor-pointer active:scale-98 transition flex items-center gap-1"
-                      title="Auto-detect current GPS location"
-                    >
-                      <Navigation className="w-3 h-3 text-amber-500" />
-                      <span>{isGpsDetecting ? 'Detecting...' : '📍 Detect My Location'}</span>
-                    </button>
+                  <select
+                    value={formData.city_slug || 'prayagraj'}
+                    onChange={(e) => {
+                      const selectedSlug = e.target.value;
+                      const cfg = getCityConfig(selectedSlug);
+                      if (cfg) {
+                        updateField('city', cfg.name);
+                        updateField('city_slug', cfg.slug);
+                        updateField('state', cfg.state);
+                        updateField('state_code', cfg.stateCode);
+                        if (!formData.latitude || !formData.longitude) {
+                          updateField('latitude', cfg.defaultLat);
+                          updateField('longitude', cfg.defaultLon);
+                        }
+                        const newCityAreas = cfg.areas;
+                        if (!newCityAreas.includes(formData.locality || '')) {
+                          updateField('locality', '');
+                          updateField('locality_slug', '');
+                        }
+                      }
+                    }}
+                    className="w-full p-2.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-xs sm:text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
+                  >
+                    {getSupportedCities().map((c) => (
+                      <option key={c.id} value={c.slug}>
+                        {c.name} ({c.state})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085]">
+                      Area / Locality *
+                    </label>
                     {!isManualAreaEntry ? (
                       <button
                         type="button"
                         onClick={() => setIsManualAreaEntry(true)}
-                        className="text-xs text-[#D97706] hover:underline font-semibold cursor-pointer"
+                        className="text-[11px] text-[#D97706] hover:underline font-semibold cursor-pointer"
                       >
-                        ✏️ Enter manually
+                        ✏️ Type manually
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => setIsManualAreaEntry(false)}
-                        className="text-xs text-[#2563EB] hover:underline font-semibold cursor-pointer"
+                        className="text-[11px] text-[#2563EB] hover:underline font-semibold cursor-pointer"
                       >
                         ← Choose from list
                       </button>
                     )}
                   </div>
-                </div>
 
-                {!isManualAreaEntry ? (
-                  <select
-                    value={formData.locality || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '__manual__') {
-                        setIsManualAreaEntry(true);
-                        return;
-                      }
-                      updateField('locality', val);
-                      updateField('locality_slug', val.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
-                      // Preserve exact GPS latitude/longitude if already captured!
-                      if (!formData.latitude || !formData.longitude) {
-                        const cfg = getCityConfig(formData.city_slug);
-                        if (cfg) {
-                          updateField('latitude', cfg.defaultLat);
-                          updateField('longitude', cfg.defaultLon);
+                  {!isManualAreaEntry ? (
+                    <select
+                      value={formData.locality || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__manual__') {
+                          setIsManualAreaEntry(true);
+                          return;
                         }
-                      }
-                    }}
-                    className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
-                  >
-                    <option value="">-- Select Area in {formData.city || 'Prayagraj'} --</option>
-                    {getCityAreas(formData.city_slug || 'prayagraj').map((area) => (
-                      <option key={area} value={area}>
-                        {area}
-                      </option>
-                    ))}
-                    <option value="__manual__">+ Can't find your area? Type manually...</option>
-                  </select>
-                ) : (
+                        updateField('locality', val);
+                        updateField('locality_slug', val.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                        if (!formData.latitude || !formData.longitude) {
+                          const cfg = getCityConfig(formData.city_slug);
+                          if (cfg) {
+                            updateField('latitude', cfg.defaultLat);
+                            updateField('longitude', cfg.defaultLon);
+                          }
+                        }
+                      }}
+                      className="w-full p-2.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-xs sm:text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
+                    >
+                      <option value="">-- Select Area in {formData.city || 'Prayagraj'} --</option>
+                      {getCityAreas(formData.city_slug || 'prayagraj').map((area) => (
+                        <option key={area} value={area}>
+                          {area}
+                        </option>
+                      ))}
+                      <option value="__manual__">+ Can't find area? Type manually...</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.locality || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateField('locality', val);
+                        updateField('locality_slug', val.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                        if (!formData.latitude || !formData.longitude) {
+                          const cfg = getCityConfig(formData.city_slug);
+                          if (cfg) {
+                            updateField('latitude', cfg.defaultLat);
+                            updateField('longitude', cfg.defaultLon);
+                          }
+                        }
+                      }}
+                      placeholder="e.g. Civil Lines, Katra, Salori..."
+                      className="w-full p-2.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-xs sm:text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Landmarks & Pincode in 2-col inline */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1">
+                    Nearest Landmark (Optional)
+                  </label>
                   <input
                     type="text"
-                    value={formData.locality || ''}
+                    value={formData.landmark || ''}
+                    onChange={(e) => updateField('landmark', e.target.value)}
+                    placeholder="e.g. Near University Library, Metro Gate"
+                    className="w-full p-2.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-xs sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1">
+                    Pincode
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.pincode || ''}
                     onChange={(e) => {
                       const val = e.target.value;
-                      updateField('locality', val);
-                      updateField('locality_slug', val.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
-                      // Preserve exact GPS latitude/longitude if already captured!
-                      if (!formData.latitude || !formData.longitude) {
-                        const cfg = getCityConfig(formData.city_slug);
-                        if (cfg) {
-                          updateField('latitude', cfg.defaultLat);
-                          updateField('longitude', cfg.defaultLon);
-                        }
+                      updateField('pincode', val);
+                      const clean = val.trim();
+                      if (clean.length === 6 && /^[1-9][0-9]{5}$/.test(clean)) {
+                        lookupIndianPincode(clean).then((res) => {
+                          setPincodePostOffices(res?.postOffices || []);
+                        });
+                      } else if (pincodePostOffices.length > 0) {
+                        setPincodePostOffices([]);
                       }
                     }}
-                    placeholder="e.g. Civil Lines, Katra, Salori, Indira Nagar..."
-                    className="w-full p-3.5 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] text-sm text-[#111827] focus:outline-none focus:border-[#F59E0B]"
+                    placeholder="e.g. 211002"
+                    className="w-full p-2.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-xs sm:text-sm"
                   />
-                )}
-                <p className="text-[11px] text-[#94A3B8] mt-1">
-                  {!isManualAreaEntry
-                    ? `Showing ${getCityAreas(formData.city_slug || 'prayagraj').length} verified localities in ${formData.city || 'Prayagraj'}.`
-                    : 'Type your exact mohalla, colony, or sector name.'}
-                </p>
-              </div>
-            </div>
-
-            {/* Optional Search Bar for Quick Locality Autocomplete across India */}
-            <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl space-y-2">
-              <label className="block text-xs font-bold text-[#101828]">
-                Or Search Any Indian Area / Locality:
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchLocationQuery}
-                  onChange={(e) => {
-                    setSearchLocationQuery(e.target.value);
-                  }}
-                  placeholder="e.g. Civil Lines, Katra, Koramangala, Mukherjee Nagar..."
-                  className="w-full p-3 rounded-xl border border-[#E5E7EB] bg-white text-sm focus:outline-none focus:border-[#F59E0B]"
-                />
-                {searchLocationQuery.trim().length >= 2 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto p-1">
-                    {locationRepository.searchLocations(searchLocationQuery).slice(0, 6).map((res) => (
-                      <button
-                        key={res.id}
-                        type="button"
-                        onClick={() => {
-                          updateField('state', res.state);
-                          updateField('state_code', res.state_code);
-                          updateField('city', res.city);
-                          updateField('city_slug', res.city_slug);
-                          updateField('locality', res.locality || res.city);
-                          updateField('locality_slug', res.locality_slug);
-                          updateField('latitude', res.latitude);
-                          updateField('longitude', res.longitude);
-                          setAccuracyLabel('Location selected from search');
-                          setSearchLocationQuery('');
-                        }}
-                        className="w-full text-left p-2 rounded-lg hover:bg-[#F8FAFC] text-xs font-semibold text-[#101828] flex items-center justify-between cursor-pointer"
-                      >
-                        <span>{res.title}</span>
-                        <span className="text-[10px] text-[#64748B]">{res.subtitle}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Landmarks and Pincode */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                  Nearest College, Metro, or Coaching Landmark (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={formData.landmark || ''}
-                  onChange={(e) => updateField('landmark', e.target.value)}
-                  placeholder="e.g. 200m to Metro Gate, Behind Allahabad University Library"
-                  className="w-full p-3.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                  Pincode
-                </label>
-                <input
-                  type="text"
-                  value={formData.pincode || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    updateField('pincode', val);
-                    const clean = val.trim();
-                    if (clean.length === 6 && /^[1-9][0-9]{5}$/.test(clean)) {
-                      lookupIndianPincode(clean).then((res) => {
-                        setPincodePostOffices(res?.postOffices || []);
-                      });
-                    } else if (pincodePostOffices.length > 0) {
-                      setPincodePostOffices([]);
-                    }
-                  }}
-                  placeholder="e.g. 211002, 229001, 110092"
-                  className="w-full p-3.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-sm"
-                />
-                {pincodePostOffices.length > 0 && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] text-[#64748B] font-semibold">📮 Suggested Areas:</span>
-                    {pincodePostOffices.map((po) => (
-                      <button
-                        key={po}
-                        type="button"
-                        onClick={() => {
-                          updateField('locality', po);
-                          updateField('locality_slug', po.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
-                        }}
-                        className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-md font-medium cursor-pointer transition-colors"
-                      >
-                        + {po}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Address Line */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                Address Line / House / Building Number
-              </label>
-              <input
-                type="text"
-                value={formData.address}
-                onChange={(e) => updateField('address', e.target.value)}
-                placeholder="e.g. Flat 302, Building A, Main Road"
-                className="w-full p-3.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-sm"
-              />
-              <p className="text-[11px] text-[#94A3B8] mt-1">
-                🔒 Note: Exact house address and doorstep coordinates are kept private. The public map shows only approximate neighborhood pins.
-              </p>
-            </div>
-
-            {/* Doorstep GPS Precision Badge & Interactive Location Map */}
-            {formData.latitude && formData.longitude && (
-              <div className="space-y-3">
-                <div className="border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 flex items-center justify-between gap-3 shadow-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <CheckCircle2 className="w-5 h-5" />
+                  {pincodePostOffices.length > 0 && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] text-[#64748B]">Areas:</span>
+                      {pincodePostOffices.slice(0, 3).map((po) => (
+                        <button
+                          key={po}
+                          type="button"
+                          onClick={() => {
+                            updateField('locality', po);
+                            updateField('locality_slug', po.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                          }}
+                          className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-1.5 py-0.5 rounded font-medium cursor-pointer"
+                        >
+                          + {po}
+                        </button>
+                      ))}
                     </div>
-                    <div>
-                      <h5 className="font-bold text-xs text-emerald-950">GPS Coordinates Attached</h5>
-                      <p className="text-[11px] text-emerald-800">
-                        Latitude: {Number(formData.latitude).toFixed(6)}, Longitude: {Number(formData.longitude).toFixed(6)} • Doorstep precision walking distance active
-                      </p>
-                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Address Line */}
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1">
+                  House / Building Address Line
+                </label>
+                <input
+                  type="text"
+                  value={formData.address}
+                  onChange={(e) => updateField('address', e.target.value)}
+                  placeholder="e.g. Flat 302, Building A, Main Road (Kept private for safety)"
+                  className="w-full p-2.5 rounded-xl border border-[#E5E7EB] focus:outline-none focus:border-[#F59E0B] text-xs sm:text-sm"
+                />
+              </div>
+
+              {/* Doorstep GPS Map Preview Toggle */}
+              {formData.latitude && formData.longitude && (
+                <div className="space-y-2 pt-1 border-t border-slate-100">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-emerald-700 font-bold flex items-center gap-1.5 text-[11px]">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>GPS Attached ({Number(formData.latitude).toFixed(4)}, {Number(formData.longitude).toFixed(4)})</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowMapPreview(!showMapPreview)}
+                      className="text-[#D97706] hover:text-[#B45309] font-bold cursor-pointer text-[11px] hover:underline"
+                    >
+                      {showMapPreview ? '▲ Hide Map Pin' : '▼ Adjust Map Pin'}
+                    </button>
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
-                    Doorstep Precision Active
-                  </span>
+
+                  {showMapPreview && (
+                    <div className="rounded-xl overflow-hidden border border-[#E5E7EB] shadow-xs">
+                      <LocationPickerMap
+                        latitude={Number(formData.latitude)}
+                        longitude={Number(formData.longitude)}
+                        localityName={formData.locality || formData.city}
+                        onLocationChange={(newLat, newLng) => {
+                          updateField('latitude', newLat);
+                          updateField('longitude', newLng);
+                        }}
+                        className="h-44 sm:h-56 w-full"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 3: PRICING */}
+          {currentStep === 3 && (
+            <div className="space-y-3.5 sm:space-y-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1">
+                    Monthly Rent (₹) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 sm:top-3 text-[#94A3B8] font-bold text-xs sm:text-sm">₹</span>
+                    <input
+                      type="number"
+                      value={formData.rent}
+                      onChange={(e) => updateField('rent', Number(e.target.value))}
+                      className="w-full p-2.5 sm:p-3 pl-7 rounded-xl border border-[#E5E7EB] text-xs sm:text-sm font-bold text-[#101828]"
+                    />
+                  </div>
                 </div>
 
-                <div className="rounded-2xl overflow-hidden border border-[#E5E7EB] shadow-xs">
-                  <LocationPickerMap
-                    latitude={Number(formData.latitude)}
-                    longitude={Number(formData.longitude)}
-                    localityName={formData.locality || formData.city}
-                    onLocationChange={(newLat, newLng) => {
-                      updateField('latitude', newLat);
-                      updateField('longitude', newLng);
-                    }}
-                    className="h-64 w-full"
-                  />
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1">
+                    Security Deposit (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 sm:top-3 text-[#94A3B8] font-bold text-xs sm:text-sm">₹</span>
+                    <input
+                      type="number"
+                      value={formData.security_deposit}
+                      onChange={(e) => updateField('security_deposit', Number(e.target.value))}
+                      className="w-full p-2.5 sm:p-3 pl-7 rounded-xl border border-[#E5E7EB] text-xs sm:text-sm font-bold text-[#101828]"
+                    />
+                  </div>
                 </div>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* STEP 3: PRICING */}
-        {currentStep === 3 && (
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                  Monthly Rent (₹) *
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1.5">
+                  Electricity Billing Rule
                 </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-3.5 text-[#94A3B8] font-bold">₹</span>
-                  <input
-                    type="number"
-                    value={formData.rent}
-                    onChange={(e) => updateField('rent', Number(e.target.value))}
-                    className="w-full p-3.5 pl-8 rounded-xl border border-[#E5E7EB] text-sm font-bold text-[#101828]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                  Security Deposit (₹)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-3.5 text-[#94A3B8] font-bold">₹</span>
-                  <input
-                    type="number"
-                    value={formData.security_deposit}
-                    onChange={(e) => updateField('security_deposit', Number(e.target.value))}
-                    className="w-full p-3.5 pl-8 rounded-xl border border-[#E5E7EB] text-sm font-bold text-[#101828]"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-2">
-                Electricity Billing Rule
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => updateField('electricity_billing', 'included')}
-                  className={`p-3.5 rounded-xl border text-left text-xs ${
-                    formData.electricity_billing === 'included'
-                      ? 'border-[#101828] bg-[#F8FAFC] font-bold'
-                      : 'border-[#E5E7EB]'
-                  }`}
-                >
-                  <div>Electricity Included</div>
-                  <div className="text-[10px] text-[#667085]">No extra bill charges</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateField('electricity_billing', 'per_meter')}
-                  className={`p-3.5 rounded-xl border text-left text-xs ${
-                    formData.electricity_billing === 'per_meter'
-                      ? 'border-[#101828] bg-[#F8FAFC] font-bold'
-                      : 'border-[#E5E7EB]'
-                  }`}
-                >
-                  <div>As per Sub-Meter</div>
-                  <div className="text-[10px] text-[#667085]">₹9/unit charged monthly</div>
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-1">
-                Number of Available Vacancies / Beds
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={formData.vacancies}
-                onChange={(e) => updateField('vacancies', Number(e.target.value))}
-                className="w-full p-3.5 rounded-xl border border-[#E5E7EB] text-sm font-medium"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* STEP 4: ROOM SPECS & AMENITIES */}
-        {currentStep === 4 && (
-          <div className="space-y-6">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-2">
-                Room Sharing Type
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {[
-                  { id: 'single', label: 'Single Occupancy' },
-                  { id: 'double', label: 'Double Sharing' },
-                  { id: 'triple', label: 'Triple Sharing' },
-                ].map((r) => (
+                <div className="grid grid-cols-2 gap-2 sm:gap-3">
                   <button
-                    key={r.id}
                     type="button"
-                    onClick={() => updateField('room_type', r.id)}
-                    className={`p-3 rounded-xl border text-xs font-bold text-center ${
-                      formData.room_type === r.id
-                        ? 'bg-[#101828] text-white border-[#101828]'
-                        : 'bg-[#F8FAFC] border-[#E5E7EB] text-[#475569]'
+                    onClick={() => updateField('electricity_billing', 'included')}
+                    className={`p-2.5 sm:p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                      formData.electricity_billing === 'included'
+                        ? 'border-[#101828] bg-[#F8FAFC] font-bold'
+                        : 'border-[#E5E7EB] hover:bg-slate-50'
                     }`}
                   >
-                    {r.label}
+                    <div className="text-xs font-bold text-[#101828]">Electricity Included</div>
+                    <div className="text-[10px] text-[#667085]">No extra bill charges</div>
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => updateField('electricity_billing', 'per_meter')}
+                    className={`p-2.5 sm:p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                      formData.electricity_billing === 'per_meter'
+                        ? 'border-[#101828] bg-[#F8FAFC] font-bold'
+                        : 'border-[#E5E7EB] hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-xs font-bold text-[#101828]">Sub-Meter Bill</div>
+                    <div className="text-[10px] text-[#667085]">₹9/unit charged monthly</div>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-2">
-                Attached Bathroom?
-              </label>
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => updateField('attached_bathroom', true)}
-                  className={`p-3 rounded-xl border text-xs font-bold text-center ${
-                    formData.attached_bathroom
-                      ? 'bg-[#101828] text-white border-[#101828]'
-                      : 'bg-[#F8FAFC] border-[#E5E7EB]'
-                  }`}
-                >
-                  Yes, Attached Bathroom
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateField('attached_bathroom', false)}
-                  className={`p-3 rounded-xl border text-xs font-bold text-center ${
-                    !formData.attached_bathroom
-                      ? 'bg-[#101828] text-white border-[#101828]'
-                      : 'bg-[#F8FAFC] border-[#E5E7EB]'
-                  }`}
-                >
-                  Common Clean Bathroom
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-2">
-                Select Amenities Included
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {AMENITIES_CATALOG.map((a) => {
-                  const isChecked = (formData.amenities || []).includes(a.id);
-                  return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => handleAmenityToggle(a.id)}
-                      className={`p-3 rounded-xl border text-xs text-left flex items-center justify-between ${
-                        isChecked
-                          ? 'border-[#101828] bg-[#F8FAFC] font-semibold text-[#101828]'
-                          : 'border-[#E5E7EB] text-[#64748B]'
-                      }`}
-                    >
-                      <span>{a.name}</span>
-                      {isChecked && <CheckCircle2 className="w-4 h-4 text-[#F59E0B]" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 5: RULES */}
-        {currentStep === 5 && (
-          <div className="space-y-5">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#667085] mb-2">
-                House &amp; Gate Rules
-              </label>
-              <div className="space-y-2">
-                {RULES_CATALOG.map((rule) => {
-                  const isChecked = (formData.rules || []).includes(rule.id);
-                  return (
-                    <label
-                      key={rule.id}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer ${
-                        isChecked
-                          ? 'border-[#101828] bg-[#F8FAFC]'
-                          : 'border-[#E5E7EB] hover:bg-[#FAFAFA]'
-                      }`}
-                    >
-                      <span className="text-xs font-medium text-[#111827]">{rule.name}</span>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleRuleToggle(rule.id)}
-                        className="w-4 h-4 text-[#101828] focus:ring-[#101828] rounded"
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 6: PHOTOS */}
-        {currentStep === 6 && (
-          <div className="space-y-6">
-            <div className="bg-white p-5 sm:p-6 rounded-3xl border border-[#E5E7EB] shadow-xs space-y-4">
               <div>
-                <h3 className="text-base font-bold text-[#101828] font-heading flex items-center gap-2">
-                  <Camera className="w-5 h-5 text-[#F59E0B]" />
-                  <span>Property Photos</span>
-                </h3>
-                <p className="text-xs text-[#667085] mt-1">
-                  Add clear, well-lit photos of the room, bed, bathroom, and building entrance.
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1">
+                  Number of Available Vacancies / Beds
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={formData.vacancies}
+                  onChange={(e) => updateField('vacancies', Number(e.target.value))}
+                  className="w-full p-2.5 sm:p-3 rounded-xl border border-[#E5E7EB] text-xs sm:text-sm font-medium"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: ROOM SPECS & AMENITIES */}
+          {currentStep === 4 && (
+            <div className="space-y-3.5 sm:space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1.5">
+                  Room Sharing Type
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                  {[
+                    { id: 'single', label: 'Single Room' },
+                    { id: 'double', label: 'Double Sharing' },
+                    { id: 'triple', label: 'Triple Sharing' },
+                  ].map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => updateField('room_type', r.id)}
+                      className={`py-2 px-1.5 sm:px-2 rounded-xl border text-xs font-bold text-center transition-all cursor-pointer ${
+                        formData.room_type === r.id
+                          ? 'bg-[#101828] text-white border-[#101828] shadow-xs'
+                          : 'bg-[#F8FAFC] border-[#E5E7EB] text-[#475569] hover:bg-slate-100'
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1.5">
+                  Attached Bathroom?
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updateField('attached_bathroom', true)}
+                    className={`py-2 px-2 rounded-xl border text-xs font-bold text-center transition-all cursor-pointer ${
+                      formData.attached_bathroom
+                        ? 'bg-[#101828] text-white border-[#101828] shadow-xs'
+                        : 'bg-[#F8FAFC] border-[#E5E7EB] text-[#475569] hover:bg-slate-100'
+                    }`}
+                  >
+                    Yes, Attached Bathroom
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateField('attached_bathroom', false)}
+                    className={`py-2 px-2 rounded-xl border text-xs font-bold text-center transition-all cursor-pointer ${
+                      !formData.attached_bathroom
+                        ? 'bg-[#101828] text-white border-[#101828] shadow-xs'
+                        : 'bg-[#F8FAFC] border-[#E5E7EB] text-[#475569] hover:bg-slate-100'
+                    }`}
+                  >
+                    Common Clean Bathroom
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1.5">
+                  Select Amenities Included
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
+                  {AMENITIES_CATALOG.map((a) => {
+                    const isChecked = (formData.amenities || []).includes(a.id);
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => handleAmenityToggle(a.id)}
+                        className={`py-2 px-2.5 rounded-xl border text-xs text-left flex items-center justify-between transition-all cursor-pointer ${
+                          isChecked
+                            ? 'border-[#101828] bg-[#101828] text-white font-bold shadow-xs'
+                            : 'border-[#E5E7EB] bg-[#F8FAFC] text-[#475569] hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="truncate">{a.name}</span>
+                        {isChecked && <CheckCircle2 className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 ml-1" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 5: RULES */}
+          {currentStep === 5 && (
+            <div className="space-y-3.5 sm:space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#667085] mb-1.5">
+                  House &amp; Gate Rules
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+                  {RULES_CATALOG.map((rule) => {
+                    const isChecked = (formData.rules || []).includes(rule.id);
+                    return (
+                      <button
+                        key={rule.id}
+                        type="button"
+                        onClick={() => handleRuleToggle(rule.id)}
+                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          isChecked
+                            ? 'border-[#101828] bg-[#F8FAFC] font-bold text-[#101828]'
+                            : 'border-[#E5E7EB] bg-white text-[#475569] hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="text-xs">{rule.name}</span>
+                        <input
+                          type="checkbox"
+                          readOnly
+                          checked={isChecked}
+                          className="w-4 h-4 text-[#101828] rounded pointer-events-none"
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 6: PHOTOS */}
+          {currentStep === 6 && (
+            <div className="space-y-3.5 sm:space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-xs sm:text-sm font-bold text-[#101828] flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-[#F59E0B]" />
+                    <span>Property Photos</span>
+                  </h3>
+                  <span className="text-[11px] text-[#667085]">
+                    {formData.images?.length || 0} photo(s) added
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#667085]">
+                  Upload clear photos of room, bed, bathroom, and building entrance.
                 </p>
               </div>
 
               {/* Dual Action Native Inputs: Gallery + Camera */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 {/* 1. Choose from Gallery */}
                 <label
-                  className={`relative overflow-hidden flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
+                  className={`relative overflow-hidden flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-2 sm:gap-3 p-3 rounded-xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
                     isUploadingPhoto ? 'pointer-events-none opacity-60' : ''
                   }`}
                 >
@@ -1314,18 +1185,18 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     aria-label="Choose from Gallery"
                   />
-                  <div className="w-11 h-11 rounded-xl bg-amber-100/70 text-[#D97706] flex items-center justify-center shrink-0 pointer-events-none">
-                    <ImageIcon className="w-6 h-6" />
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-[#D97706] flex items-center justify-center shrink-0 pointer-events-none">
+                    <ImageIcon className="w-4 h-4" />
                   </div>
-                  <div className="text-left pointer-events-none">
-                    <p className="font-bold text-sm text-[#101828]">Choose from Gallery</p>
-                    <p className="text-[11px] text-[#667085]">Select existing device photos</p>
+                  <div className="pointer-events-none min-w-0">
+                    <p className="font-bold text-xs text-[#101828] truncate">From Gallery</p>
+                    <p className="text-[10px] text-[#667085] hidden sm:block">Select photos</p>
                   </div>
                 </label>
 
                 {/* 2. Take Photo with Camera */}
                 <label
-                  className={`relative overflow-hidden flex items-center gap-3.5 p-4 rounded-2xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
+                  className={`relative overflow-hidden flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-2 sm:gap-3 p-3 rounded-xl border-2 border-dashed border-[#CBD5E1] hover:border-[#101828] bg-[#F8FAFC] hover:bg-white text-[#101828] transition-all shadow-xs active:scale-98 cursor-pointer select-none ${
                     isUploadingPhoto ? 'pointer-events-none opacity-60' : ''
                   }`}
                 >
@@ -1339,126 +1210,113 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     aria-label="Take Photo with Camera"
                   />
-                  <div className="w-11 h-11 rounded-xl bg-[#101828] text-[#F59E0B] flex items-center justify-center shrink-0 pointer-events-none">
-                    <Camera className="w-6 h-6" />
+                  <div className="w-8 h-8 rounded-lg bg-[#101828] text-[#F59E0B] flex items-center justify-center shrink-0 pointer-events-none">
+                    <Camera className="w-4 h-4" />
                   </div>
-                  <div className="text-left pointer-events-none">
-                    <p className="font-bold text-sm text-[#101828]">Take Photo with Camera</p>
-                    <p className="text-[11px] text-[#667085]">Capture new photo instantly</p>
+                  <div className="pointer-events-none min-w-0">
+                    <p className="font-bold text-xs text-[#101828] truncate">Take Photo</p>
+                    <p className="text-[10px] text-[#667085] hidden sm:block">With Camera</p>
                   </div>
                 </label>
               </div>
 
               {isUploadingPhoto && (
-                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold animate-pulse">
-                  <Loader2 className="w-4 h-4 animate-spin text-[#F59E0B] shrink-0" />
-                  <span>{uploadProgressMessage || 'Processing, optimizing and saving photos...'}</span>
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold animate-pulse">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#F59E0B] shrink-0" />
+                  <span>{uploadProgressMessage || 'Saving photos...'}</span>
                 </div>
               )}
 
               {uploadError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                   <span>{uploadError}</span>
                 </div>
               )}
 
               {/* Optional URL input fallback */}
-              <div className="pt-1">
+              <div>
                 <button
                   type="button"
                   onClick={() => setShowUrlInput(!showUrlInput)}
-                  className="text-xs font-semibold text-[#667085] hover:text-[#101828] underline cursor-pointer"
+                  className="text-[11px] font-semibold text-[#667085] hover:text-[#101828] underline cursor-pointer"
                 >
-                  {showUrlInput ? 'Hide photo URL input' : '+ Or paste a direct image URL'}
+                  {showUrlInput ? 'Hide image URL input' : '+ Or paste a direct image URL'}
                 </button>
                 {showUrlInput && (
-                  <div className="flex gap-2 mt-2">
+                  <div className="flex gap-2 mt-1.5">
                     <input
                       type="text"
                       value={imageUrlInput}
                       onChange={(e) => setImageUrlInput(e.target.value)}
                       placeholder="Paste direct image URL..."
-                      className="flex-1 p-3 rounded-xl border border-[#E5E7EB] text-xs"
+                      className="flex-1 p-2 rounded-xl border border-[#E5E7EB] text-xs"
                     />
-                    <Button variant="primary" size="sm" onClick={handleAddImage}>
+                    <Button variant="primary" size="sm" onClick={handleAddImage} className="text-xs">
                       Add URL
                     </Button>
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Photo Previews Grid */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#667085]">
-                  Selected Photos ({formData.images?.length || 0})
-                </label>
-                <span className="text-[11px] text-[#667085]">First photo will be the cover photo</span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {(formData.images || []).map((img) => (
-                  <div
-                    key={img.id}
-                    className="relative rounded-2xl overflow-hidden border border-[#E5E7EB] group aspect-4/3 bg-[#F8FAFC] shadow-xs"
-                  >
-                    <img src={img.thumbnail_url || img.url} alt="" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveImage(img.id)}
-                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition-colors cursor-pointer"
-                      title="Remove photo"
+              {/* Selected Photos Thumbnails Grid */}
+              {(formData.images || []).length > 0 && (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1">
+                  {(formData.images || []).map((img) => (
+                    <div
+                      key={img.id}
+                      className="relative rounded-xl overflow-hidden border border-[#E5E7EB] group aspect-4/3 bg-[#F8FAFC] shadow-xs"
                     >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                    {img.is_cover ? (
-                      <span className="absolute bottom-2 left-2 text-[10px] bg-[#101828] text-[#F59E0B] px-2 py-0.5 rounded-md font-bold shadow-xs">
-                        Cover Photo
-                      </span>
-                    ) : (
+                      <img src={img.thumbnail_url || img.url} alt="" className="w-full h-full object-cover" />
                       <button
                         type="button"
-                        onClick={() => handleSetCover(img.id)}
-                        className="absolute bottom-2 left-2 text-[10px] bg-black/70 hover:bg-[#101828] text-white px-2 py-0.5 rounded-md font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        onClick={() => handleRemoveImage(img.id)}
+                        className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-rose-600 text-white rounded-full transition-colors cursor-pointer"
+                        title="Remove photo"
                       >
-                        Set as Cover
+                        <X className="w-3 h-3" />
                       </button>
-                    )}
-                    <span className="absolute bottom-2 right-2 text-[9px] bg-black/60 text-emerald-400 font-mono px-1.5 py-0.5 rounded backdrop-blur-xs pointer-events-none">
-                      WebP
-                    </span>
-                  </div>
-                ))}
-              </div>
+                      {img.is_cover ? (
+                        <span className="absolute bottom-1 left-1 text-[9px] bg-[#101828] text-[#F59E0B] px-1.5 py-0.5 rounded font-bold">
+                          Cover
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleSetCover(img.id)}
+                          className="absolute bottom-1 left-1 text-[9px] bg-black/70 hover:bg-[#101828] text-white px-1.5 py-0.5 rounded font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        >
+                          Set Cover
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* STEP 7: DIRECT CONTACT, PRIVACY & PREVIEW */}
-        {currentStep === 7 && (
-          <div className="space-y-6">
-            {/* Contact Information & Privacy Section */}
-            <div className="p-5 bg-white rounded-2xl border border-[#E5E7EB] space-y-5 shadow-xs">
+          {/* STEP 7: DIRECT CONTACT, PRIVACY & PREVIEW */}
+          {currentStep === 7 && (
+            <div className="space-y-3.5 sm:space-y-4">
               <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-[#101828] font-heading flex items-center gap-2">
+                <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#101828] font-heading flex items-center gap-1.5">
                   <Phone className="w-4 h-4 text-[#F59E0B]" />
                   <span>Contact Information & Phone Visibility</span>
                 </h3>
-                <p className="text-xs text-[#667085] mt-1">
-                  Decide whether interested students and renters can contact you directly via phone call and WhatsApp, or strictly through in-app messaging.
+                <p className="text-[11px] text-[#667085] mt-0.5">
+                  Decide whether students can call & WhatsApp you directly, or only message through the website.
                 </p>
               </div>
 
               {/* Direct Phone Number Input */}
               <div>
-                <label className="block text-xs font-bold text-[#101828] mb-1.5">
+                <label className="block text-[11px] font-bold text-[#101828] mb-1">
                   Host Mobile Number (Optional / For Direct Contact)
                 </label>
                 <div className="flex items-center rounded-xl border border-[#CBD5E1] bg-white overflow-hidden focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-[#F59E0B]/20 transition-all">
-                  <span className="px-3 py-2.5 bg-slate-100 text-xs font-bold text-slate-700 border-r border-[#CBD5E1] select-none">
-                    +91 (India)
+                  <span className="px-2.5 py-2 bg-slate-100 text-xs font-bold text-slate-700 border-r border-[#CBD5E1] select-none">
+                    +91
                   </span>
                   <input
                     type="tel"
@@ -1469,28 +1327,28 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                       updateField('phone_number', val);
                       updateField('owner_phone', val);
                     }}
-                    placeholder="Enter 10-digit mobile number (e.g. 9876543210)"
-                    className="flex-1 px-3 py-2.5 text-xs text-[#101828] placeholder:text-[#94A3B8] focus:outline-none"
+                    placeholder="Enter 10-digit mobile number"
+                    className="flex-1 px-2.5 py-2 text-xs text-[#101828] placeholder:text-[#94A3B8] focus:outline-none font-medium"
                   />
                 </div>
                 {formData.phone_number && !isValidIndianPhoneNumber(formData.phone_number) && (
-                  <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">
+                  <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3 shrink-0" />
-                    Please enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).
+                    Please enter a valid 10-digit Indian mobile number.
                   </p>
                 )}
               </div>
 
               {/* Show Phone Number to other users? (Yes / No) */}
-              <div className="pt-3 border-t border-[#F1F5F9] space-y-3">
-                <label className="block text-xs font-bold text-[#101828]">
+              <div className="pt-2 border-t border-[#F1F5F9] space-y-2">
+                <label className="block text-[11px] font-bold text-[#101828]">
                   Show phone number to other users?
                 </label>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {/* Option NO: Keep Private (Default) */}
                   <label
-                    className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                    className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
                       !formData.show_phone_number
                         ? 'border-[#101828] bg-[#F8FAFC] shadow-xs'
                         : 'border-[#E5E7EB] hover:bg-slate-50'
@@ -1504,22 +1362,22 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                         updateField('show_phone_number', false);
                         updateField('phone_privacy', 'private');
                       }}
-                      className="mt-1 text-[#101828] focus:ring-[#101828]"
+                      className="mt-0.5 text-[#101828] focus:ring-[#101828]"
                     />
                     <div>
-                      <div className="text-xs font-bold text-[#111827] flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-slate-500" />
-                        <span>No (Keep Private - Recommended)</span>
+                      <div className="text-xs font-bold text-[#111827] flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-500" />
+                        <span>No (Keep Private - Default)</span>
                       </div>
-                      <div className="text-[11px] text-[#667085] mt-1 leading-relaxed">
-                        Your phone number will NOT be shown on the website. Interested users can only reach you through in-app messages on Rented Thikanaa.
+                      <div className="text-[10px] text-[#667085] mt-0.5">
+                        Phone hidden. Students contact you via in-app messages.
                       </div>
                     </div>
                   </label>
 
                   {/* Option YES: Show Phone */}
                   <label
-                    className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                    className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
                       formData.show_phone_number
                         ? 'border-emerald-600 bg-emerald-50/50 shadow-xs'
                         : 'border-[#E5E7EB] hover:bg-slate-50'
@@ -1533,88 +1391,101 @@ export const AddPropertyPage: React.FC<AddPropertyPageProps> = ({
                         updateField('show_phone_number', true);
                         updateField('phone_privacy', 'public');
                       }}
-                      className="mt-1 text-emerald-600 focus:ring-emerald-500"
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
                     />
                     <div>
-                      <div className="text-xs font-bold text-[#111827] flex items-center gap-1.5">
-                        <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                      <div className="text-xs font-bold text-[#111827] flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-emerald-600" />
                         <span>Yes (Show Phone Number)</span>
                       </div>
-                      <div className="text-[11px] text-[#667085] mt-1 leading-relaxed">
-                        Interested users can call you directly and chat with you on WhatsApp from your listing page.
+                      <div className="text-[10px] text-[#667085] mt-0.5">
+                        Students can call & WhatsApp you directly.
                       </div>
                     </div>
                   </label>
                 </div>
 
                 {formData.show_phone_number && (!formData.phone_number || !isValidIndianPhoneNumber(formData.phone_number)) && (
-                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
-                    <span>Please enter a valid 10-digit mobile number above so users can reach you via Call &amp; WhatsApp.</span>
+                  <div className="p-2 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-[11px] flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                    <span>Enter a valid 10-digit number above to enable Call & WhatsApp.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Collapsible Live Student Search Preview */}
+              <div className="border border-[#E5E7EB] rounded-xl p-2.5 bg-[#F8FAFC]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5 text-[#F59E0B]" />
+                    <span className="text-xs font-bold text-[#101828]">Student Search Card Preview</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowLivePreview(!showLivePreview)}
+                    className="text-xs text-[#D97706] font-bold hover:underline cursor-pointer"
+                  >
+                    {showLivePreview ? '▲ Hide Preview' : '▼ View Card Preview'}
+                  </button>
+                </div>
+                {showLivePreview && (
+                  <div className="mt-2.5 max-w-sm mx-auto">
+                    <PropertyCard
+                      property={previewProperty}
+                      onSelect={() => {}}
+                    />
                   </div>
                 )}
               </div>
             </div>
+          )}
 
-            {/* Live Student Preview */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Eye className="w-4 h-4 text-[#F59E0B]" />
-                <h3 className="text-sm font-bold text-[#101828] font-heading">
-                  How Students Will See Your Property in Search
-                </h3>
-              </div>
-              <div className="max-w-sm mx-auto sm:mx-0">
-                <PropertyCard
-                  property={previewProperty}
-                  onSelect={() => {}}
-                />
-              </div>
-            </div>
+          {/* Wizard Controls Sticky Bottom Action Bar */}
+          <div className="sticky bottom-[68px] md:bottom-0 z-30 -mx-4 sm:-mx-6 -mb-4 sm:-mb-6 px-4 sm:px-6 py-3 bg-white/95 backdrop-blur-md border-t border-[#E5E7EB] rounded-b-2xl sm:rounded-b-3xl shadow-sm flex items-center justify-between">
+            {currentStep > 1 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => handleStepChange(currentStep - 1)}
+                icon={<ArrowLeft className="w-4 h-4" />}
+                className="font-bold text-xs"
+              >
+                Previous
+              </Button>
+            ) : (
+              <div />
+            )}
+
+            {currentStep < totalSteps ? (
+              <Button
+                variant="primary"
+                size="sm"
+                type="button"
+                onClick={() => handleStepChange(currentStep + 1)}
+                icon={<ArrowRight className="w-4 h-4" />}
+                iconPosition="right"
+                disabled={currentStep === 1 && !formData.title?.trim()}
+                className="font-bold text-xs"
+              >
+                Next Step
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="md"
+                type="button"
+                onClick={handlePublish}
+                loading={isSubmitting}
+                icon={<CheckCircle2 className="w-4 h-4" />}
+                className="font-bold text-xs sm:text-sm"
+              >
+                Publish Listing Now
+              </Button>
+            )}
           </div>
-        )}
-
-        {/* Wizard Controls */}
-        <div className="pt-6 border-t border-[#F1F5F9] flex items-center justify-between">
-          {currentStep > 1 ? (
-            <Button
-              variant="outline"
-              size="md"
-              onClick={() => setCurrentStep((prev) => prev - 1)}
-              icon={<ArrowLeft className="w-4 h-4" />}
-            >
-              Previous
-            </Button>
-          ) : (
-            <div />
-          )}
-
-          {currentStep < totalSteps ? (
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setCurrentStep((prev) => prev + 1)}
-              icon={<ArrowRight className="w-4 h-4" />}
-              iconPosition="right"
-              disabled={currentStep === 1 && !formData.title?.trim()}
-            >
-              Next Step
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={handlePublish}
-              loading={isSubmitting}
-              icon={<CheckCircle2 className="w-5 h-5" />}
-              className="font-bold"
-            >
-              Publish Listing Now
-            </Button>
-          )}
         </div>
       </div>
-    </div>
     </ProtectedRoute>
   );
 };
