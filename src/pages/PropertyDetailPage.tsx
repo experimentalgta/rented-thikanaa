@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   ArrowLeft,
   Heart,
@@ -14,7 +14,7 @@ import {
   Ban,
   Edit3,
 } from 'lucide-react';
-import { Property } from '../types';
+import { Property, PropertyContactDetails } from '../types';
 import { useSaved } from '../context/SavedContext';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
@@ -23,7 +23,7 @@ import { DistanceBadge } from '../components/property/DistanceBadge';
 import { WeatherBadge } from '../components/property/WeatherBadge';
 import { ReportModal } from '../components/safety/ReportModal';
 import { PropertyMap } from '../components/map/PropertyMap';
-import { ProtectedRoute } from '../components/auth/ProtectedRoute';
+import { StickyContactBar } from '../components/property/StickyContactBar';
 import { AMENITIES_CATALOG, RULES_CATALOG } from '../config/brand';
 import { getThumbnailUrl } from '../utils/imageProcessor';
 import {
@@ -36,11 +36,13 @@ import { propertyRepository } from '../services/propertyRepository';
 interface PropertyDetailPageProps {
   property: Property;
   onBack: () => void;
+  onManageListing?: () => void;
 }
 
 export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
   property: initialProperty,
   onBack,
+  onManageListing,
 }) => {
   const [property, setProperty] = useState<Property>(initialProperty);
 
@@ -99,24 +101,115 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 
   const saved = isSaved(property.id);
 
-  // Direct Phone Authorization:
-  // Authorized if listing host selected show_phone_number === true (or phone_privacy === 'public')
-  // OR current user is the listing owner
-  const isPhoneAuthorized =
-    property.show_phone_number === true ||
-    property.phone_privacy === 'public' ||
-    isOwner;
+  const [contactDetailsData, setContactDetailsData] = useState<PropertyContactDetails | null>(null);
+  const [isLoadingContact, setIsLoadingContact] = useState(false);
+  const [contactNotice, setContactNotice] = useState<string | null>(null);
+  const ownerSectionRef = useRef<HTMLDivElement>(null);
 
-  const rawPhone =
-    property.phone_number ||
-    property.lister_phone ||
-    property.owner_phone ||
-    (isOwner ? currentUser?.phone_number : null);
+  // Proactively fetch verified host contact details via protected RPC / endpoint
+  // whenever currentUser or property ID changes
+  React.useEffect(() => {
+    if (currentUser?.id && property.id) {
+      setIsLoadingContact(true);
+      propertyRepository
+        .getPropertyContactDetails(property.id)
+        .then((details) => {
+          setContactDetailsData(details);
+        })
+        .catch((err) => {
+          console.warn('[PropertyDetailPage] Failed to load verified contact details:', err);
+        })
+        .finally(() => {
+          setIsLoadingContact(false);
+        });
+    } else {
+      setContactDetailsData(null);
+    }
+  }, [currentUser?.id, property.id]);
 
-  const contactDetails =
-    isPhoneAuthorized && rawPhone
-      ? getPhoneContactDetails(rawPhone, property.title)
-      : null;
+  // Determine active phone number based on ownership and server-verified privacy permissions:
+  // - Listing owner: always authorized to view & edit their own phone
+  // - Authenticated visitor: authorized ONLY when contactDetailsData.authorized is true and phone_number is returned
+  // - Unauthenticated visitor: phone number is NEVER loaded or exposed in DOM/state
+  const rawPhone = isOwner
+    ? (property.phone_number || property.lister_phone || property.owner_phone || currentUser?.phone_number || null)
+    : (contactDetailsData?.authorized ? (contactDetailsData.phone_number || null) : null);
+
+  const isPhoneAuthorized = isOwner
+    ? true
+    : Boolean(currentUser && contactDetailsData?.authorized && contactDetailsData?.phone_number);
+
+  const contactDetails = rawPhone
+    ? getPhoneContactDetails(rawPhone, property.title)
+    : null;
+
+  // Centralized Call Action (Authentication-Gated)
+  const handleCallAction = () => {
+    if (isOwner) return;
+
+    if (!currentUser) {
+      requireAuth('Sign in with Google to view host contact details and call.', {
+        type: 'contact-call',
+        propertyId: property.id,
+        property,
+      });
+      return;
+    }
+
+    if (contactDetails?.telUrl) {
+      window.location.href = contactDetails.telUrl;
+    } else {
+      setContactNotice('Host has chosen to keep their phone number private. Please message them directly using in-app chat.');
+      setTimeout(() => setContactNotice(null), 4500);
+    }
+  };
+
+  // Centralized WhatsApp Action (Authentication-Gated)
+  const handleWhatsAppAction = () => {
+    if (isOwner) return;
+
+    if (!currentUser) {
+      requireAuth('Sign in with Google to contact host on WhatsApp.', {
+        type: 'contact-whatsapp',
+        propertyId: property.id,
+        property,
+      });
+      return;
+    }
+
+    if (contactDetails?.whatsappUrl) {
+      window.open(contactDetails.whatsappUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      setContactNotice('Host has chosen to keep their phone number private. Please message them directly using in-app chat.');
+      setTimeout(() => setContactNotice(null), 4500);
+    }
+  };
+
+  // Centralized Chat Action (Authentication-Gated)
+  const handleChatAction = () => {
+    if (isOwner) return;
+
+    if (!currentUser) {
+      requireAuth('Sign in with Google to message host directly.', {
+        type: 'chat',
+        propertyId: property.id,
+        property,
+      });
+      return;
+    }
+
+    openChatForListing(property);
+  };
+
+  // Owner Manage Listing Action
+  const handleManageListing = () => {
+    if (onManageListing) {
+      onManageListing();
+    } else {
+      setIsOwnerEditingPhone(true);
+      ownerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
 
   // Owner in-place contact editing states
   const [isOwnerEditingPhone, setIsOwnerEditingPhone] = useState(false);
@@ -199,7 +292,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
   ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] lg:pb-16">
       {/* Top Breadcrumb & Actions Bar */}
       <div className="flex items-center justify-between mb-6">
         <button
@@ -260,13 +353,8 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
         </div>
       )}
 
-      {/* Protected Main Grid: Gallery & Details on Left, Sticky Booking/Contact on Right */}
-      <ProtectedRoute
-        fallbackTitle="Sign in to view complete room details"
-        fallbackDescription="Full room photos, exact address, contact details, and owner chat are protected for verified students and members."
-        pendingAction={{ type: 'property-detail', propertyId: property.id, property }}
-      >
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Main Grid: Gallery & Details on Left, Sticky Booking/Contact on Right */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left 2 Columns: Gallery & Property Information */}
         <div className="lg:col-span-2 space-y-8">
           {/* 1. Large Image Gallery */}
@@ -607,7 +695,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 
             {/* Direct Phone & Contact Details Box */}
             {isOwner ? (
-              <div className="p-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] space-y-3 shadow-xs">
+              <div ref={ownerSectionRef} className="p-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] space-y-3 shadow-xs">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-[#92400E] flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-amber-600" />
@@ -753,17 +841,42 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                   </div>
                 )}
               </div>
+            ) : !currentUser ? (
+              /* Unauthenticated Visitor Contact Card */
+              <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#101828]">Direct Contact:</span>
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Lock className="w-2.5 h-2.5 text-amber-600" /> Sign In Required
+                  </span>
+                </div>
+
+                <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-xs">
+                  <div className="text-[11px] text-[#64748B] font-medium mb-1">
+                    Host Direct Phone:
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCallAction}
+                    className="text-base font-bold text-[#101828] hover:text-[#D97706] flex items-center justify-center gap-1.5 font-heading mx-auto cursor-pointer"
+                    title="Sign in with Google to view contact number"
+                  >
+                    <Lock className="w-4 h-4 text-amber-500" />
+                    <span className="tracking-wider">+91 ••••• •••••</span>
+                  </button>
+                  <span className="text-[10px] text-[#64748B] block mt-1">
+                    Sign in with Google to view verified number &amp; call
+                  </span>
+                </div>
+              </div>
             ) : (
+              /* Authenticated Non-Owner Contact Card */
               <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-[#101828]">Direct Contact:</span>
                   {contactDetails ? (
                     <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Phone Visible
-                    </span>
-                  ) : isPhoneAuthorized ? (
-                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <Phone className="w-2.5 h-2.5 text-amber-600" /> Phone Enabled
                     </span>
                   ) : (
                     <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -772,25 +885,23 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                   )}
                 </div>
 
-                {contactDetails ? (
+                {isLoadingContact ? (
+                  <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085]">
+                    Verifying host contact details...
+                  </div>
+                ) : contactDetails ? (
                   <div className="p-3 bg-white rounded-xl border border-emerald-200 text-center shadow-xs">
                     <div className="text-[11px] text-[#64748B] font-medium mb-1">
                       Host Direct Phone:
                     </div>
                     <a
                       href={contactDetails.telUrl}
+                      onClick={handleCallAction}
                       className="text-base font-bold text-[#101828] hover:text-[#D97706] hover:underline flex items-center justify-center gap-1.5 font-heading"
                     >
                       <Phone className="w-4 h-4 text-emerald-600" />
                       <span>{contactDetails.formattedDisplay}</span>
                     </a>
-                  </div>
-                ) : isPhoneAuthorized ? (
-                  <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
-                    <MessageSquare className="w-4 h-4 text-amber-500 mx-auto mb-1" />
-                    <span>
-                      Direct contact via in-app message. You can message the host directly below.
-                    </span>
                   </div>
                 ) : (
                   <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
@@ -803,45 +914,71 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
               </div>
             )}
 
+            {/* Notification / Alert banner if contact unavailable */}
+            {contactNotice && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold rounded-xl text-center animate-in fade-in">
+                {contactNotice}
+              </div>
+            )}
+
             {/* Primary Action Buttons */}
             <div className="space-y-2.5 pt-2">
-              <Button
-                variant="primary"
-                size="lg"
-                fullWidth
-                disabled={isOwner}
-                onClick={() => openChatForListing(property)}
-                icon={<MessageSquare className="w-5 h-5" />}
-                className="font-bold"
-              >
-                {isOwner ? 'You Listed this Room' : 'Message Lister'}
-              </Button>
-
-              {/* Direct Call & WhatsApp buttons when host enables phone */}
-              {contactDetails && !isOwner && (
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <a
-                    href={contactDetails.telUrl}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-xs"
-                    title={`Call host at ${contactDetails.formattedDisplay}`}
+              {isOwner ? (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  onClick={handleManageListing}
+                  icon={<Edit3 className="w-5 h-5 text-amber-400" />}
+                  className="font-bold bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
+                >
+                  Manage Your Listing
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    onClick={handleChatAction}
+                    icon={<MessageSquare className="w-5 h-5" />}
+                    className="font-bold cursor-pointer"
                   >
-                    <Phone className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Call Host</span>
-                  </a>
+                    Message Lister
+                  </Button>
 
-                  <a
-                    href={contactDetails.whatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold bg-[#25D366] text-white hover:bg-[#20ba59] transition-colors shadow-xs"
-                    title="Chat on WhatsApp"
-                  >
-                    <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
-                    </svg>
-                    <span>WhatsApp</span>
-                  </a>
-                </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleCallAction}
+                      className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-xs cursor-pointer ${
+                        !currentUser || contactDetails
+                          ? 'bg-slate-900 text-white hover:bg-slate-800'
+                          : 'bg-slate-100 text-slate-400 border border-slate-200'
+                      }`}
+                      title={!currentUser ? 'Sign in to call host' : contactDetails ? `Call host at ${contactDetails.formattedDisplay}` : 'Phone kept private by host'}
+                    >
+                      <Phone className={`w-3.5 h-3.5 ${!currentUser || contactDetails ? 'text-amber-400' : 'text-slate-400'}`} />
+                      <span>{!currentUser || contactDetails ? 'Call Host' : 'Private'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleWhatsAppAction}
+                      className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-xs cursor-pointer ${
+                        !currentUser || contactDetails
+                          ? 'bg-[#25D366] text-white hover:bg-[#20ba59]'
+                          : 'bg-slate-100 text-slate-400 border border-slate-200'
+                      }`}
+                      title={!currentUser ? 'Sign in to message on WhatsApp' : contactDetails ? 'Chat on WhatsApp' : 'Phone kept private by host'}
+                    >
+                      <svg className={`w-3.5 h-3.5 fill-current ${!currentUser || contactDetails ? '' : 'opacity-40'}`} viewBox="0 0 24 24">
+                        <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                      </svg>
+                      <span>WhatsApp</span>
+                    </button>
+                  </div>
+                </>
               )}
             </div>
 
@@ -854,8 +991,21 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
             </div>
           </div>
         </div>
-        </div>
-      </ProtectedRoute>
+      </div>
+
+      {/* Sticky Bottom Contact Bar for Mobile and Tablet Viewports */}
+      <StickyContactBar
+        property={property}
+        isAuthenticated={Boolean(currentUser)}
+        isOwner={isOwner}
+        contactDetails={contactDetails}
+        isPhoneVisible={Boolean(contactDetails)}
+        isLoadingContact={isLoadingContact}
+        onCall={handleCallAction}
+        onWhatsApp={handleWhatsAppAction}
+        onChat={handleChatAction}
+        onManageListing={handleManageListing}
+      />
 
       {/* Modals */}
       <ReportModal

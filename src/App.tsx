@@ -23,6 +23,7 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { Property, StudentProfile, PendingAction } from './types';
 import { propertyRepository } from './services/propertyRepository';
 import { roommateRepository } from './services/roommateRepository';
+import { getPhoneContactDetails } from './utils/phoneUtils';
 
 const MainApp: React.FC = () => {
   const { isAuthenticated, requireAuth, isSuperAdmin, consumePendingAction, currentUser } = useAuth();
@@ -234,6 +235,26 @@ const MainApp: React.FC = () => {
       } else if (action.propertyId) {
         propertyRepository.getPropertyById(action.propertyId).then((p) => {
           if (p) openChatForListing(p);
+        });
+      }
+    } else if (action.type === 'contact-call' || action.type === 'contact-whatsapp') {
+      const prop = action.property;
+      const propId = action.propertyId || prop?.id;
+      if (prop) {
+        handleSelectProperty(prop);
+      }
+      if (propId) {
+        propertyRepository.getPropertyContactDetails(propId).then((details) => {
+          if (details?.authorized && details.phone_number) {
+            const formatted = getPhoneContactDetails(details.phone_number, prop?.title);
+            if (formatted) {
+              if (action.type === 'contact-call') {
+                window.location.href = formatted.telUrl;
+              } else {
+                window.open(formatted.whatsappUrl, '_blank', 'noopener,noreferrer');
+              }
+            }
+          }
         });
       }
     } else if (action.type === 'dashboard' || action.type === 'saved') {
@@ -486,6 +507,7 @@ const MainApp: React.FC = () => {
                 <PropertyDetailPage
                   property={selectedProperty}
                   onBack={handleBackFromProperty}
+                  onManageListing={() => handleNavigate('member-dashboard', 'my-listings')}
                 />
               </div>
             )}
@@ -533,6 +555,10 @@ const MainApp: React.FC = () => {
           <PropertyDetailPage
             property={selectedProperty}
             onBack={handleMobileClose}
+            onManageListing={() => {
+              handleMobileClose();
+              handleNavigate('member-dashboard', 'my-listings');
+            }}
           />
         </div>
       )}

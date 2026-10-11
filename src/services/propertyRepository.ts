@@ -4,7 +4,8 @@ import {
   PropertySearchParams,
   SearchResultSummary,
   ContactRequestStatus,
-  PropertyImage
+  PropertyImage,
+  PropertyContactDetails
 } from '../types';
 import { locationRepository } from './locationRepository';
 import {
@@ -130,10 +131,12 @@ export class PropertyRepository implements IPropertyRepository {
       cloned.is_exact_location_shared = false;
     }
 
-    // 1. Direct Phone Privacy
+    // 1. Direct Phone Privacy (Authentication-gated)
+    // Unauthenticated visitors NEVER receive direct phone numbers in public responses.
+    const isAuthenticated = Boolean(currentUserId);
     const isPhoneAuthorized =
-      cloned.show_phone_number === true ||
-      cloned.phone_privacy === 'public';
+      isAuthenticated &&
+      (cloned.show_phone_number === true || cloned.phone_privacy === 'public');
 
     if (!isPhoneAuthorized) {
       cloned.owner_phone = null;
@@ -406,7 +409,7 @@ export class PropertyRepository implements IPropertyRepository {
         try {
           const { data: ownerProfiles } = await client
             .from('profiles')
-            .select('id, full_name, avatar_url, phone_number, phone_privacy')
+            .select('id, full_name, avatar_url')
             .in('id', ownerIds);
           if (ownerProfiles) {
             const profileMap = new Map(ownerProfiles.map((p: any) => [p.id, p]));
@@ -427,7 +430,7 @@ export class PropertyRepository implements IPropertyRepository {
         .select(`
           *,
           property_images (id, url, caption, is_cover, sort_order),
-          owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
+          owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url)
         `)
         .in('availability_status', ['available', 'limited']);
 
@@ -583,7 +586,7 @@ export class PropertyRepository implements IPropertyRepository {
       .select(`
         *,
         property_images (id, url, caption, is_cover, sort_order),
-        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url)
       `)
       .in('availability_status', ['available', 'limited'])
       .order('created_at', { ascending: false })
@@ -616,7 +619,7 @@ export class PropertyRepository implements IPropertyRepository {
       .select(`
         *,
         property_images (id, url, caption, is_cover, sort_order),
-        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url)
       `)
       .eq('id', id)
       .maybeSingle();
@@ -628,6 +631,115 @@ export class PropertyRepository implements IPropertyRepository {
 
     const prop = this.mapRowToProperty(data);
     return this.applyPrivacyEnforcement(prop, currentUserId, undefined, true);
+  }
+
+  /**
+   * Retrieves protected host contact details for Call & WhatsApp actions.
+   * Strictly authentication-gated: Returns unauthorized if no valid session exists.
+   * Leverages server-side get_property_contact_details RPC with an authenticated fallback.
+   */
+  async getPropertyContactDetails(id: string): Promise<PropertyContactDetails> {
+    const client = this.assertSupabaseClient();
+
+    // Verify authenticated session
+    const { data: { session } } = await client.auth.getSession();
+    const currentUserId = session?.user?.id;
+
+    if (!currentUserId) {
+      return {
+        authorized: false,
+        reason: 'unauthenticated',
+        message: 'Please sign in to view host contact details.',
+        phone_number: null,
+        show_phone_number: false,
+      };
+    }
+
+    // 1. Primary path: Server-side RPC enforcing auth.uid()
+    try {
+      const { data, error } = await client.rpc('get_property_contact_details', {
+        p_property_id: id,
+      });
+
+      if (!error && data) {
+        return data as PropertyContactDetails;
+      }
+      if (error && import.meta.env.DEV) {
+        console.warn('[PropertyRepository] RPC error, using authenticated client fallback:', error.message);
+      }
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[PropertyRepository] RPC call exception, using authenticated client fallback:', err);
+      }
+    }
+
+    // 2. Safe Fallback: Executes ONLY if caller is authenticated
+    try {
+      const { data: prop, error: propErr } = await client
+        .from('properties')
+        .select(`
+          id,
+          owner_id,
+          created_by,
+          phone_number,
+          show_phone_number,
+          phone_privacy,
+          owner:profiles!properties_owner_id_fkey (id, phone_number, phone_privacy)
+        `)
+        .eq('id', id)
+        .maybeSingle();
+
+      if (propErr || !prop) {
+        return {
+          authorized: false,
+          reason: 'not_found',
+          phone_number: null,
+          show_phone_number: false,
+        };
+      }
+
+      const isOwner = prop.owner_id === currentUserId || prop.created_by === currentUserId;
+      const rawPhone = prop.phone_number || (prop as any).owner?.phone_number || null;
+      const isPublic = prop.show_phone_number === true || prop.phone_privacy === 'public' || (prop as any).owner?.phone_privacy === 'public';
+
+      if (isOwner) {
+        return {
+          authorized: true,
+          is_owner: true,
+          phone_number: rawPhone,
+          show_phone_number: isPublic,
+          phone_privacy: isPublic ? 'public' : 'private',
+        };
+      }
+
+      if (isPublic && rawPhone) {
+        return {
+          authorized: true,
+          is_owner: false,
+          phone_number: rawPhone,
+          show_phone_number: true,
+          phone_privacy: 'public',
+        };
+      }
+
+      return {
+        authorized: false,
+        is_owner: false,
+        phone_number: null,
+        show_phone_number: false,
+        phone_privacy: 'private',
+        reason: 'phone_private',
+        message: 'Phone number is kept private by host.',
+      };
+    } catch (fallbackErr) {
+      console.error('[PropertyRepository] Failed to retrieve contact details:', fallbackErr);
+      return {
+        authorized: false,
+        reason: 'error',
+        phone_number: null,
+        show_phone_number: false,
+      };
+    }
   }
 
   async createProperty(data: Partial<Property>): Promise<Property> {

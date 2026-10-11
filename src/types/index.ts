@@ -435,8 +435,19 @@ export interface SearchResultSummary {
   };
 }
 
+export interface PropertyContactDetails {
+  authorized: boolean;
+  is_owner?: boolean;
+  is_admin?: boolean;
+  phone_number?: string | null;
+  show_phone_number?: boolean;
+  phone_privacy?: 'public' | 'private';
+  reason?: 'unauthenticated' | 'not_found' | 'phone_private' | 'error';
+  message?: string;
+}
+
 export interface PendingAction {
-  type: 'property-detail' | 'chat' | 'contact-request' | 'roommate-chat' | 'dashboard' | 'add-property' | 'saved';
+  type: 'property-detail' | 'chat' | 'contact-call' | 'contact-whatsapp' | 'contact-request' | 'roommate-chat' | 'dashboard' | 'add-property' | 'saved';
   propertyId?: string;
   property?: Property;
   context?: {
