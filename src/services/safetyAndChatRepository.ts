@@ -289,15 +289,27 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     const client = this.assertSupabaseClient();
     if (!conversationId || !userId) return;
 
-    const { error } = await client
-      .from('messages')
-      .update({ is_read: true })
-      .eq('conversation_id', conversationId)
-      .eq('receiver_id', userId)
-      .eq('is_read', false);
+    try {
+      // 1. Try atomic server-side RPC function first
+      const { error: rpcErr } = await client.rpc('mark_conversation_as_read', {
+        p_conversation_id: conversationId,
+      });
 
-    if (error) {
-      console.warn('[ChatRepository] Failed to mark messages as read:', error.message);
+      if (!rpcErr) return;
+
+      // 2. Direct table update fallback under recipient RLS policy
+      const { error: updateErr } = await client
+        .from('messages')
+        .update({ is_read: true })
+        .eq('conversation_id', conversationId)
+        .eq('receiver_id', userId)
+        .eq('is_read', false);
+
+      if (updateErr) {
+        console.warn('[ChatRepository] Failed to mark messages as read:', updateErr.message);
+      }
+    } catch (err) {
+      console.warn('[ChatRepository] Exception in markConversationAsRead:', err);
     }
   }
 

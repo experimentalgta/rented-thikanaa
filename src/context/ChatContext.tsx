@@ -115,7 +115,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser]);
 
-  // Mark conversation as read in both optimistic state and Supabase database
+  // Mark conversation as read in optimistic state, cache, peer broadcast, and Supabase database
   const markConversationAsRead = useCallback(async (conversationId: string) => {
     const currentUserId = currentUserRef.current?.id;
     if (!currentUserId || !conversationId || conversationId.startsWith('temp-')) return;
@@ -125,10 +125,39 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c))
     );
 
-    // 2. Dismiss any active toast for this conversation
+    // 2. Mark visible messages as read in local state for this user
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.conversation_id === conversationId && m.receiver_id === currentUserId
+          ? { ...m, is_read: true }
+          : m
+      )
+    );
+
+    // 3. Mark messages as read in in-memory cache
+    const cached = messagesCacheRef.current.get(conversationId);
+    if (cached) {
+      messagesCacheRef.current.set(
+        conversationId,
+        cached.map((m) =>
+          m.receiver_id === currentUserId ? { ...m, is_read: true } : m
+        )
+      );
+    }
+
+    // 4. Dismiss any active toast for this conversation
     setIncomingToast((prev) => (prev?.conversationId === conversationId ? null : prev));
 
-    // 3. Persist read status to Supabase
+    // 5. Peer broadcast to active conversation channel so sender receives instant read receipt
+    if (activeChannelRef.current) {
+      activeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'messages_read',
+        payload: { conversation_id: conversationId, reader_id: currentUserId },
+      });
+    }
+
+    // 6. Persist read status to Supabase (RPC + UPDATE fallback)
     try {
       await chatAndSafetyRepository.markConversationAsRead(conversationId, currentUserId);
     } catch (e) {
@@ -406,6 +435,39 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [loadData, markConversationAsRead, setIsChatModalOpen]
   );
 
+  // Helper to broadcast message to recipient's personal user channel
+  const broadcastToRecipient = useCallback((targetUserId: string, message: Message) => {
+    if (!supabase || !targetUserId) return;
+    try {
+      const channelName = `user_${targetUserId}`;
+      let recipientChannel = supabase.getChannels().find(
+        (ch) => ch.topic === `realtime:${channelName}`
+      );
+      if (!recipientChannel) {
+        recipientChannel = supabase.channel(channelName);
+      }
+      if (recipientChannel.state === 'joined') {
+        recipientChannel.send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: message,
+        });
+      } else {
+        recipientChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            recipientChannel.send({
+              type: 'broadcast',
+              event: 'new_message',
+              payload: message,
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[ChatContext] Failed to broadcast to recipient user channel:', err);
+    }
+  }, []);
+
   // =========================================================================
   // SUPABASE REALTIME: ACTIVE CONVERSATION CHANNEL
   // =========================================================================
@@ -439,10 +501,60 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
 
-    // 2. Listen for peer WebSocket broadcast messages
+    // 2. Listen for message updates in database (e.g. read status marked by recipient)
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${convId}`,
+      },
+      (payload) => {
+        const updatedRow = payload.new as any;
+        if (!updatedRow || updatedRow.conversation_id !== convId) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === updatedRow.id ? { ...m, is_read: Boolean(updatedRow.is_read) } : m
+          )
+        );
+        const cached = messagesCacheRef.current.get(convId);
+        if (cached) {
+          messagesCacheRef.current.set(
+            convId,
+            cached.map((m) =>
+              m.id === updatedRow.id ? { ...m, is_read: Boolean(updatedRow.is_read) } : m
+            )
+          );
+        }
+      }
+    );
+
+    // 3. Listen for peer WebSocket broadcast messages
     channel.on('broadcast', { event: 'new_message' }, ({ payload }) => {
       if (!payload || payload.conversation_id !== convId) return;
       handleIncomingMessage(payload);
+    });
+
+    // 4. Listen for read receipt broadcast from peer
+    channel.on('broadcast', { event: 'messages_read' }, ({ payload }) => {
+      if (!payload || payload.conversation_id !== convId) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.conversation_id === convId && m.sender_id === currentUser.id
+            ? { ...m, is_read: true }
+            : m
+        )
+      );
+      const cached = messagesCacheRef.current.get(convId);
+      if (cached) {
+        messagesCacheRef.current.set(
+          convId,
+          cached.map((m) =>
+            m.sender_id === currentUser.id ? { ...m, is_read: true } : m
+          )
+        );
+      }
     });
 
     channel.subscribe((status) => {
@@ -466,7 +578,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // =========================================================================
   // SUPABASE REALTIME: USER-LEVEL NOTIFICATION CHANNEL
-  // Catches all messages sent to this user across all conversations
+  // Catches all messages and broadcasts sent to this user across all conversations
   // =========================================================================
   useEffect(() => {
     if (!currentUser?.id || !supabase) return;
@@ -489,6 +601,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           handleIncomingMessage(newRow);
         }
       )
+      .on('broadcast', { event: 'new_message' }, ({ payload }) => {
+        if (!payload) return;
+        handleIncomingMessage(payload);
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+        },
+        (payload) => {
+          const row = (payload.new || payload.old) as any;
+          if (row && (row.participant_a === currentUser.id || row.participant_b === currentUser.id)) {
+            loadData();
+          }
+        }
+      )
       .subscribe((status) => {
         if (import.meta.env.DEV) {
           console.log(`[Chat Realtime] User channel status for ${userChannelName}: ${status}`);
@@ -500,7 +630,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.removeChannel(userChannel);
       }
     };
-  }, [currentUser?.id, handleIncomingMessage]);
+  }, [currentUser?.id, handleIncomingMessage, loadData]);
 
   // =========================================================================
   // CANONICAL CHAT ROUTING: OPEN CHAT FOR LISTING
@@ -814,13 +944,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       messagesCacheRef.current.set(targetId, [...cachedList, sent]);
     }
 
-    // 3. Peer WebSocket broadcast
+    // 3. Peer WebSocket broadcast: to active conversation channel AND recipient user channel
     if (activeChannelRef.current) {
       activeChannelRef.current.send({
         type: 'broadcast',
         event: 'new_message',
         payload: sent,
       });
+    }
+
+    if (otherParticipantId) {
+      broadcastToRecipient(otherParticipantId, sent);
     }
 
     // 4. Update conversations list & move to top
@@ -921,6 +1055,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         event: 'new_message',
         payload: sent,
       });
+    }
+
+    if (otherParticipantId) {
+      broadcastToRecipient(otherParticipantId, sent);
     }
 
     await loadData();
