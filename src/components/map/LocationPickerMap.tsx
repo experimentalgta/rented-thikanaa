@@ -98,7 +98,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
   }, [latitude, longitude]);
 
   return (
-    <div className="relative">
+    <div className="relative isolate z-0">
       <div ref={mapContainerRef} className={className} />
 
       {/* Floating Guidance Badge */}

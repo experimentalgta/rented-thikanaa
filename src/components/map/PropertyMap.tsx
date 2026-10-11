@@ -197,11 +197,11 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   }, [properties, onSelectProperty, centerCoordinates]);
 
   return (
-    <div className={`relative ${className} border border-[#E5E7EB] bg-[#F1F5F9]`}>
+    <div className={`relative isolate z-0 ${className} border border-[#E5E7EB] bg-[#F1F5F9]`}>
       <div ref={mapContainerRef} className="w-full h-full" />
       
       {/* Privacy note overlay badge */}
-      <div className="absolute bottom-2.5 left-2.5 z-[400] bg-white/95 max-md:bg-white max-md:backdrop-blur-none md:backdrop-blur-md text-[11px] font-semibold text-[#101828] px-3 py-1.5 rounded-xl border border-[#E2E8F0] shadow-sm flex items-center gap-2 pointer-events-none">
+      <div className="absolute bottom-2.5 left-2.5 z-10 bg-white/95 max-md:bg-white max-md:backdrop-blur-none md:backdrop-blur-md text-[11px] font-semibold text-[#101828] px-3 py-1.5 rounded-xl border border-[#E2E8F0] shadow-sm flex items-center gap-2 pointer-events-none">
         <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse"></span>
         <span>Approximate location shown for privacy</span>
       </div>

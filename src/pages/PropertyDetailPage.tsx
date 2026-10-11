@@ -48,7 +48,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
 
   const { isSaved, toggleSave } = useSaved();
   const { openChatForListing } = useChat();
-  const { currentUser, requireAuth, updateProfile } = useAuth();
+  const { currentUser, requireAuth, updateProfile, loading: isAuthLoading, session } = useAuth();
 
   // Sync state if initialProperty prop changes
   React.useEffect(() => {
@@ -144,10 +144,14 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
     : null;
 
   // Centralized Call Action (Authentication-Gated)
-  const handleCallAction = () => {
+  const handleCallAction = (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (isOwner) return;
 
-    if (!currentUser) {
+    if (isAuthLoading) return;
+
+    if (!currentUser || !session) {
       requireAuth('Sign in with Google to view host contact details and call.', {
         type: 'contact-call',
         propertyId: property.id,
@@ -165,10 +169,14 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
   };
 
   // Centralized WhatsApp Action (Authentication-Gated)
-  const handleWhatsAppAction = () => {
+  const handleWhatsAppAction = (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (isOwner) return;
 
-    if (!currentUser) {
+    if (isAuthLoading) return;
+
+    if (!currentUser || !session) {
       requireAuth('Sign in with Google to contact host on WhatsApp.', {
         type: 'contact-whatsapp',
         propertyId: property.id,
@@ -186,10 +194,14 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
   };
 
   // Centralized Chat Action (Authentication-Gated)
-  const handleChatAction = () => {
+  const handleChatAction = (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (isOwner) return;
 
-    if (!currentUser) {
+    if (isAuthLoading) return;
+
+    if (!currentUser || !session) {
       requireAuth('Sign in with Google to message host directly.', {
         type: 'chat',
         propertyId: property.id,
@@ -894,14 +906,14 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                     <div className="text-[11px] text-[#64748B] font-medium mb-1">
                       Host Direct Phone:
                     </div>
-                    <a
-                      href={contactDetails.telUrl}
+                    <button
+                      type="button"
                       onClick={handleCallAction}
-                      className="text-base font-bold text-[#101828] hover:text-[#D97706] hover:underline flex items-center justify-center gap-1.5 font-heading"
+                      className="text-base font-bold text-[#101828] hover:text-[#D97706] hover:underline flex items-center justify-center gap-1.5 font-heading w-full cursor-pointer"
                     >
                       <Phone className="w-4 h-4 text-emerald-600" />
                       <span>{contactDetails.formattedDisplay}</span>
-                    </a>
+                    </button>
                   </div>
                 ) : (
                   <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">
@@ -1001,6 +1013,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
         contactDetails={contactDetails}
         isPhoneVisible={Boolean(contactDetails)}
         isLoadingContact={isLoadingContact}
+        isLoadingAuth={isAuthLoading}
         onCall={handleCallAction}
         onWhatsApp={handleWhatsAppAction}
         onChat={handleChatAction}

@@ -304,6 +304,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const requireAuth = (reason?: string, action?: PendingAction): boolean => {
+    // If auth session is still being resolved, queue pending action and prevent premature triggers
+    if (loading) {
+      if (action) {
+        setPendingAction(action);
+      }
+      return false;
+    }
+
     if (currentUser && session) {
       return true;
     }

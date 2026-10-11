@@ -300,7 +300,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   const bucketKeys: ProximityBucket[] = ['very_near', 'nearby', 'nearby_areas', 'more_options'];
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-[calc(env(safe-area-inset-bottom)+5.5rem)] md:pb-16">
       {/* ========================================================================= */}
       {/* 1. TOP LOCATION & NAVIGATION BAR                                          */}
       {/* ========================================================================= */}
