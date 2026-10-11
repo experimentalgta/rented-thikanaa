@@ -1,0 +1,22 @@
+{
+  "name": "Rented Thikanaa",
+  "short_name": "Rented Thikanaa",
+  "description": "Find verified rooms, PGs, hostels, flats, and compatible roommates across India.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#183661",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}

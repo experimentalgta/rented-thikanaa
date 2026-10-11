@@ -222,7 +222,7 @@ export function formatIndianAddress(
 }
 
 /**
- * Normalizes OpenStreetMap Nominatim response into Rented Thikan LocationData
+ * Normalizes OpenStreetMap Nominatim response into Rented Thikanaa LocationData
  */
 export function normalizeNominatimPlace(
   place: NominatimPlace,

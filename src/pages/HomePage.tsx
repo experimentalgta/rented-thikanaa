@@ -20,6 +20,7 @@ import { CompactPropertyCard } from '../components/property/CompactPropertyCard'
 import { Property, StudentProfile } from '../types';
 import { INDIAN_CITIES } from '../config/locations';
 import { Button } from '../components/common/Button';
+import { BrandName } from '../components/common/BrandName';
 
 interface HomePageProps {
   featuredProperties: Property[];
@@ -139,8 +140,8 @@ export const HomePage: React.FC<HomePageProps> = ({
 
           {/* Core Headline */}
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight font-heading leading-tight sm:leading-none text-white mb-6">
-            Find Your Perfect Thikan. <br className="hidden sm:inline" />
-            <span className="text-[#F59E0B]">Across All of India.</span>
+            Find Your Perfect Thikanaa. <br className="hidden sm:inline" />
+            <span className="text-[#F26E22]">Across All of India.</span>
           </h1>
 
           {/* Subheading */}
@@ -435,14 +436,14 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
-      {/* 6. WHY CHOOSE RENTED THIKAN (TRUST PILLARS) */}
+      {/* 6. WHY CHOOSE RENTED THIKANAA (TRUST PILLARS) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-6 w-full">
         <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-12">
           <div className="text-xs font-bold uppercase tracking-wider text-[#F59E0B] mb-2">
             Nationwide Trust &amp; Safety
           </div>
           <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#101828] font-heading">
-            Why Choose Rented Thikan?
+            Why Choose <BrandName />?
           </h2>
         </div>
 
@@ -527,7 +528,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             </h3>
             <div className="space-y-3 pt-2">
               {[
-                { step: '1', title: 'Quick Member Setup', desc: 'Use your verified Rented Thikan member account with zero hassle.' },
+                { step: '1', title: 'Quick Member Setup', desc: 'Use your verified Rented Thikanaa member account with zero hassle.' },
                 { step: '2', title: 'Upload Photos & Set Rent', desc: 'Add room photos, select amenities, and define house rules.' },
                 { step: '3', title: 'Control Phone Privacy', desc: 'Decide whether your phone number is private, on-request, or public.' },
                 { step: '4', title: 'Receive Direct Member Inquiries', desc: 'Chat with genuine university and coaching aspirants.' },

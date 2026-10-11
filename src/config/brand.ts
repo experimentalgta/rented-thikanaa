@@ -1,11 +1,16 @@
 export const BRAND = {
-  name: 'Rented Thikan',
+  name: 'Rented Thikanaa',
+  nameHindi: 'रेंटेड ठिकाना',
   tagline: 'Find a Room. Find a Roommate. Stay Safe.',
   subheading: 'Discover verified rooms, PGs, hostels, flats, and compatible roommates across India with privacy-first contact.',
+  colors: {
+    navy: '#183661',
+    orange: '#F26E22',
+  },
   city: 'All India',
   state: 'India',
   country: 'India',
-  contactEmail: 'support@rentedthikan.in',
+  contactEmail: 'support@rentedthikanaa.com',
   supportHours: '9:00 AM – 8:00 PM IST',
 };
 

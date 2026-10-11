@@ -3,6 +3,8 @@ import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { PendingAction } from '../../types';
+import { BrandLogo } from '../common/BrandLogo';
+import { BrandName } from '../common/BrandName';
 
 interface AuthCallbackProps {
   onAuthComplete: (pendingAction: PendingAction | null) => void;
@@ -80,6 +82,10 @@ export const AuthCallback: React.FC<AuthCallbackProps> = ({ onAuthComplete }) =>
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-slate-100 shadow-xl text-center space-y-4">
+        <div className="flex flex-col items-center justify-center pb-2 border-b border-slate-100">
+          <BrandLogo size="md" priority className="mb-2" />
+          <BrandName className="text-base" />
+        </div>
         {status === 'loading' && (
           <>
             <div className="w-16 h-16 bg-amber-50 text-[#F59E0B] rounded-2xl flex items-center justify-center mx-auto shadow-xs">

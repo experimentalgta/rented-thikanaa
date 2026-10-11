@@ -18,9 +18,9 @@ const ANNOUNCEMENTS_STORAGE_KEY = 'rt_admin_announcements';
 const SETTINGS_STORAGE_KEY = 'rt_admin_platform_settings';
 
 const DEFAULT_SETTINGS: PlatformSettings = {
-  platform_name: 'Rentit — Rented Thikanaa',
+  platform_name: 'Rented Thikanaa',
   support_phone: '+91 98765 43210',
-  support_email: 'support@rentedthikan.in',
+  support_email: 'support@rentedthikanaa.com',
   emergency_whatsapp: '+91 98765 43210',
   require_phone_for_chat: false,
   auto_verify_trusted_owners: false,

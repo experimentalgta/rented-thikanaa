@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { X, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { BrandLogo } from '../common/BrandLogo';
+import { BrandName } from '../common/BrandName';
 
 export const LoginModal: React.FC = () => {
   const { isLoginModalOpen, setIsLoginModalOpen, loginModalReason, signInWithGoogle, clearPendingAction } = useAuth();
@@ -47,16 +49,12 @@ export const LoginModal: React.FC = () => {
 
         <div className="p-6 sm:p-8 space-y-6">
           {/* Header Brand Icon */}
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#101828] flex items-center justify-center shadow-xs">
-              <span className="text-lg font-black text-[#F59E0B] font-heading tracking-tighter">RT</span>
-            </div>
+          <div className="flex items-center gap-3.5">
+            <BrandLogo size="lg" priority />
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xl font-extrabold text-[#101828] font-heading tracking-tight">
-                  Rented Thikan
-                </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]">
+                <BrandName className="text-xl tracking-tight" />
+                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
                   Verified
                 </span>
               </div>

@@ -1,6 +1,8 @@
 import React from 'react';
 import { ShieldCheck, MapPin, Phone, Mail, Heart, Building2 } from 'lucide-react';
 import { INDIAN_CITIES } from '../../config/locations';
+import { BrandLogo } from '../common/BrandLogo';
+import { BrandName } from '../common/BrandName';
 
 interface FooterProps {
   onSelectLocality: (localityName: string) => void;
@@ -14,13 +16,9 @@ export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-10 pb-12 border-b border-[#1E293B]">
           {/* Col 1 & 2: Brand & Proposition */}
           <div className="lg:col-span-2">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-[#F59E0B] flex items-center justify-center">
-                <span className="text-base font-black text-[#101828] font-heading">RT</span>
-              </div>
-              <span className="text-xl font-bold tracking-tight font-heading text-white">
-                Rented Thikana
-              </span>
+            <div className="inline-flex items-center gap-3 mb-4 px-3.5 py-2 rounded-2xl bg-white border border-slate-200/20 shadow-xs">
+              <BrandLogo size="sm" priority />
+              <BrandName className="text-lg tracking-tight" />
             </div>
             <p className="text-sm text-[#94A3B8] leading-relaxed mb-4 max-w-sm">
               India's premier, privacy-first living marketplace. Find verified rooms, PGs, hostels, flats, and compatible roommates across India's top education and job hubs.
@@ -140,7 +138,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectLocality, onNavigate }) 
 
         {/* Bottom copyright & disclaimer */}
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#64748B]">
-          <p>© 2026 Rented Thikan. India-Wide Room, Property &amp; Roommate Marketplace.</p>
+          <p>© 2026 Rented Thikanaa. India-Wide Room, Property &amp; Roommate Marketplace.</p>
           <div className="flex items-center gap-4">
             <span className="text-amber-400/80">Find a Room. Find a Roommate. Stay Safe.</span>
             <span>•</span>

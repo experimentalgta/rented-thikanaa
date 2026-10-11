@@ -48,6 +48,7 @@ import {
 import { adminRepository } from '../services/adminRepository';
 import { serverAuth } from '../services/serverAuth';
 import { Button } from '../components/common/Button';
+import { BrandLogo } from '../components/common/BrandLogo';
 
 interface AdminDashboardProps {
   onSelectProperty: (property: Property) => void;
@@ -571,7 +572,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-100">
         <div className="w-10 h-10 border-3 border-amber-500 border-t-transparent rounded-full animate-spin mb-3" />
-        <h3 className="font-bold text-slate-900 text-sm">Opening Rentit Super Admin...</h3>
+        <h3 className="font-bold text-slate-900 text-sm">Opening Rented Thikanaa Super Admin...</h3>
         <p className="text-[11px] text-slate-500 mt-1 max-w-sm">
           Loading platform dashboard and moderation controls
         </p>
@@ -664,19 +665,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 onClick={onNavigateHome}
                 className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                title="Back to Rentit"
+                title="Back to Rented Thikanaa"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
             )}
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-[#F59E0B] border border-amber-500/30 flex items-center justify-center font-black text-sm">
-                R
+            <div className="flex items-center gap-2.5">
+              <div className="p-1 rounded-xl bg-white shadow-xs inline-flex items-center justify-center">
+                <BrandLogo size="xs" priority />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="font-black text-sm sm:text-base font-heading tracking-tight">
-                    Rentit Super Admin
+                  <h1 className="font-black text-sm sm:text-base font-heading tracking-tight flex items-center gap-1.5">
+                    <span className="text-white">Rented</span>
+                    <span className="text-[#F26E22]">Thikanaa</span>
+                    <span className="text-slate-300 font-semibold text-xs ml-1">Admin</span>
                   </h1>
                   <span className="text-[9px] uppercase font-black bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full tracking-wider">
                     PROD

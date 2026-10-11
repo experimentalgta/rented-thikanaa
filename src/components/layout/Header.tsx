@@ -9,6 +9,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useSaved } from '../../context/SavedContext';
 import { useChat } from '../../context/ChatContext';
 import { UserMenu } from '../auth/UserMenu';
+import { BrandLogo } from '../common/BrandLogo';
+import { BrandName } from '../common/BrandName';
 
 interface HeaderProps {
   currentView: string;
@@ -28,17 +30,14 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
           <div className="flex items-center gap-6 shrink-0 min-w-0">
             <button
               onClick={() => onNavigate('home')}
-              className="flex items-center gap-2 sm:gap-2.5 text-left focus:outline-none group shrink-0"
+              className="flex items-center gap-2.5 sm:gap-3 text-left focus:outline-none group shrink-0 cursor-pointer"
+              aria-label="Rented Thikanaa Home"
             >
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#101828] flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform shrink-0">
-                <span className="text-base font-black text-[#F59E0B] font-heading tracking-tighter">RT</span>
-              </div>
+              <BrandLogo size="md" priority className="group-hover:scale-105 transition-transform" />
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="text-base sm:text-lg font-bold text-[#101828] font-heading tracking-tight whitespace-nowrap">
-                    Rented Thikana
-                  </span>
-                  <span className="hidden sm:inline-block text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]">
+                  <BrandName className="text-base sm:text-lg tracking-tight" />
+                  <span className="hidden sm:inline-block text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                     India
                   </span>
                 </div>

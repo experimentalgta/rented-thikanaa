@@ -34,6 +34,7 @@ import { PropertyCard } from '../components/property/PropertyCard';
 import { Button } from '../components/common/Button';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { sanitizeIndianPhoneNumber, isValidIndianPhoneNumber } from '../utils/phoneUtils';
+import { BrandName } from '../components/common/BrandName';
 
 interface UserDashboardProps {
   initialTab?: string;
@@ -286,8 +287,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
               <h1 className="text-xl sm:text-2xl font-bold text-[#101828] font-heading">
                 {currentUser.full_name}
               </h1>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#101828] text-[#F59E0B]">
-                Rented Thikan Member
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 inline-flex items-center gap-1">
+                <BrandName className="text-xs" /> Member
               </span>
             </div>
             <p className="text-xs text-[#667085] mt-1">
@@ -1045,7 +1046,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 Phone Number Privacy Controls
               </h2>
               <p className="text-xs text-[#667085] mt-1">
-                Rented Thikan is privacy-first. Choose how your phone number is shared with students and listers.
+                Rented Thikanaa is privacy-first. Choose how your phone number is shared with students and listers.
               </p>
             </div>
 
@@ -1098,7 +1099,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                 Location Privacy &amp; Pin Security
               </h2>
               <p className="text-xs text-[#667085] mt-1">
-                How Rented Thikan protects your exact address and home location.
+                How Rented Thikanaa protects your exact address and home location.
               </p>
             </div>
 
@@ -1135,7 +1136,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
               Member Profile &amp; Account Settings
             </h2>
             <p className="text-xs text-[#667085] mt-1">
-              Update your account details visible across Rented Thikan.
+              Update your account details visible across Rented Thikanaa.
             </p>
           </div>
 
@@ -1228,7 +1229,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           <div className="pt-6 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-xs font-bold text-rose-700">Account Session</h3>
-              <p className="text-[11px] text-[#667085]">Sign out of your Rented Thikan session on this browser.</p>
+              <p className="text-[11px] text-[#667085]">Sign out of your Rented Thikanaa session on this browser.</p>
             </div>
             <Button
               variant="outline"
