@@ -51,7 +51,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 }) => {
   const { currentUser, updateProfile, signOut } = useAuth();
   const { savedItems, toggleSave } = useSaved();
-  const { setIsChatModalOpen } = useChat();
+  const { openMessagesList } = useChat();
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -340,7 +340,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           <Button
             variant="outline"
             size="md"
-            onClick={() => setIsChatModalOpen(true)}
+            onClick={() => openMessagesList()}
             icon={<MessageSquare className="w-4 h-4" />}
             className="w-full sm:w-auto"
           >
@@ -968,7 +968,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             <Button
               variant="primary"
               size="md"
-              onClick={() => setIsChatModalOpen(true)}
+              onClick={() => openMessagesList()}
               icon={<MessageSquare className="w-4 h-4" />}
             >
               Open Active Conversations

@@ -32,7 +32,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   onNavigate,
 }) => {
   const { currentUser } = useAuth();
-  const { setIsChatModalOpen } = useChat();
+  const { openMessagesList } = useChat();
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,7 +265,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               variant="primary"
               size="sm"
               fullWidth
-              onClick={() => setIsChatModalOpen(true)}
+              onClick={() => openMessagesList()}
               icon={<MessageSquare className="w-4 h-4" />}
             >
               Open Direct Messages

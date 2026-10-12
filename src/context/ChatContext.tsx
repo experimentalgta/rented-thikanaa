@@ -37,7 +37,9 @@ interface ChatContextType {
     owner_name: string;
     created_by?: string;
   }) => Promise<void>;
-  selectConversation: (conv: Conversation) => Promise<void>;
+  selectConversation: (conv: Conversation | null) => Promise<void> | void;
+  openMessagesList: () => void;
+  clearActiveConversation: () => void;
   sendMessage: (text: string) => Promise<void>;
   sendContactRequest: (property: { id: string; title: string; owner_id: string; owner_name: string }) => Promise<ContactRequest>;
   updateContactRequest: (requestId: string, status: ContactRequestStatus) => Promise<void>;
@@ -167,13 +169,29 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const clearActiveConversation = useCallback(() => {
+    fetchRequestIdRef.current += 1;
+    activeConversationRef.current = null;
+    setActiveConversation(null);
+    setMessages([]);
+    setIsLoadingMessages(false);
+  }, []);
+
+  const openMessagesList = useCallback(() => {
+    clearActiveConversation();
+    setIsChatModalOpenState(true);
+    isChatModalOpenRef.current = true;
+  }, [clearActiveConversation]);
+
   const setIsChatModalOpen = useCallback((open: boolean) => {
     setIsChatModalOpenState(open);
     isChatModalOpenRef.current = open;
-    if (open && activeConversationRef.current?.id && !activeConversationRef.current.id.startsWith('temp-')) {
+    if (!open) {
+      clearActiveConversation();
+    } else if (activeConversationRef.current?.id && !activeConversationRef.current.id.startsWith('temp-')) {
       markConversationAsRead(activeConversationRef.current.id);
     }
-  }, [markConversationAsRead]);
+  }, [clearActiveConversation, markConversationAsRead]);
 
   // Reset or load initial data on user auth change
   useEffect(() => {
@@ -856,7 +874,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const selectConversation = useCallback(
-    async (conv: Conversation) => {
+    async (conv: Conversation | null) => {
+      if (!conv) {
+        clearActiveConversation();
+        return;
+      }
+
       if (activeConversationRef.current?.id === conv.id) {
         return;
       }
@@ -881,11 +904,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 3. Mark active conversation as read
       markConversationAsRead(conv.id);
-
-      // Note: The activeConversation?.id useEffect will trigger and safely fetch fresh
-      // messages over the network with fetchRequestIdRef validation, updating cache and UI.
     },
-    [markConversationAsRead]
+    [clearActiveConversation, markConversationAsRead]
   );
 
   const sendMessage = async (text: string) => {
@@ -1196,6 +1216,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         shareContactDetails,
         isChatModalOpen,
         setIsChatModalOpen,
+        openMessagesList,
+        clearActiveConversation,
         refreshChatData: loadData,
       }}
     >

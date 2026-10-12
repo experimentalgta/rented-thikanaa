@@ -15,7 +15,7 @@ interface MobileNavProps {
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate }) => {
-  const { unreadCount, isChatModalOpen, setIsChatModalOpen } = useChat();
+  const { unreadCount, isChatModalOpen, setIsChatModalOpen, openMessagesList } = useChat();
   const { requireAuth } = useAuth();
 
   const isDashboard =
@@ -102,7 +102,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate })
                 type: 'chat',
               })
             ) {
-              setIsChatModalOpen(true);
+              openMessagesList();
             }
           }}
           className={`relative flex flex-col items-center justify-center w-14 h-full transition-colors cursor-pointer ${

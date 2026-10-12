@@ -20,7 +20,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
   const { currentUser, isAuthenticated, isSuperAdmin, requireAuth } = useAuth();
   const { savedCount } = useSaved();
-  const { unreadCount, setIsChatModalOpen } = useChat();
+  const { unreadCount, openMessagesList } = useChat();
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E5E7EB] transition-all w-full max-w-full">
@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
               type="button"
               onClick={() => {
                 if (requireAuth('Sign in with Google to access your in-app messages and conversations.', { type: 'chat' })) {
-                  setIsChatModalOpen(true);
+                  openMessagesList();
                 }
               }}
               className="relative p-2 sm:p-2.5 text-[#667085] hover:text-[#101828] hover:bg-[#F8FAFC] rounded-xl transition-colors cursor-pointer min-w-[36px] sm:min-w-[40px] min-h-[36px] sm:min-h-[40px] flex items-center justify-center shrink-0"

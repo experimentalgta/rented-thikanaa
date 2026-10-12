@@ -31,7 +31,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const { savedItems, toggleSave } = useSaved();
-  const { setIsChatModalOpen } = useChat();
+  const { openMessagesList } = useChat();
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [phonePrivacy, setPhonePrivacy] = useState<'private' | 'on_request' | 'public'>('private');
@@ -84,7 +84,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             Saved Rooms ({savedItems.length})
           </button>
           <button
-            onClick={() => setIsChatModalOpen(true)}
+            onClick={() => openMessagesList()}
             className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#F8FAFC] text-[#667085] hover:text-[#101828] border border-[#E2E8F0] flex items-center gap-1.5 transition-all"
           >
             <MessageSquare className="w-3.5 h-3.5" />

@@ -28,6 +28,7 @@ export const ChatModal: React.FC = () => {
   const {
     isChatModalOpen,
     setIsChatModalOpen,
+    clearActiveConversation,
     conversations,
     activeConversation,
     selectConversation,
@@ -56,8 +57,8 @@ export const ChatModal: React.FC = () => {
     return messages.filter((m) => m.conversation_id === activeConvId);
   }, [messages, activeConvId]);
 
-  // Mobile navigation state: view list of threads vs active conversation
-  const [mobileView, setMobileView] = useState<'threads' | 'chat'>('chat');
+  // Mobile navigation state: view list of threads vs active conversation (defaults to threads list)
+  const [mobileView, setMobileView] = useState<'threads' | 'chat'>('threads');
 
   // State for Location Sharing Modal
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
@@ -80,12 +81,6 @@ export const ChatModal: React.FC = () => {
         if (!activeConversation.id.startsWith('temp-')) {
           markConversationAsRead(activeConversation.id);
         }
-      } else if (conversations.length > 0) {
-        if (window.innerWidth >= 768) {
-          selectConversation(conversations[0]);
-        } else {
-          setMobileView('threads');
-        }
       } else {
         setMobileView('threads');
       }
@@ -106,24 +101,160 @@ export const ChatModal: React.FC = () => {
     }
   }, [displayMessages.length, isChatModalOpen, mobileView, isLoadingMessages]);
 
-  // Mobile body scroll lock and history back handling
+  const prevModalOpenRef = useRef(false);
+  const prevConvIdRef = useRef<string | null>(null);
+
+  // Synchronize browser history entries for Messages list (Level 1) & Individual Chat (Level 2)
+  useEffect(() => {
+    if (!isChatModalOpen) {
+      prevModalOpenRef.current = false;
+      prevConvIdRef.current = null;
+      return;
+    }
+
+    const currentHistoryState = window.history.state;
+    const currentIdx =
+      typeof currentHistoryState?.internalIndex === 'number'
+        ? currentHistoryState.internalIndex
+        : 0;
+
+    // Check if the current history state already reflects the current modal state (e.g. after a popstate)
+    const isStateInSync =
+      (currentHistoryState?.isChatModalOpen && !activeConversation && !currentHistoryState?.isChatActive) ||
+      (currentHistoryState?.isChatModalOpen &&
+        activeConversation &&
+        currentHistoryState?.isChatActive &&
+        currentHistoryState?.chatConvId === activeConversation.id);
+
+    if (isStateInSync) {
+      prevModalOpenRef.current = true;
+      prevConvIdRef.current = activeConversation?.id || null;
+      return;
+    }
+
+    if (!prevModalOpenRef.current) {
+      // Modal just opened
+      prevModalOpenRef.current = true;
+      if (!activeConversation) {
+        // Level 1: Messages List
+        prevConvIdRef.current = null;
+        window.history.pushState(
+          {
+            ...(currentHistoryState || {}),
+            isChatModalOpen: true,
+            isChatActive: false,
+            chatConvId: null,
+            chatLevel: 1,
+            hadListStep: false,
+            internalIndex: currentIdx + 1,
+          },
+          '',
+          window.location.href
+        );
+      } else {
+        // Level 2: Direct Chat from listing
+        prevConvIdRef.current = activeConversation.id;
+        window.history.pushState(
+          {
+            ...(currentHistoryState || {}),
+            isChatModalOpen: true,
+            isChatActive: true,
+            chatConvId: activeConversation.id,
+            chatLevel: 2,
+            hadListStep: false,
+            internalIndex: currentIdx + 1,
+          },
+          '',
+          window.location.href
+        );
+      }
+    } else {
+      // Modal was already open
+      if (activeConversation && activeConversation.id !== prevConvIdRef.current) {
+        prevConvIdRef.current = activeConversation.id;
+        if (currentHistoryState?.chatLevel === 2) {
+          // Already in an individual chat, replace state with new conversation
+          window.history.replaceState(
+            {
+              ...(currentHistoryState || {}),
+              isChatModalOpen: true,
+              isChatActive: true,
+              chatConvId: activeConversation.id,
+              chatLevel: 2,
+            },
+            '',
+            window.location.href
+          );
+        } else {
+          // Transitioned from List to Conversation: push Level 2!
+          window.history.pushState(
+            {
+              ...(currentHistoryState || {}),
+              isChatModalOpen: true,
+              isChatActive: true,
+              chatConvId: activeConversation.id,
+              chatLevel: 2,
+              hadListStep: true,
+              internalIndex: currentIdx + 1,
+            },
+            '',
+            window.location.href
+          );
+        }
+      }
+    }
+  }, [isChatModalOpen, activeConversation?.id]);
+
+  // Mobile body scroll lock
   useEffect(() => {
     if (isChatModalOpen && window.innerWidth < 768) {
       document.body.style.overflow = 'hidden';
-      if (!window.history.state?.isMobileChatOpen) {
-        window.history.pushState({ isMobileChatOpen: true }, '', window.location.href);
-      }
       return () => {
         document.body.style.overflow = '';
       };
     }
   }, [isChatModalOpen]);
 
-  const handleCloseMobileChat = () => {
-    if (window.history.state?.isMobileChatOpen) {
+  // Step back from active chat to conversation list
+  const handleBackFromChat = () => {
+    const state = window.history.state;
+    if (state?.chatLevel === 2 && state?.hadListStep) {
+      window.history.back();
+    } else {
+      clearActiveConversation();
+      setMobileView('threads');
+      if (state?.isChatModalOpen) {
+        window.history.replaceState(
+          {
+            ...state,
+            isChatModalOpen: true,
+            isChatActive: false,
+            chatConvId: null,
+            chatLevel: 1,
+          },
+          '',
+          window.location.href
+        );
+      }
+    }
+  };
+
+  // Close the Messages modal cleanly
+  const handleCloseMessagesModal = () => {
+    const state = window.history.state;
+    const canGoBackTwo =
+      state?.chatLevel === 2 &&
+      state?.hadListStep &&
+      typeof state?.internalIndex === 'number' &&
+      state.internalIndex >= 2;
+
+    if (canGoBackTwo) {
+      window.history.go(-2);
+    } else if (state?.isChatModalOpen) {
       window.history.back();
     } else {
       setIsChatModalOpen(false);
+      clearActiveConversation();
     }
   };
 
@@ -332,45 +463,63 @@ export const ChatModal: React.FC = () => {
         {/* Backdrop */}
         <div
           className="fixed inset-0 bg-[#101828]/60 backdrop-blur-xs"
-          onClick={() => setIsChatModalOpen(false)}
+          onClick={handleCloseMessagesModal}
         />
 
         {/* Main Chat Window */}
         <div className="relative w-full max-w-3xl h-[85vh] sm:h-[650px] bg-white rounded-2xl shadow-2xl border border-[#E5E7EB] flex flex-col z-10 overflow-hidden">
           {/* Modal Header */}
           <div className="px-4 py-3 bg-[#101828] text-white flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2.5 min-w-0">
-              {otherUser.avatar ? (
-                <img
-                  src={otherUser.avatar}
-                  alt={otherUser.name}
-                  className="w-9 h-9 rounded-full object-cover border border-amber-400/40 shrink-0"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs shrink-0 font-heading">
-                  {otherUser.initials}
-                </div>
-              )}
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm font-heading text-white truncate max-w-xs sm:max-w-md">
-                  {otherUser.name}
-                </h3>
-                {activeConversation?.property_title ? (
-                  <p className="text-[11px] text-[#94A3B8] flex items-center gap-1 truncate max-w-xs sm:max-w-md">
-                    <Building2 className="w-3 h-3 text-[#F59E0B] shrink-0" />
-                    <span className="truncate">{activeConversation.property_title}</span>
-                  </p>
+            {activeConversation ? (
+              <div className="flex items-center gap-2.5 min-w-0">
+                {otherUser.avatar ? (
+                  <img
+                    src={otherUser.avatar}
+                    alt={otherUser.name}
+                    className="w-9 h-9 rounded-full object-cover border border-amber-400/40 shrink-0"
+                  />
                 ) : (
+                  <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs shrink-0 font-heading">
+                    {otherUser.initials}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm font-heading text-white truncate max-w-xs sm:max-w-md">
+                    {otherUser.name}
+                  </h3>
+                  {activeConversation?.property_title ? (
+                    <p className="text-[11px] text-[#94A3B8] flex items-center gap-1 truncate max-w-xs sm:max-w-md">
+                      <Building2 className="w-3 h-3 text-[#F59E0B] shrink-0" />
+                      <span className="truncate">{activeConversation.property_title}</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-[#94A3B8] flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-[#F59E0B] shrink-0" />
+                      <span>Privacy-Protected Communication</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs shrink-0 font-heading">
+                  <Building2 className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm font-heading text-white truncate max-w-xs sm:max-w-md">
+                    Messages &amp; Inquiries
+                  </h3>
                   <p className="text-[11px] text-[#94A3B8] flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3 text-[#F59E0B] shrink-0" />
-                    <span>Privacy-Protected Communication</span>
+                    <span>Encrypted Room Rental Messaging</span>
                   </p>
-                )}
+                </div>
               </div>
-            </div>
+            )}
             <button
-              onClick={() => setIsChatModalOpen(false)}
+              onClick={handleCloseMessagesModal}
               className="p-1.5 text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              title="Close Messages"
             >
               <X className="w-5 h-5" />
             </button>
@@ -384,7 +533,12 @@ export const ChatModal: React.FC = () => {
                 Recent Chats
               </div>
               <div className="flex-1 overflow-y-auto divide-y divide-[#F1F5F9]">
-                {conversations.map((conv) => {
+                {conversations.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-[#64748B]">
+                    No active conversations yet.
+                  </div>
+                ) : (
+                  conversations.map((conv) => {
                   const isActive = activeConversation?.id === conv.id;
                   const convOther = getOtherParticipant(conv, currentUser?.id);
                   return (
@@ -434,12 +588,13 @@ export const ChatModal: React.FC = () => {
                       </div>
                     </button>
                   );
-                })}
+                }))}
               </div>
             </div>
 
-            {/* Right Column: Message Thread */}
-            <div className="flex-1 flex flex-col bg-white">
+            {/* Right Column: Message Thread OR Placeholder */}
+            {activeConversation ? (
+              <div className="flex-1 flex flex-col bg-white">
               {/* Context Banner / Property Context Card */}
               {(activeConversation?.property_title || activeProperty) && (
                 <div className="p-3 px-4 bg-[#FFFBEB] border-b border-[#FDE68A] flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -785,7 +940,25 @@ export const ChatModal: React.FC = () => {
                   Send
                 </Button>
               </form>
-            </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC]">
+                <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mb-3 text-[#D97706] shadow-2xs">
+                  <Building2 className="w-8 h-8" />
+                </div>
+                <h4 className="text-base font-bold text-[#101828] font-heading mb-1">
+                  Select a Conversation
+                </h4>
+                <p className="text-xs text-[#64748B] max-w-xs leading-relaxed mb-4">
+                  Choose an inquiry from the list on the left to chat with hosts or students and view accommodation details.
+                </p>
+                {conversations.length === 0 && (
+                  <div className="text-xs text-amber-800 bg-amber-50/80 border border-amber-200 rounded-xl px-4 py-3 max-w-xs">
+                    You have no active conversations yet. Click &quot;Message Lister&quot; on any accommodation card to start an inquiry.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Location Sharing Dialog Modal (Desktop) */}
             {isLocationModalOpen && (
@@ -899,10 +1072,10 @@ export const ChatModal: React.FC = () => {
         {/* Mobile Header */}
         <div className="shrink-0 h-14 bg-slate-950 border-b border-slate-800 px-3 flex items-center justify-between z-10">
           <div className="flex items-center gap-2 min-w-0">
-            {mobileView === 'chat' && conversations.length > 1 ? (
+            {mobileView === 'chat' ? (
               <button
                 type="button"
-                onClick={() => setMobileView('threads')}
+                onClick={handleBackFromChat}
                 className="p-1.5 -ml-1 text-slate-300 hover:text-white rounded-lg flex items-center gap-1 cursor-pointer"
                 title="All Chats"
               >
@@ -911,9 +1084,9 @@ export const ChatModal: React.FC = () => {
             ) : (
               <button
                 type="button"
-                onClick={handleCloseMobileChat}
+                onClick={handleCloseMessagesModal}
                 className="p-1.5 -ml-1 text-slate-300 hover:text-white rounded-lg cursor-pointer"
-                title="Close"
+                title="Back"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -975,7 +1148,7 @@ export const ChatModal: React.FC = () => {
             )}
             <button
               type="button"
-              onClick={handleCloseMobileChat}
+              onClick={handleCloseMessagesModal}
               className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 transition-colors cursor-pointer"
               title="Close Messages"
             >

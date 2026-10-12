@@ -33,6 +33,11 @@ interface AppNavigationState {
   roomId?: string | null;
   fromView?: string;
   isMobileDetailOpen?: boolean;
+  isChatModalOpen?: boolean;
+  isChatActive?: boolean;
+  chatConvId?: string | null;
+  chatLevel?: number;
+  hadListStep?: boolean;
   internalIndex: number;
 }
 
@@ -155,12 +160,25 @@ const initialRoute = typeof window !== 'undefined'
 
 const MainApp: React.FC = () => {
   const { isAuthenticated, requireAuth, isSuperAdmin, consumePendingAction, currentUser } = useAuth();
-  const { openChatForListing, openChatWithContext, isChatModalOpen, setIsChatModalOpen } = useChat();
+  const {
+    openChatForListing,
+    openChatWithContext,
+    isChatModalOpen,
+    setIsChatModalOpen,
+    openMessagesList,
+    clearActiveConversation,
+    activeConversation,
+  } = useChat();
 
   const isChatModalOpenRef = useRef(isChatModalOpen);
   useEffect(() => {
     isChatModalOpenRef.current = isChatModalOpen;
   }, [isChatModalOpen]);
+
+  const activeConversationRef = useRef(activeConversation);
+  useEffect(() => {
+    activeConversationRef.current = activeConversation;
+  }, [activeConversation]);
 
   const [isCallbackRoute, setIsCallbackRoute] = useState(() => {
     return (
@@ -335,9 +353,32 @@ const MainApp: React.FC = () => {
         currentInternalIndexRef.current = state.internalIndex;
       }
 
-      // Close chat modal if it was open
+      // Handle chat back navigation hierarchy
       if (isChatModalOpenRef.current) {
-        setIsChatModalOpen(false);
+        // Condition 1: User is popping from an active chat view back to the Messages conversation list
+        const isPoppingToMessageList =
+          state?.isChatModalOpen === true && !state?.isChatActive;
+
+        if (isPoppingToMessageList || (activeConversationRef.current && state?.isChatModalOpen)) {
+          // STEP 3: Individual Chat -> Return to Messages list
+          // Clear active conversation selection, stay inside chat modal, do NOT close modal, do NOT navigate away!
+          clearActiveConversation();
+          return;
+        }
+
+        // Condition 2: If popped state is outside the chat modal, close it cleanly
+        if (!state?.isChatModalOpen) {
+          setIsChatModalOpen(false);
+          clearActiveConversation();
+        }
+      }
+
+      // Handle forward pop into Messages list
+      if (!isChatModalOpenRef.current && state?.isChatModalOpen) {
+        if (!state?.isChatActive) {
+          openMessagesList();
+          return;
+        }
       }
 
       // Handle mobile detail sheet closing
@@ -559,6 +600,7 @@ const MainApp: React.FC = () => {
 
   const handleNavigate = useCallback((view: string, param?: any, options?: { replace?: boolean }) => {
     setIsChatModalOpen(false);
+    clearActiveConversation();
     if (isMobileDetailOpenRef.current) {
       setIsMobileDetailOpen(false);
       document.body.style.overflow = '';
