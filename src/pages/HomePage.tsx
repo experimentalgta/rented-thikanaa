@@ -60,9 +60,30 @@ export const HomePage: React.FC<HomePageProps> = ({
   return (
     <div className="flex flex-col space-y-8 sm:space-y-16 md:space-y-24 pb-28 md:pb-20 w-full max-w-[100vw] overflow-x-hidden relative">
       {/* 1. HERO / COMPACT MOBILE TOP SEARCH SECTION */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-[#101828] via-[#172554] to-[#101828] text-white pt-2.5 pb-3 px-4 md:pt-20 md:pb-28 sm:px-6 lg:px-8 w-full max-w-full order-1">
+      <section className="relative overflow-hidden bg-[#101828] md:bg-gradient-to-b md:from-[#101828] md:via-[#172554] md:to-[#101828] text-white pt-2.5 pb-3 px-4 md:pt-20 md:pb-28 sm:px-6 lg:px-8 w-full max-w-full order-1">
+        {/* Mobile-Only Room Photograph Background & Dark Navy Readability Overlay */}
+        <div
+          className="md:hidden absolute inset-0 pointer-events-none overflow-hidden"
+          style={{
+            backgroundImage: "url('/assets/room-bg.jpg')",
+            backgroundSize: 'cover',
+            backgroundPosition: 'center top',
+            backgroundRepeat: 'no-repeat',
+          }}
+          aria-hidden="true"
+        >
+          {/* Subtle Dark Navy Gradient Overlay for Readability */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                'linear-gradient(180deg, rgba(10, 25, 47, 0.75) 0%, rgba(10, 25, 47, 0.85) 100%)',
+            }}
+          />
+        </div>
+
         {/* Subtle decorative grid */}
-        <div className="absolute inset-0 opacity-5 pointer-events-none bg-[radial-gradient(#F59E0B_1px,transparent_1px)] [background-size:16px_16px] max-w-full overflow-hidden" />
+        <div className="hidden md:block absolute inset-0 opacity-5 pointer-events-none bg-[radial-gradient(#F59E0B_1px,transparent_1px)] [background-size:16px_16px] max-w-full overflow-hidden" />
 
         {/* ========================================================= */}
         {/* MOBILE COMPACT APP-STYLE TOP SEARCH (< md)                */}

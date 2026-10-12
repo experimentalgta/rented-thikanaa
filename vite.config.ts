@@ -21,6 +21,7 @@ export default defineConfig({
         'pwa-512x512.png',
         'maskable-icon-512x512.png',
         'logo.png',
+        'assets/room-bg.jpg',
       ],
       manifest: {
         id: '/?source=pwa',
@@ -62,7 +63,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpg,jpeg}'],
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/auth\/callback/],
