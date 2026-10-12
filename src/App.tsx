@@ -170,6 +170,7 @@ const MainApp: React.FC = () => {
     isChatModalOpen,
     setIsChatModalOpen,
     openMessagesList,
+    openConversationById,
     clearActiveConversation,
     activeConversation,
   } = useChat();
@@ -292,8 +293,17 @@ const MainApp: React.FC = () => {
       );
     }
 
-    // Deep link or initial query param check (?room=... or ?roomId=...)
+    // Deep link or initial query param check (?room=..., ?conv=..., or ?view=messages)
     const initialUrl = new URL(window.location.href);
+    const initialConvId = initialUrl.searchParams.get('conv');
+    const initialViewParam = initialUrl.searchParams.get('view');
+
+    if (initialConvId) {
+      openConversationById(initialConvId);
+    } else if (initialViewParam === 'messages' || initialViewParam === 'chat') {
+      openMessagesList();
+    }
+
     const initialRoomId = initialUrl.searchParams.get('room') || initialUrl.searchParams.get('roomId');
     if (initialRoomId) {
       propertyRepository.getPropertyById(initialRoomId).then((p) => {

@@ -22,6 +22,7 @@ export default defineConfig({
         'maskable-icon-512x512.png',
         'logo.png',
         'assets/room-bg.jpg',
+        'push-worker.js',
       ],
       manifest: {
         id: '/?source=pwa',
@@ -63,6 +64,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ['/push-worker.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpg,jpeg}'],
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',

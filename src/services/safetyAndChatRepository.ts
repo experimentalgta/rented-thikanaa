@@ -8,6 +8,7 @@ import {
 } from '../types';
 import { serverAuth } from './serverAuth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { pushNotificationService } from './pushNotificationService';
 
 export class ChatAndSafetyRepository implements IChatRepository, ISafetyRepository {
   private assertSupabaseClient() {
@@ -362,6 +363,22 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
         last_message_time: new Date().toISOString(),
       })
       .eq('id', targetConvId);
+
+    // Asynchronously dispatch Web Push Notification to recipient (strictly non-blocking)
+    pushNotificationService
+      .notifyRecipient({
+        messageId: newMsg.id,
+        conversationId: targetConvId!,
+        senderId: data.senderId,
+        receiverId: data.receiverId,
+        senderName: data.senderName,
+        text: data.text,
+      })
+      .catch((pushErr) => {
+        if (import.meta.env.DEV) {
+          console.warn('[safetyAndChatRepository] Non-blocking push notification warning:', pushErr);
+        }
+      });
 
     return {
       id: newMsg.id,

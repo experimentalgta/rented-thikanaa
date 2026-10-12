@@ -35,6 +35,7 @@ import { Button } from '../components/common/Button';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { sanitizeIndianPhoneNumber, isValidIndianPhoneNumber } from '../utils/phoneUtils';
 import { BrandName } from '../components/common/BrandName';
+import { NotificationSettingsCard } from '../components/notifications/NotificationSettingsCard';
 
 interface UserDashboardProps {
   initialTab?: string;
@@ -1130,7 +1131,10 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
       {/* TAB 8: SETTINGS */}
       {activeTab === 'settings' && (
-        <div className="max-w-2xl bg-white rounded-3xl border border-[#E5E7EB] p-6 sm:p-8 space-y-5 shadow-xs">
+        <div className="space-y-6 max-w-2xl">
+          <NotificationSettingsCard />
+
+          <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 sm:p-8 space-y-5 shadow-xs">
           <div className="pb-4 border-b border-[#F1F5F9]">
             <h2 className="text-base font-bold text-[#101828] font-heading">
               Member Profile &amp; Account Settings
@@ -1245,7 +1249,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             </Button>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* Property-Specific Phone Setup Modal */}
       {phoneModalProperty && (

@@ -3,6 +3,8 @@ import {
   getNotificationPermission,
   requestNotificationPermission as requestNativeNotification,
 } from '../utils/notifications';
+import { useAuth } from './AuthContext';
+import { pushNotificationService } from '../services/pushNotificationService';
 
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -13,7 +15,7 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-interface PwaContextType {
+export interface PwaContextType {
   isInstallable: boolean;
   isInstalled: boolean;
   isIOS: boolean;
@@ -29,6 +31,14 @@ interface PwaContextType {
   dismissNotificationPrompt: () => void;
   isFirstLaunchDismissed: boolean;
   dismissFirstLaunch: () => void;
+
+  // Real Web Push Extensions
+  isPushSupported: boolean;
+  isPushSubscribed: boolean;
+  isPushLoading: boolean;
+  subscribePush: () => Promise<boolean>;
+  unsubscribePush: () => Promise<boolean>;
+  refreshPushStatus: () => Promise<void>;
 }
 
 const PwaContext = createContext<PwaContextType | undefined>(undefined);
@@ -38,6 +48,7 @@ const NOTIFICATION_DISMISSED_KEY = 'renter_thikan_pwa_notif_dismissed_v1';
 const FIRST_LAUNCH_DISMISSED_KEY = 'renter_thikan_pwa_first_launch_v1';
 
 export const PwaProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentUser } = useAuth();
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [isInstalled, setIsInstalled] = useState<boolean>(() => {
@@ -96,6 +107,25 @@ export const PwaProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
   });
+
+  // Web Push states
+  const [isPushSupported, setIsPushSupported] = useState<boolean>(() =>
+    pushNotificationService.isPushSupported()
+  );
+  const [isPushSubscribed, setIsPushSubscribed] = useState<boolean>(false);
+  const [isPushLoading, setIsPushLoading] = useState<boolean>(false);
+
+  const refreshPushStatus = useCallback(async () => {
+    if (!pushNotificationService.isPushSupported()) {
+      setIsPushSupported(false);
+      setIsPushSubscribed(false);
+      return;
+    }
+    setIsPushSupported(true);
+    setNotificationPermission(pushNotificationService.getPermissionState());
+    const subscribed = await pushNotificationService.isSubscribed();
+    setIsPushSubscribed(subscribed);
+  }, []);
 
   // Track online/offline status
   useEffect(() => {
@@ -165,6 +195,16 @@ export const PwaProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
+  // Check push subscription on load & sync on user login
+  useEffect(() => {
+    refreshPushStatus();
+    if (currentUser?.id && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      pushNotificationService.syncSubscriptionOnLogin(currentUser.id).then(() => {
+        refreshPushStatus();
+      });
+    }
+  }, [currentUser?.id, refreshPushStatus]);
+
   const promptInstall = useCallback(async (): Promise<boolean> => {
     if (deferredPrompt) {
       try {
@@ -196,13 +236,42 @@ export const PwaProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
   }, []);
 
+  const subscribePush = useCallback(async (): Promise<boolean> => {
+    if (!currentUser?.id) {
+      return false;
+    }
+    setIsPushLoading(true);
+    try {
+      const res = await pushNotificationService.subscribeUser(currentUser.id);
+      await refreshPushStatus();
+      return res.success;
+    } finally {
+      setIsPushLoading(false);
+    }
+  }, [currentUser?.id, refreshPushStatus]);
+
+  const unsubscribePush = useCallback(async (): Promise<boolean> => {
+    setIsPushLoading(true);
+    try {
+      const res = await pushNotificationService.unsubscribeUser(currentUser?.id);
+      await refreshPushStatus();
+      return res.success;
+    } finally {
+      setIsPushLoading(false);
+    }
+  }, [currentUser?.id, refreshPushStatus]);
+
   const requestNotifications = useCallback(async (): Promise<
     NotificationPermission | 'unsupported'
   > => {
     const res = await requestNativeNotification();
     setNotificationPermission(res);
+    if (res === 'granted' && currentUser?.id) {
+      await pushNotificationService.subscribeUser(currentUser.id);
+    }
+    await refreshPushStatus();
     return res;
-  }, []);
+  }, [currentUser?.id, refreshPushStatus]);
 
   const dismissNotificationPrompt = useCallback(() => {
     setIsNotificationDismissed(true);
@@ -236,6 +305,14 @@ export const PwaProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dismissNotificationPrompt,
         isFirstLaunchDismissed,
         dismissFirstLaunch,
+
+        // Push API
+        isPushSupported,
+        isPushSubscribed,
+        isPushLoading,
+        subscribePush,
+        unsubscribePush,
+        refreshPushStatus,
       }}
     >
       {children}

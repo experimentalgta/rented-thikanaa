@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { showBrowserNotification, requestNotificationPermission } from '../utils/notifications';
 import { sanitizeIndianPhoneNumber } from '../utils/phoneUtils';
+import { pushNotificationService } from '../services/pushNotificationService';
 
 export interface IncomingToast {
   id: string;
@@ -38,6 +39,7 @@ interface ChatContextType {
     created_by?: string;
   }) => Promise<void>;
   selectConversation: (conv: Conversation | null) => Promise<void> | void;
+  openConversationById: (conversationId: string) => Promise<void>;
   openMessagesList: () => void;
   clearActiveConversation: () => void;
   sendMessage: (text: string) => Promise<void>;
@@ -207,6 +209,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIncomingToast(null);
     } else {
       loadData();
+      if (currentUser?.id) {
+        pushNotificationService.syncSubscriptionOnLogin(currentUser.id).catch(console.warn);
+      }
     }
   }, [currentUser?.id, loadData]);
 
@@ -908,6 +913,33 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [clearActiveConversation, markConversationAsRead]
   );
 
+  const openConversationById = useCallback(
+    async (conversationId: string) => {
+      if (!conversationId) return;
+
+      setIsChatModalOpen(true);
+
+      // 1. Check if conversation is already in current loaded state
+      let target = conversationsRef.current.find((c) => c.id === conversationId);
+
+      // 2. If not found and user is logged in, refresh conversations
+      if (!target && currentUserRef.current?.id) {
+        try {
+          const convs = await chatAndSafetyRepository.getConversations(currentUserRef.current.id);
+          setConversations(convs);
+          target = convs.find((c) => c.id === conversationId);
+        } catch (err) {
+          console.warn('[ChatContext] Failed to load conversations in openConversationById:', err);
+        }
+      }
+
+      if (target) {
+        selectConversation(target);
+      }
+    },
+    [selectConversation, setIsChatModalOpen]
+  );
+
   const sendMessage = async (text: string) => {
     if (!activeConversation || !currentUser) return;
 
@@ -1191,6 +1223,48 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await loadData();
   };
 
+  // Handle service worker navigation and background push click events
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OPEN_CONVERSATION') {
+        const convId = event.data.conversationId;
+        if (convId) {
+          openConversationById(convId);
+        } else {
+          openMessagesList();
+        }
+      } else if (event.data?.type === 'PUSH_SUBSCRIPTION_CHANGED') {
+        if (currentUserRef.current?.id) {
+          pushNotificationService.syncSubscriptionOnLogin(currentUserRef.current.id).catch(console.warn);
+        }
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+    };
+  }, [openConversationById, openMessagesList]);
+
+  // Handle URL deep links on initial launch (?view=messages or ?conv=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      const convParam = url.searchParams.get('conv');
+      const viewParam = url.searchParams.get('view');
+      if (convParam) {
+        openConversationById(convParam);
+      } else if (viewParam === 'messages' || viewParam === 'chat') {
+        openMessagesList();
+      }
+    } catch {
+      // Ignore URL parsing errors
+    }
+  }, [openConversationById, openMessagesList]);
+
   const unreadCount = conversations.reduce((acc, c) => acc + (c.unread_count || 0), 0);
 
   return (
@@ -1209,6 +1283,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         openChatForListing,
         openChatWithContext,
         selectConversation,
+        openConversationById,
         sendMessage,
         sendContactRequest,
         updateContactRequest,
