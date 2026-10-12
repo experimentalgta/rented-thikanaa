@@ -23,6 +23,7 @@ import { Button } from '../components/common/Button';
 import { BrandName } from '../components/common/BrandName';
 import { FirstLaunchOnboarding } from '../components/pwa/FirstLaunchOnboarding';
 import { NotificationPrompt } from '../components/pwa/NotificationPrompt';
+import roomBgUrl from '../assets/room-bg.jpg';
 
 interface HomePageProps {
   featuredProperties: Property[];
@@ -65,19 +66,37 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div
           className="md:hidden absolute inset-0 pointer-events-none overflow-hidden"
           style={{
-            backgroundImage: "url('/assets/room-bg.jpg')",
+            backgroundImage: `url(${roomBgUrl}), url('/assets/room-bg.jpg'), url('/room-bg.jpg')`,
             backgroundSize: 'cover',
-            backgroundPosition: 'center top',
+            backgroundPosition: 'center 38%',
             backgroundRepeat: 'no-repeat',
           }}
           aria-hidden="true"
         >
+          {/* Direct image rendering for guaranteed subpixel resolution and browser caching */}
+          <img
+            src={roomBgUrl}
+            alt=""
+            loading="eager"
+            decoding="sync"
+            className="w-full h-full object-cover object-[center_38%] select-none pointer-events-none"
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.dataset.triedPublic) {
+                target.dataset.triedPublic = 'true';
+                target.src = '/assets/room-bg.jpg';
+              } else if (!target.dataset.triedRoot) {
+                target.dataset.triedRoot = 'true';
+                target.src = '/room-bg.jpg';
+              }
+            }}
+          />
           {/* Subtle Dark Navy Gradient Overlay for Readability */}
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
               background:
-                'linear-gradient(180deg, rgba(10, 25, 47, 0.75) 0%, rgba(10, 25, 47, 0.85) 100%)',
+                'linear-gradient(180deg, rgba(10, 25, 47, 0.45) 0%, rgba(10, 25, 47, 0.68) 100%)',
             }}
           />
         </div>

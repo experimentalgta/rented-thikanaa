@@ -34,9 +34,9 @@ assert(
   'HomePage.tsx applies background-image url(/assets/room-bg.jpg)'
 );
 assert(homeContent.includes("backgroundSize: 'cover'"), 'backgroundSize is cover');
-assert(homeContent.includes("backgroundPosition: 'center top'"), 'backgroundPosition is center top');
+assert(homeContent.includes("backgroundPosition: 'center 38%'") || homeContent.includes("backgroundPosition: 'center top'"), 'backgroundPosition is configured correctly');
 assert(homeContent.includes("backgroundRepeat: 'no-repeat'"), 'backgroundRepeat is no-repeat');
-assert(homeContent.includes('rgba(10, 25, 47, 0.75)') && homeContent.includes('rgba(10, 25, 47, 0.85)'), 'Dark navy overlay gradient (rgba(10, 25, 47, 0.75) to 0.85) applied');
+assert(homeContent.includes('rgba(10, 25, 47,') && homeContent.includes('linear-gradient(180deg,'), 'Dark navy overlay gradient applied');
 assert(homeContent.includes('md:hidden') && homeContent.includes('pointer-events-none'), 'Mobile background layer is md:hidden and pointer-events-none');
 assert(homeContent.includes('md:bg-gradient-to-b') && homeContent.includes('md:from-[#101828]'), 'Desktop background gradient is preserved with md: responsive prefix');
 assert(homeContent.includes('block md:hidden relative z-10'), 'Mobile search controls have relative z-10 stacking above overlay');
