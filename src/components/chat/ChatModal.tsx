@@ -21,7 +21,8 @@ import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
 import { propertyRepository } from '../../services/propertyRepository';
 import { getOtherParticipant } from '../../utils/chatHelpers';
-import { Property } from '../../types';
+import { Property, PropertyContactDetails } from '../../types';
+import { getPhoneContactDetails } from '../../utils/phoneUtils';
 
 export const ChatModal: React.FC = () => {
   const {
@@ -34,6 +35,7 @@ export const ChatModal: React.FC = () => {
     isLoadingMessages,
     sendMessage,
     shareExactLocation,
+    shareContactDetails,
     markConversationAsRead,
   } = useChat();
 
@@ -64,6 +66,8 @@ export const ChatModal: React.FC = () => {
   const [googleMapsUrl, setGoogleMapsUrl] = useState('');
   const [whatsappUrl, setWhatsappUrl] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [verifiedContactDetails, setVerifiedContactDetails] = useState<PropertyContactDetails | null>(null);
+  const [isSharingContact, setIsSharingContact] = useState(false);
 
   const desktopMessagesEndRef = useRef<HTMLDivElement>(null);
   const mobileMessagesEndRef = useRef<HTMLDivElement>(null);
@@ -128,6 +132,7 @@ export const ChatModal: React.FC = () => {
     let isSubscribed = true;
     // Immediately clear previous property context on conversation change to prevent visual bleed
     setActiveProperty(null);
+    setVerifiedContactDetails(null);
 
     if (activeConversation?.property_id) {
       propertyRepository
@@ -151,13 +156,13 @@ export const ChatModal: React.FC = () => {
                 `${prop.locality} Prayagraj Uttar Pradesh India`
               )}`
             );
-            setWhatsappUrl(
-              prop.owner_phone
-                ? `https://wa.me/${prop.owner_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                    `Namaste, I am arriving for the visit to ${prop.title}`
-                  )}`
-                : 'https://wa.me/919415238472?text=Namaste%2C%20I%20am%20arriving%20for%20the%20property%20visit'
-            );
+            if (prop.owner_phone) {
+              setWhatsappUrl(
+                `https://wa.me/${prop.owner_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                  `Namaste, I am arriving for the visit to ${prop.title}`
+                )}`
+              );
+            }
           } else {
             setActiveProperty('deleted');
           }
@@ -166,12 +171,31 @@ export const ChatModal: React.FC = () => {
           if (!isSubscribed) return;
           setActiveProperty('deleted');
         });
+
+      propertyRepository
+        .getPropertyContactDetails(activeConversation.property_id)
+        .then((contact) => {
+          if (!isSubscribed) return;
+          setVerifiedContactDetails(contact);
+          if (contact?.authorized && contact?.phone_number) {
+            const digits = contact.phone_number.replace(/[^0-9]/g, '');
+            setWhatsappUrl(
+              `https://wa.me/${digits}?text=${encodeURIComponent(
+                `Namaste, I am contacting you regarding your property visit.`
+              )}`
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('[ChatModal] Failed to load contact details:', err);
+        });
     } else {
       setActiveProperty(null);
+      setVerifiedContactDetails(null);
       setExactAddress('14/B, Old Katra, Near Netram Chauraha, Prayagraj, UP 211002');
       setLandmarkDirections('Take the paved lane opposite Netram Chauraha, 3rd house on the left.');
       setGoogleMapsUrl('https://www.google.com/maps/search/?api=1&query=25.4578,81.8539');
-      setWhatsappUrl('https://wa.me/919415238472?text=Namaste%20visiting%20property');
+      setWhatsappUrl('');
     }
 
     return () => {
@@ -222,6 +246,49 @@ export const ChatModal: React.FC = () => {
     }
   };
 
+  const isOwnerOfActiveProperty = Boolean(
+    currentUser?.id &&
+      activeProperty &&
+      activeProperty !== 'deleted' &&
+      (activeProperty.owner_id === currentUser.id ||
+        activeProperty.created_by === currentUser.id)
+  );
+
+  const activeHostPhone = verifiedContactDetails?.authorized
+    ? verifiedContactDetails.phone_number
+    : (activeProperty && activeProperty !== 'deleted' ? activeProperty.owner_phone : null);
+
+  const hostContactDetails = activeHostPhone
+    ? getPhoneContactDetails(
+        activeHostPhone,
+        activeProperty && activeProperty !== 'deleted'
+          ? activeProperty.title
+          : activeConversation?.property_title || 'your property'
+      )
+    : null;
+
+  const handleQuickShareContact = async () => {
+    if (isSharingContact) return;
+    setIsSharingContact(true);
+    try {
+      const phoneToShare =
+        (activeProperty && activeProperty !== 'deleted'
+          ? (activeProperty.phone_number || activeProperty.owner_phone)
+          : null) ||
+        currentUser?.phone_number ||
+        '';
+      await shareContactDetails(phoneToShare);
+      if (activeConversation?.property_id) {
+        const updated = await propertyRepository.getPropertyContactDetails(activeConversation.property_id);
+        setVerifiedContactDetails(updated);
+      }
+    } catch (err) {
+      console.error('Failed to share contact details:', err);
+    } finally {
+      setIsSharingContact(false);
+    }
+  };
+
   const handleShareLocationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!exactAddress.trim()) return;
@@ -239,6 +306,12 @@ export const ChatModal: React.FC = () => {
         shared_at: new Date().toISOString(),
       });
       setIsLocationModalOpen(false);
+      if (activeConversation?.property_id) {
+        propertyRepository
+          .getPropertyContactDetails(activeConversation.property_id)
+          .then(setVerifiedContactDetails)
+          .catch(() => {});
+      }
     } catch (err) {
       console.error('Failed to share exact location:', err);
     }
@@ -414,15 +487,67 @@ export const ChatModal: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap ml-auto">
-                    {/* Share Exact Location Action Button */}
-                    <button
-                      onClick={() => setIsLocationModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#101828] text-white text-[11px] font-semibold hover:bg-[#F59E0B] hover:text-[#101828] shadow-2xs transition-all cursor-pointer"
-                      title="Send exact doorstep address and directions"
-                    >
-                      <MapPin className="w-3 h-3 text-[#F59E0B]" />
-                      <span>Share Exact Location</span>
-                    </button>
+                    {isOwnerOfActiveProperty ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleQuickShareContact}
+                          disabled={isSharingContact}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                          title="Share direct phone and WhatsApp contact with student"
+                        >
+                          <Phone className="w-3 h-3 text-emerald-200" />
+                          <span>{isSharingContact ? 'Sharing...' : 'Share Contact'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsLocationModalOpen(true)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#101828] text-white text-[11px] font-semibold hover:bg-[#F59E0B] hover:text-[#101828] shadow-2xs transition-all cursor-pointer"
+                          title="Send exact doorstep address and directions"
+                        >
+                          <MapPin className="w-3 h-3 text-[#F59E0B]" />
+                          <span>Share Location</span>
+                        </button>
+                      </>
+                    ) : hostContactDetails ? (
+                      <>
+                        <a
+                          href={hostContactDetails.telUrl}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800 shadow-2xs transition-all"
+                          title={`Call host at ${hostContactDetails.formattedDisplay}`}
+                        >
+                          <Phone className="w-3 h-3 text-amber-400" />
+                          <span>Call Host ({hostContactDetails.formattedDisplay})</span>
+                        </a>
+                        <a
+                          href={hostContactDetails.whatsappUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#25D366] text-white text-[11px] font-bold hover:bg-[#20ba59] shadow-2xs transition-all"
+                          title="Chat with host on WhatsApp"
+                        >
+                          <PhoneCall className="w-3 h-3" />
+                          <span>WhatsApp</span>
+                        </a>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5 text-slate-400" /> Phone Private
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSendQuickMessage(
+                              'Namaste! Could you please share your contact number for a property visit?'
+                            )
+                          }
+                          className="text-[10px] text-amber-800 font-semibold hover:underline cursor-pointer"
+                        >
+                          Ask for Contact
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -581,6 +706,16 @@ export const ChatModal: React.FC = () => {
                                 <ExternalLink className="w-3 h-3 text-[#F59E0B]" />
                                 <span>Open in Google Maps</span>
                               </a>
+
+                              {(hostContactDetails?.telUrl || (msg.location_share.whatsapp_url?.match(/wa\.me\/(\d+)/) ? `tel:+${msg.location_share.whatsapp_url.match(/wa\.me\/(\d+)/)![1]}` : null)) && (
+                                <a
+                                  href={hostContactDetails?.telUrl || `tel:+${msg.location_share.whatsapp_url!.match(/wa\.me\/(\d+)/)![1]}`}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 transition-colors shadow-2xs"
+                                >
+                                  <Phone className="w-3 h-3 text-white" />
+                                  <span>Call Host</span>
+                                </a>
+                              )}
 
                               {msg.location_share.whatsapp_url && (
                                 <a
@@ -965,14 +1100,64 @@ export const ChatModal: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setIsLocationModalOpen(true)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500 text-slate-950 text-[10px] font-bold hover:bg-amber-400 transition-all cursor-pointer"
-                  >
-                    <MapPin className="w-3 h-3 text-slate-950" />
-                    <span>Location</span>
-                  </button>
+                  {isOwnerOfActiveProperty ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleQuickShareContact}
+                        disabled={isSharingContact}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-500 text-slate-950 text-[10px] font-bold hover:bg-emerald-400 transition-all cursor-pointer disabled:opacity-50"
+                        title="Share contact details with student"
+                      >
+                        <Phone className="w-3 h-3 text-slate-950" />
+                        <span>{isSharingContact ? '...' : 'Contact'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsLocationModalOpen(true)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500 text-slate-950 text-[10px] font-bold hover:bg-amber-400 transition-all cursor-pointer"
+                        title="Send exact doorstep address and directions"
+                      >
+                        <MapPin className="w-3 h-3 text-slate-950" />
+                        <span>Location</span>
+                      </button>
+                    </>
+                  ) : hostContactDetails ? (
+                    <>
+                      <a
+                        href={hostContactDetails.telUrl}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500 text-slate-950 text-[10px] font-bold hover:bg-amber-400 shadow-2xs transition-all"
+                        title={`Call host at ${hostContactDetails.formattedDisplay}`}
+                      >
+                        <Phone className="w-3 h-3 text-slate-950" />
+                        <span>Call</span>
+                      </a>
+                      <a
+                        href={hostContactDetails.whatsappUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#25D366] text-white text-[10px] font-bold hover:bg-[#20ba59] shadow-2xs transition-all"
+                        title="Chat with host on WhatsApp"
+                      >
+                        <PhoneCall className="w-3 h-3" />
+                        <span>WhatsApp</span>
+                      </a>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSendQuickMessage(
+                          'Namaste! Could you please share your contact number for a property visit?'
+                        )
+                      }
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-800 text-amber-400 border border-slate-700 text-[10px] font-bold hover:bg-slate-700 transition-all cursor-pointer"
+                      title="Request host to share contact number"
+                    >
+                      <Lock className="w-3 h-3 text-amber-400" />
+                      <span>Ask Contact</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1127,6 +1312,16 @@ export const ChatModal: React.FC = () => {
                                 <ExternalLink className="w-3 h-3 text-slate-950" />
                                 <span>Open Google Maps</span>
                               </a>
+
+                              {(hostContactDetails?.telUrl || (msg.location_share.whatsapp_url?.match(/wa\.me\/(\d+)/) ? `tel:+${msg.location_share.whatsapp_url.match(/wa\.me\/(\d+)/)![1]}` : null)) && (
+                                <a
+                                  href={hostContactDetails?.telUrl || `tel:+${msg.location_share.whatsapp_url!.match(/wa\.me\/(\d+)/)![1]}`}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500 text-slate-950 text-[10px] font-bold hover:bg-emerald-400 shadow-2xs"
+                                >
+                                  <Phone className="w-3 h-3 text-slate-950" />
+                                  <span>Call Host</span>
+                                </a>
+                              )}
 
                               {msg.location_share.whatsapp_url && (
                                 <a

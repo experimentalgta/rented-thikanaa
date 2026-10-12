@@ -31,22 +31,96 @@ export class PropertyRepository implements IPropertyRepository {
   }
 
   /**
-   * Helper to retrieve contact request status for the given property and requester.
+   * Helper to retrieve contact request status for the given property and requester/receiver.
    */
-  private async getContactRequestStatus(propertyId: string, userId?: string): Promise<ContactRequestStatus> {
+  private async getContactRequestStatus(
+    propertyId: string,
+    userId?: string,
+    ownerId?: string
+  ): Promise<ContactRequestStatus> {
     if (!userId || !supabase) return 'none';
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('contact_requests')
         .select('status')
-        .eq('property_id', propertyId)
-        .eq('requester_id', userId)
-        .maybeSingle();
+        .eq('property_id', propertyId);
+
+      if (ownerId) {
+        query = query.or(
+          `and(requester_id.eq.${userId},receiver_id.eq.${ownerId}),and(requester_id.eq.${ownerId},receiver_id.eq.${userId})`
+        );
+      } else {
+        query = query.or(`requester_id.eq.${userId},receiver_id.eq.${userId}`);
+      }
+
+      const { data, error } = await query.maybeSingle();
 
       if (error || !data) return 'none';
       return data.status as ContactRequestStatus;
     } catch {
       return 'none';
+    }
+  }
+
+  /**
+   * Helper to check if host has explicitly shared contact details or exact location
+   * with this user (via accepted contact request or in-chat share).
+   */
+  private async isContactSharedWithUser(
+    propertyId: string,
+    userId?: string,
+    ownerId?: string
+  ): Promise<boolean> {
+    if (!userId || !supabase) return false;
+    try {
+      // 1. Check for accepted contact request between the two users
+      let reqQuery = supabase
+        .from('contact_requests')
+        .select('id')
+        .eq('status', 'accepted')
+        .eq('property_id', propertyId);
+
+      if (ownerId) {
+        reqQuery = reqQuery.or(
+          `and(requester_id.eq.${userId},receiver_id.eq.${ownerId}),and(requester_id.eq.${ownerId},receiver_id.eq.${userId})`
+        );
+      } else {
+        reqQuery = reqQuery.or(`requester_id.eq.${userId},receiver_id.eq.${userId}`);
+      }
+
+      const { data: reqData } = await reqQuery.maybeSingle();
+      if (reqData) return true;
+
+      // 2. Check for in-chat location / contact share messages
+      let convQuery = supabase
+        .from('conversations')
+        .select(`
+          id,
+          messages!inner (id, sender_id, location_share, text)
+        `)
+        .eq('property_id', propertyId)
+        .or(`participant_a.eq.${userId},participant_b.eq.${userId}`);
+
+      const { data: convData } = await convQuery.maybeSingle();
+      if (convData && (convData as any).messages) {
+        const msgs = Array.isArray((convData as any).messages)
+          ? (convData as any).messages
+          : [(convData as any).messages];
+        const hasShareMsg = msgs.some(
+          (m: any) =>
+            m.sender_id !== userId &&
+            (m.location_share ||
+              (m.text &&
+                (m.text.includes('Location Shared') ||
+                  m.text.includes('wa.me') ||
+                  m.text.toLowerCase().includes('contact'))))
+        );
+        if (hasShareMsg) return true;
+      }
+
+      return false;
+    } catch {
+      return false;
     }
   }
 
@@ -134,9 +208,25 @@ export class PropertyRepository implements IPropertyRepository {
     // 1. Direct Phone Privacy (Authentication-gated)
     // Unauthenticated visitors NEVER receive direct phone numbers in public responses.
     const isAuthenticated = Boolean(currentUserId);
-    const isPhoneAuthorized =
-      isAuthenticated &&
-      (cloned.show_phone_number === true || cloned.phone_privacy === 'public');
+    const isPublic =
+      cloned.show_phone_number === true ||
+      cloned.phone_privacy === 'public' ||
+      (cloned as any).owner?.phone_privacy === 'public';
+
+    let isContactShared = preloadedContactStatus === 'accepted';
+    if (!isContactShared && checkLocationSharedInChat && currentUserId) {
+      isContactShared = await this.isContactSharedWithUser(
+        cloned.id,
+        currentUserId,
+        cloned.owner_id || cloned.created_by
+      );
+    }
+
+    if (isContactShared) {
+      cloned.contact_request_status = 'accepted';
+    }
+
+    const isPhoneAuthorized = isAuthenticated && (isPublic || isContactShared);
 
     if (!isPhoneAuthorized) {
       cloned.owner_phone = null;
@@ -619,7 +709,7 @@ export class PropertyRepository implements IPropertyRepository {
       .select(`
         *,
         property_images (id, url, caption, is_cover, sort_order),
-        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url)
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
       `)
       .eq('id', id)
       .maybeSingle();
@@ -700,7 +790,10 @@ export class PropertyRepository implements IPropertyRepository {
 
       const isOwner = prop.owner_id === currentUserId || prop.created_by === currentUserId;
       const rawPhone = prop.phone_number || (prop as any).owner?.phone_number || null;
-      const isPublic = prop.show_phone_number === true || prop.phone_privacy === 'public' || (prop as any).owner?.phone_privacy === 'public';
+      const isPublic =
+        prop.show_phone_number === true ||
+        prop.phone_privacy === 'public' ||
+        (prop as any).owner?.phone_privacy === 'public';
 
       if (isOwner) {
         return {
@@ -712,24 +805,30 @@ export class PropertyRepository implements IPropertyRepository {
         };
       }
 
-      if (isPublic && rawPhone) {
+      // Check if contact was explicitly shared with caller
+      const ownerId = prop.owner_id || prop.created_by;
+      const isShared = await this.isContactSharedWithUser(id, currentUserId, ownerId);
+
+      if ((isPublic || isShared) && rawPhone) {
         return {
           authorized: true,
           is_owner: false,
+          is_shared: isShared,
           phone_number: rawPhone,
           show_phone_number: true,
-          phone_privacy: 'public',
+          phone_privacy: isPublic ? 'public' : 'shared',
         };
       }
 
       return {
         authorized: false,
         is_owner: false,
+        is_shared: false,
         phone_number: null,
         show_phone_number: false,
         phone_privacy: 'private',
         reason: 'phone_private',
-        message: 'Phone number is kept private by host.',
+        message: 'Phone number is kept private by host. Contact is available via in-app chat.',
       };
     } catch (fallbackErr) {
       console.error('[PropertyRepository] Failed to retrieve contact details:', fallbackErr);

@@ -887,9 +887,15 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-[#101828]">Direct Contact:</span>
                   {contactDetails ? (
-                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Phone Visible
-                    </span>
+                    contactDetailsData?.is_shared || contactDetailsData?.phone_privacy === 'shared' ? (
+                      <span className="text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-amber-600" /> Host Contact Shared
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Phone Visible
+                      </span>
+                    )
                   ) : (
                     <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <Lock className="w-2.5 h-2.5 text-slate-500" /> Private
@@ -904,7 +910,9 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                 ) : contactDetails ? (
                   <div className="p-3 bg-white rounded-xl border border-emerald-200 text-center shadow-xs">
                     <div className="text-[11px] text-[#64748B] font-medium mb-1">
-                      Host Direct Phone:
+                      {contactDetailsData?.is_shared || contactDetailsData?.phone_privacy === 'shared'
+                        ? 'Host Direct Phone (Shared with You):'
+                        : 'Host Direct Phone:'}
                     </div>
                     <button
                       type="button"
@@ -914,6 +922,11 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                       <Phone className="w-4 h-4 text-emerald-600" />
                       <span>{contactDetails.formattedDisplay}</span>
                     </button>
+                    {(contactDetailsData?.is_shared || contactDetailsData?.phone_privacy === 'shared') && (
+                      <span className="text-[10px] text-amber-800 block mt-1 font-medium">
+                        ✓ Host Contact Shared (Call &amp; WhatsApp active for your inquiry)
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <div className="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center text-xs text-[#667085] leading-relaxed">

@@ -77,6 +77,11 @@ export interface IChatRepository {
   updateContactRequestStatus(requestId: string, status: ContactRequestStatus): Promise<ContactRequest>;
   getContactRequests(userId: string): Promise<ContactRequest[]>;
   getContactRequestForPropertyAndRequester(propertyId: string, requesterId: string): Promise<ContactRequest | null>;
+  recordContactShare(data: {
+    propertyId: string;
+    sharerId: string;
+    recipientId: string;
+  }): Promise<void>;
 }
 
 export interface ISafetyRepository {

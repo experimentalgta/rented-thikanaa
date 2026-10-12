@@ -439,9 +439,10 @@ export interface PropertyContactDetails {
   authorized: boolean;
   is_owner?: boolean;
   is_admin?: boolean;
+  is_shared?: boolean;
   phone_number?: string | null;
   show_phone_number?: boolean;
-  phone_privacy?: 'public' | 'private';
+  phone_privacy?: 'public' | 'private' | 'shared';
   reason?: 'unauthenticated' | 'not_found' | 'phone_private' | 'error';
   message?: string;
 }

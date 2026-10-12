@@ -560,6 +560,48 @@ export class ChatAndSafetyRepository implements IChatRepository, ISafetyReposito
     };
   }
 
+  async recordContactShare(data: {
+    propertyId: string;
+    sharerId: string;
+    recipientId: string;
+  }): Promise<void> {
+    const client = this.assertSupabaseClient();
+    try {
+      // Check if an existing contact request record exists in either direction
+      const { data: existing } = await client
+        .from('contact_requests')
+        .select('id, status')
+        .eq('property_id', data.propertyId)
+        .or(
+          `and(requester_id.eq.${data.sharerId},receiver_id.eq.${data.recipientId}),and(requester_id.eq.${data.recipientId},receiver_id.eq.${data.sharerId})`
+        )
+        .maybeSingle();
+
+      if (existing) {
+        if (existing.status !== 'accepted') {
+          await client
+            .from('contact_requests')
+            .update({
+              status: 'accepted',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id);
+        }
+        return;
+      }
+
+      // Insert new accepted contact sharing record
+      await client.from('contact_requests').insert({
+        property_id: data.propertyId,
+        requester_id: data.recipientId,
+        receiver_id: data.sharerId,
+        status: 'accepted',
+      });
+    } catch (err) {
+      console.warn('[SafetyAndChatRepository] Could not record contact share permission:', err);
+    }
+  }
+
   // --- SAFETY & MODERATION REPOSITORY ---
 
   async submitReport(data: {

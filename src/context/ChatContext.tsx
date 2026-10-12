@@ -5,6 +5,7 @@ import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { showBrowserNotification, requestNotificationPermission } from '../utils/notifications';
+import { sanitizeIndianPhoneNumber } from '../utils/phoneUtils';
 
 export interface IncomingToast {
   id: string;
@@ -41,6 +42,7 @@ interface ChatContextType {
   sendContactRequest: (property: { id: string; title: string; owner_id: string; owner_name: string }) => Promise<ContactRequest>;
   updateContactRequest: (requestId: string, status: ContactRequestStatus) => Promise<void>;
   shareExactLocation: (locationShare: import('../types').ExactLocationShare) => Promise<void>;
+  shareContactDetails: (phoneNumber?: string) => Promise<void>;
   isChatModalOpen: boolean;
   setIsChatModalOpen: (open: boolean) => void;
   refreshChatData: () => Promise<void>;
@@ -1049,6 +1051,111 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       messagesCacheRef.current.set(targetId, [...cachedList, sent]);
     }
 
+    if (activeConversation.property_id && otherParticipantId) {
+      chatAndSafetyRepository
+        .recordContactShare({
+          propertyId: activeConversation.property_id,
+          sharerId: currentUser.id,
+          recipientId: otherParticipantId,
+        })
+        .catch((err) => {
+          console.warn('[ChatContext] Failed to record contact share permission:', err);
+        });
+    }
+
+    if (activeChannelRef.current) {
+      activeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: sent,
+      });
+    }
+
+    if (otherParticipantId) {
+      broadcastToRecipient(otherParticipantId, sent);
+    }
+
+    await loadData();
+  };
+
+  const shareContactDetails = async (customPhone?: string) => {
+    if (!activeConversation || !currentUser) return;
+
+    const phoneToShare = customPhone || currentUser.phone_number || '';
+    const cleanPhone = sanitizeIndianPhoneNumber(phoneToShare) || phoneToShare;
+
+    const otherParticipantId =
+      activeConversation.participant_ids.find((id) => id !== currentUser.id) || 'user-stud-1';
+
+    const isTempId = activeConversation.id.startsWith('temp-');
+
+    // Persist contact sharing permission in database
+    if (activeConversation.property_id && otherParticipantId) {
+      chatAndSafetyRepository
+        .recordContactShare({
+          propertyId: activeConversation.property_id,
+          sharerId: currentUser.id,
+          recipientId: otherParticipantId,
+        })
+        .catch((err) => {
+          console.warn('[ChatContext] Failed to record contact share permission:', err);
+        });
+    }
+
+    const messageText = cleanPhone
+      ? `📞 Host Contact Details Shared: +91 ${cleanPhone.slice(0, 5)} ${cleanPhone.slice(5)}. You can now call or WhatsApp me directly.`
+      : `📞 Host Contact Sharing Enabled. You can now call or WhatsApp me directly.`;
+
+    const locationSharePayload = cleanPhone
+      ? {
+          exact_address: activeConversation.property_title || 'Direct Contact Shared',
+          google_maps_url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+            `${activeConversation.property_context?.locality || 'Prayagraj'} Uttar Pradesh India`
+          )}`,
+          whatsapp_url: `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(
+            `Namaste, I am contacting you regarding "${activeConversation.property_title || 'your listing'}" on Rented Thikanaa.`
+          )}`,
+          shared_at: new Date().toISOString(),
+        }
+      : undefined;
+
+    const sent = await chatAndSafetyRepository.sendMessage({
+      conversationId: isTempId ? undefined : activeConversation.id,
+      senderId: currentUser.id,
+      senderName: currentUser.full_name,
+      receiverId: otherParticipantId,
+      text: messageText,
+      propertyContext: activeConversation.property_id
+        ? {
+            id: activeConversation.property_id,
+            title: activeConversation.property_title || activeConversation.property_context?.title || '',
+            locality: activeConversation.property_context?.locality || 'Prayagraj',
+            rent: activeConversation.property_context?.rent || 0,
+            image_url: activeConversation.property_context?.image_url,
+          }
+        : undefined,
+      locationShare: locationSharePayload,
+    });
+
+    processedMessageIdsRef.current.add(sent.id);
+
+    const targetId = isTempId ? (sent.conversation_id || activeConversation.id) : activeConversation.id;
+
+    if (
+      activeConversationRef.current?.id === targetId ||
+      activeConversationRef.current?.id === activeConversation.id
+    ) {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === sent.id)) return prev;
+        return [...prev, sent];
+      });
+    }
+
+    const cachedList = messagesCacheRef.current.get(targetId) || [];
+    if (!cachedList.some((m) => m.id === sent.id)) {
+      messagesCacheRef.current.set(targetId, [...cachedList, sent]);
+    }
+
     if (activeChannelRef.current) {
       activeChannelRef.current.send({
         type: 'broadcast',
@@ -1086,6 +1193,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendContactRequest,
         updateContactRequest,
         shareExactLocation,
+        shareContactDetails,
         isChatModalOpen,
         setIsChatModalOpen,
         refreshChatData: loadData,
