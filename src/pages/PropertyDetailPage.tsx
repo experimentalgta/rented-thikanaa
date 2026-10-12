@@ -112,7 +112,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
     if (currentUser?.id && property.id) {
       setIsLoadingContact(true);
       propertyRepository
-        .getPropertyContactDetails(property.id)
+        .getPropertyContactDetails(property.id, currentUser.id)
         .then((details) => {
           setContactDetailsData(details);
         })
@@ -127,17 +127,25 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
     }
   }, [currentUser?.id, property.id]);
 
+  const isPublicListing = Boolean(
+    property.show_phone_number === true ||
+    property.phone_privacy === 'public' ||
+    contactDetailsData?.phone_privacy === 'public'
+  );
+
   // Determine active phone number based on ownership and server-verified privacy permissions:
   // - Listing owner: always authorized to view & edit their own phone
-  // - Authenticated visitor: authorized ONLY when contactDetailsData.authorized is true and phone_number is returned
+  // - Authenticated visitor: authorized when contactDetailsData.authorized is true, OR when visitor is logged in and listing is public
   // - Unauthenticated visitor: phone number is NEVER loaded or exposed in DOM/state
   const rawPhone = isOwner
     ? (property.phone_number || property.lister_phone || property.owner_phone || currentUser?.phone_number || null)
-    : (contactDetailsData?.authorized ? (contactDetailsData.phone_number || null) : null);
+    : (contactDetailsData?.authorized && contactDetailsData?.phone_number
+        ? contactDetailsData.phone_number
+        : (currentUser && isPublicListing ? (property.phone_number || property.owner_phone || property.lister_phone || null) : null));
 
   const isPhoneAuthorized = isOwner
     ? true
-    : Boolean(currentUser && contactDetailsData?.authorized && contactDetailsData?.phone_number);
+    : Boolean(currentUser && ((contactDetailsData?.authorized && contactDetailsData?.phone_number) || (isPublicListing && rawPhone)));
 
   const contactDetails = rawPhone
     ? getPhoneContactDetails(rawPhone, property.title)

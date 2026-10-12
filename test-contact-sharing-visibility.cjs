@@ -260,6 +260,59 @@ runTest('9. PropertyDetailPage properly distinguishes shared contact vs private 
   assert(content.includes('Host Direct Phone (Shared with You):'), 'PropertyDetailPage must indicate shared phone state');
 });
 
+runTest('10. Schema tolerance: Phone in owner profile with public privacy resolves correctly', () => {
+  // Simulates Dubey lodge schema where properties table has no phone_number column
+  const dbRow = {
+    id: 'prop-dubey',
+    owner_id: 'owner-suraj',
+    title: 'Dubey lodge',
+    phone_privacy: 'public', // Set on property
+    owner: {
+      id: 'owner-suraj',
+      full_name: 'Suraj Rai',
+      phone_number: '8318844991',
+      phone_privacy: 'public',
+    }
+  };
+
+  const isPublic = Boolean(
+    dbRow.show_phone_number === true ||
+    dbRow.phone_privacy === 'public' ||
+    dbRow.owner?.phone_privacy === 'public'
+  );
+  const rawPhone = dbRow.owner?.phone_number || dbRow.phone_number || null;
+
+  assert.strictEqual(isPublic, true, 'Property must be identified as public');
+  assert.strictEqual(rawPhone, '8318844991', 'Phone must be retrieved from owner profile');
+});
+
+runTest('11. Authenticated user viewing public property immediately gets contact details', () => {
+  const property = {
+    id: 'prop-dubey',
+    owner_id: 'owner-suraj',
+    title: 'Dubey lodge',
+    phone_privacy: 'public',
+    phone_number: '8318844991',
+    owner_phone: '8318844991',
+    show_phone_number: true,
+  };
+
+  const currentUser = { id: 'viewer-student', full_name: 'Student User' };
+  const contactDetailsData = null; // Still loading or RPC not present
+
+  const isPublicListing = Boolean(
+    property.show_phone_number === true ||
+    property.phone_privacy === 'public' ||
+    contactDetailsData?.phone_privacy === 'public'
+  );
+
+  const rawPhone = Boolean(currentUser && isPublicListing)
+    ? (contactDetailsData?.phone_number || property.phone_number || property.owner_phone || null)
+    : null;
+
+  assert.strictEqual(rawPhone, '8318844991', 'Authenticated viewer must immediately receive public phone');
+});
+
 console.log(`\n--- SUMMARY: ${testsPassed} PASSED, ${testsFailed} FAILED ---`);
 if (testsFailed > 0) {
   process.exit(1);

@@ -208,10 +208,11 @@ export class PropertyRepository implements IPropertyRepository {
     // 1. Direct Phone Privacy (Authentication-gated)
     // Unauthenticated visitors NEVER receive direct phone numbers in public responses.
     const isAuthenticated = Boolean(currentUserId);
-    const isPublic =
+    const isPublic = Boolean(
       cloned.show_phone_number === true ||
       cloned.phone_privacy === 'public' ||
-      (cloned as any).owner?.phone_privacy === 'public';
+      (cloned as any).owner?.phone_privacy === 'public'
+    );
 
     let isContactShared = preloadedContactStatus === 'accepted';
     if (!isContactShared && checkLocationSharedInChat && currentUserId) {
@@ -308,10 +309,11 @@ export class PropertyRepository implements IPropertyRepository {
       lat = row.location.coordinates[1];
     }
 
-    const isPublicPhone =
-      row.show_phone_number !== undefined && row.show_phone_number !== null
-        ? Boolean(row.show_phone_number)
-        : (row.phone_privacy === 'public' || row.owner?.phone_privacy === 'public');
+    const isPublicPhone = Boolean(
+      row.show_phone_number === true ||
+      row.phone_privacy === 'public' ||
+      row.owner?.phone_privacy === 'public'
+    );
     const rawPhone =
       row.phone_number ||
       row.owner?.phone_number ||
@@ -676,7 +678,7 @@ export class PropertyRepository implements IPropertyRepository {
       .select(`
         *,
         property_images (id, url, caption, is_cover, sort_order),
-        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url)
+        owner:profiles!properties_owner_id_fkey (id, full_name, avatar_url, phone_number, phone_privacy)
       `)
       .in('availability_status', ['available', 'limited'])
       .order('created_at', { ascending: false })
@@ -704,6 +706,16 @@ export class PropertyRepository implements IPropertyRepository {
   async getPropertyById(id: string, currentUserId?: string): Promise<Property | null> {
     const client = this.assertSupabaseClient();
 
+    let activeUserId = currentUserId;
+    if (!activeUserId) {
+      try {
+        const { data: { session } } = await client.auth.getSession();
+        activeUserId = session?.user?.id;
+      } catch {
+        // Fallback
+      }
+    }
+
     const { data, error } = await client
       .from('properties')
       .select(`
@@ -720,7 +732,7 @@ export class PropertyRepository implements IPropertyRepository {
     if (!data) return null;
 
     const prop = this.mapRowToProperty(data);
-    return this.applyPrivacyEnforcement(prop, currentUserId, undefined, true);
+    return this.applyPrivacyEnforcement(prop, activeUserId, undefined, true);
   }
 
   /**
@@ -728,14 +740,16 @@ export class PropertyRepository implements IPropertyRepository {
    * Strictly authentication-gated: Returns unauthorized if no valid session exists.
    * Leverages server-side get_property_contact_details RPC with an authenticated fallback.
    */
-  async getPropertyContactDetails(id: string): Promise<PropertyContactDetails> {
+  async getPropertyContactDetails(id: string, callerUserId?: string): Promise<PropertyContactDetails> {
     const client = this.assertSupabaseClient();
 
-    // Verify authenticated session
-    const { data: { session } } = await client.auth.getSession();
-    const currentUserId = session?.user?.id;
+    let activeUserId = callerUserId;
+    if (!activeUserId) {
+      const { data: { session } } = await client.auth.getSession();
+      activeUserId = session?.user?.id;
+    }
 
-    if (!currentUserId) {
+    if (!activeUserId) {
       return {
         authorized: false,
         reason: 'unauthenticated',
@@ -768,13 +782,8 @@ export class PropertyRepository implements IPropertyRepository {
       const { data: prop, error: propErr } = await client
         .from('properties')
         .select(`
-          id,
-          owner_id,
-          created_by,
-          phone_number,
-          show_phone_number,
-          phone_privacy,
-          owner:profiles!properties_owner_id_fkey (id, phone_number, phone_privacy)
+          *,
+          owner:profiles!properties_owner_id_fkey (id, full_name, phone_number, phone_privacy)
         `)
         .eq('id', id)
         .maybeSingle();
@@ -788,12 +797,13 @@ export class PropertyRepository implements IPropertyRepository {
         };
       }
 
-      const isOwner = prop.owner_id === currentUserId || prop.created_by === currentUserId;
-      const rawPhone = prop.phone_number || (prop as any).owner?.phone_number || null;
-      const isPublic =
-        prop.show_phone_number === true ||
+      const isOwner = prop.owner_id === activeUserId || prop.created_by === activeUserId;
+      const rawPhone = (prop as any).phone_number || (prop as any).owner?.phone_number || null;
+      const isPublic = Boolean(
+        (prop as any).show_phone_number === true ||
         prop.phone_privacy === 'public' ||
-        (prop as any).owner?.phone_privacy === 'public';
+        (prop as any).owner?.phone_privacy === 'public'
+      );
 
       if (isOwner) {
         return {
@@ -807,7 +817,7 @@ export class PropertyRepository implements IPropertyRepository {
 
       // Check if contact was explicitly shared with caller
       const ownerId = prop.owner_id || prop.created_by;
-      const isShared = await this.isContactSharedWithUser(id, currentUserId, ownerId);
+      const isShared = await this.isContactSharedWithUser(id, activeUserId, ownerId);
 
       if ((isPublic || isShared) && rawPhone) {
         return {

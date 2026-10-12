@@ -173,7 +173,7 @@ export const ChatModal: React.FC = () => {
         });
 
       propertyRepository
-        .getPropertyContactDetails(activeConversation.property_id)
+        .getPropertyContactDetails(activeConversation.property_id, currentUser?.id)
         .then((contact) => {
           if (!isSubscribed) return;
           setVerifiedContactDetails(contact);

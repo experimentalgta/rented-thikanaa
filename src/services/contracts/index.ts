@@ -16,7 +16,7 @@ export interface IPropertyRepository {
   searchProperties(params: PropertySearchParams, currentUserId?: string): Promise<SearchResultSummary>;
   getRecentProperties(limit?: number, currentUserId?: string): Promise<Property[]>;
   getPropertyById(id: string, currentUserId?: string): Promise<Property | null>;
-  getPropertyContactDetails(id: string): Promise<PropertyContactDetails>;
+  getPropertyContactDetails(id: string, callerUserId?: string): Promise<PropertyContactDetails>;
   createProperty(data: Partial<Property>): Promise<Property>;
   updateProperty(id: string, updates: Partial<Property>): Promise<Property>;
   getPropertiesByOwner(ownerId: string): Promise<Property[]>;
