@@ -269,6 +269,18 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   ]);
 
   /**
+   * Synchronize filters when initialPropertyType prop changes (e.g. via browser back/forward or category click)
+   */
+  useEffect(() => {
+    if (initialPropertyType !== undefined) {
+      setFilters((prev) => ({
+        ...prev,
+        property_type: (initialPropertyType as any) || 'all',
+      }));
+    }
+  }, [initialPropertyType]);
+
+  /**
    * Handle Radius Expansion when zero rooms are found in 5 km.
    */
   const handleExpandRadius = () => {

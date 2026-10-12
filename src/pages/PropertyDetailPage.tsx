@@ -316,14 +316,7 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
       {/* Top Breadcrumb & Actions Bar */}
       <div className="flex items-center justify-between mb-6">
         <button
-          onClick={() => {
-            const url = new URL(window.location.href);
-            if ((url.searchParams.has('room') || url.searchParams.has('roomId')) && window.history.length > 1) {
-              window.history.back();
-            } else {
-              onBack();
-            }
-          }}
+          onClick={onBack}
           className="inline-flex items-center gap-2 text-sm font-medium text-[#667085] hover:text-[#101828] transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />

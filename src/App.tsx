@@ -25,6 +25,134 @@ import { propertyRepository } from './services/propertyRepository';
 import { roommateRepository } from './services/roommateRepository';
 import { getPhoneContactDetails } from './utils/phoneUtils';
 
+interface AppNavigationState {
+  view: string;
+  propertyType?: string;
+  locality?: string;
+  subTab?: string;
+  roomId?: string | null;
+  fromView?: string;
+  isMobileDetailOpen?: boolean;
+  internalIndex: number;
+}
+
+const buildRouteUrl = (
+  view: string,
+  options?: {
+    locality?: string;
+    propertyType?: string;
+    subTab?: string;
+    roomId?: string | null;
+  }
+): URL => {
+  const url = new URL(window.location.origin + window.location.pathname);
+
+  if (view === 'home') {
+    if (options?.locality) {
+      url.searchParams.set('locality', options.locality);
+    }
+  } else if (view === 'search') {
+    url.searchParams.set('view', 'search');
+    if (options?.locality) {
+      url.searchParams.set('locality', options.locality);
+    }
+    if (options?.propertyType && options.propertyType !== 'all') {
+      url.searchParams.set('type', options.propertyType);
+    }
+  } else if (view === 'roommates') {
+    url.searchParams.set('view', 'roommates');
+  } else if (
+    view === 'member-dashboard' ||
+    view === 'student-dashboard' ||
+    view === 'owner-dashboard' ||
+    view === 'user-dashboard'
+  ) {
+    url.searchParams.set('view', 'member-dashboard');
+    if (options?.subTab && options.subTab !== 'overview') {
+      url.searchParams.set('tab', options.subTab);
+    }
+  } else if (view === 'add-property' || view === 'owner-add' || view === 'list-room') {
+    url.searchParams.set('view', 'add-property');
+  } else if (view === 'admin-panel') {
+    url.searchParams.set('view', 'admin-panel');
+  } else if (view === 'property-detail') {
+    if (options?.roomId) {
+      url.searchParams.set('roomId', options.roomId);
+    }
+  }
+
+  // Mobile detail sheet overlay maintains underlying view with room param
+  if (options?.roomId && view !== 'property-detail') {
+    url.searchParams.set('room', options.roomId);
+  }
+
+  return url;
+};
+
+const parseRouteFromUrl = (): {
+  view: string;
+  propertyType?: string;
+  locality: string;
+  subTab?: string;
+  roomId: string | null;
+} => {
+  try {
+    const url = new URL(window.location.href);
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const viewParam = url.searchParams.get('view')?.toLowerCase();
+    const adminParam = url.searchParams.get('admin');
+    const typeParam = url.searchParams.get('type') || url.searchParams.get('propertyType') || undefined;
+    const localityParam = url.searchParams.get('locality') || '';
+    const tabParam = url.searchParams.get('tab') || undefined;
+    const roomParam = url.searchParams.get('roomId') || url.searchParams.get('room') || null;
+
+    if (
+      path === '/admin' ||
+      path === '/admin-panel' ||
+      hash === '#admin' ||
+      viewParam === 'admin-panel' ||
+      viewParam === 'admin' ||
+      adminParam === 'true'
+    ) {
+      return { view: 'admin-panel', propertyType: undefined, locality: '', subTab: undefined, roomId: null };
+    }
+
+    if (roomParam && typeof window !== 'undefined' && window.innerWidth >= 768) {
+      return { view: 'property-detail', propertyType: typeParam, locality: localityParam, subTab: undefined, roomId: roomParam };
+    }
+
+    if (viewParam === 'search' || typeParam || (localityParam && viewParam !== 'home')) {
+      return { view: 'search', propertyType: typeParam, locality: localityParam, subTab: undefined, roomId: roomParam };
+    }
+
+    if (viewParam === 'roommates') {
+      return { view: 'roommates', propertyType: undefined, locality: '', subTab: undefined, roomId: null };
+    }
+
+    if (
+      viewParam === 'member-dashboard' ||
+      viewParam === 'user-dashboard' ||
+      viewParam === 'student-dashboard' ||
+      viewParam === 'owner-dashboard'
+    ) {
+      return { view: 'member-dashboard', propertyType: undefined, locality: '', subTab: tabParam, roomId: null };
+    }
+
+    if (viewParam === 'add-property' || viewParam === 'owner-add' || viewParam === 'list-room') {
+      return { view: 'add-property', propertyType: undefined, locality: '', subTab: undefined, roomId: null };
+    }
+
+    return { view: 'home', propertyType: typeParam, locality: localityParam, subTab: undefined, roomId: roomParam };
+  } catch {
+    return { view: 'home', propertyType: undefined, locality: '', subTab: undefined, roomId: null };
+  }
+};
+
+const initialRoute = typeof window !== 'undefined'
+  ? parseRouteFromUrl()
+  : { view: 'home', propertyType: undefined, locality: '', subTab: undefined, roomId: null };
+
 const MainApp: React.FC = () => {
   const { isAuthenticated, requireAuth, isSuperAdmin, consumePendingAction, currentUser } = useAuth();
   const { openChatForListing, openChatWithContext, isChatModalOpen, setIsChatModalOpen } = useChat();
@@ -42,32 +170,38 @@ const MainApp: React.FC = () => {
     );
   });
 
-  const [currentView, setCurrentView] = useState<string>(() => {
-    try {
-      const url = new URL(window.location.href);
-      const path = window.location.pathname.toLowerCase();
-      const hash = window.location.hash.toLowerCase();
-      const viewParam = url.searchParams.get('view');
-      const adminParam = url.searchParams.get('admin');
-
-      if (
-        path === '/admin' ||
-        path === '/admin-panel' ||
-        hash === '#admin' ||
-        viewParam === 'admin-panel' ||
-        viewParam === 'admin' ||
-        adminParam === 'true'
-      ) {
-        return 'admin-panel';
-      }
-    } catch {}
-    return 'home';
-  });
-  const [selectedLocality, setSelectedLocality] = useState<string>('');
-  const [selectedPropertyType, setSelectedPropertyType] = useState<string | undefined>(undefined);
+  const [currentView, setCurrentView] = useState<string>(initialRoute.view);
+  const [selectedLocality, setSelectedLocality] = useState<string>(initialRoute.locality);
+  const [selectedPropertyType, setSelectedPropertyType] = useState<string | undefined>(initialRoute.propertyType);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [subTab, setSubTab] = useState<string | undefined>(undefined);
+  const [subTab, setSubTab] = useState<string | undefined>(initialRoute.subTab);
   const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
+
+  const isMobileDetailOpenRef = useRef(isMobileDetailOpen);
+  useEffect(() => {
+    isMobileDetailOpenRef.current = isMobileDetailOpen;
+  }, [isMobileDetailOpen]);
+
+  const currentInternalIndexRef = useRef<number>(
+    typeof window !== 'undefined' && typeof window.history.state?.internalIndex === 'number'
+      ? window.history.state.internalIndex
+      : 0
+  );
+
+  const selectedPropertyTypeRef = useRef<string | undefined>(selectedPropertyType);
+  useEffect(() => {
+    selectedPropertyTypeRef.current = selectedPropertyType;
+  }, [selectedPropertyType]);
+
+  const selectedLocalityRef = useRef<string>(selectedLocality);
+  useEffect(() => {
+    selectedLocalityRef.current = selectedLocality;
+  }, [selectedLocality]);
+
+  const subTabRef = useRef<string | undefined>(subTab);
+  useEffect(() => {
+    subTabRef.current = subTab;
+  }, [subTab]);
 
   const [featuredProperties, setFeaturedProperties] = useState<Property[]>([]);
   const [sampleRoommates, setSampleRoommates] = useState<StudentProfile[]>([]);
@@ -118,9 +252,22 @@ const MainApp: React.FC = () => {
 
   // 1. Initial Cold-Start Deep-Linking Check (Executes STRICTLY ONCE on initial app mount)
   useEffect(() => {
-    // Ensure initial entry has state
-    if (!window.history.state) {
-      window.history.replaceState({ view: 'home' }, '', window.location.href);
+    const route = parseRouteFromUrl();
+
+    // Ensure initial entry has internalIndex: 0 and valid state
+    if (!window.history.state || typeof window.history.state.internalIndex !== 'number') {
+      window.history.replaceState(
+        {
+          view: route.view,
+          propertyType: route.propertyType,
+          locality: route.locality,
+          subTab: route.subTab,
+          roomId: route.roomId,
+          internalIndex: 0,
+        },
+        '',
+        window.location.href
+      );
     }
 
     // Deep link or initial query param check (?room=... or ?roomId=...)
@@ -132,15 +279,39 @@ const MainApp: React.FC = () => {
           setSelectedProperty(p);
           if (window.innerWidth < 768) {
             // For mobile: clean base URL state so back button stays within the app, then push detail sheet
-            const cleanUrl = new URL(window.location.href);
-            cleanUrl.searchParams.delete('room');
-            cleanUrl.searchParams.delete('roomId');
-            window.history.replaceState({ view: 'home' }, '', cleanUrl.toString());
-
-            window.history.pushState(
-              { isMobileDetailOpen: true, roomId: initialRoomId },
+            const baseView = route.view !== 'property-detail' ? route.view : 'home';
+            const cleanUrl = buildRouteUrl(baseView, {
+              locality: route.locality,
+              propertyType: route.propertyType,
+            });
+            window.history.replaceState(
+              {
+                view: baseView,
+                propertyType: route.propertyType,
+                locality: route.locality,
+                internalIndex: 0,
+              },
               '',
-              initialUrl.toString()
+              cleanUrl.toString()
+            );
+
+            currentInternalIndexRef.current = 1;
+            const mobileUrl = buildRouteUrl(baseView, {
+              locality: route.locality,
+              propertyType: route.propertyType,
+              roomId: initialRoomId,
+            });
+            window.history.pushState(
+              {
+                view: baseView,
+                propertyType: route.propertyType,
+                locality: route.locality,
+                isMobileDetailOpen: true,
+                roomId: initialRoomId,
+                internalIndex: 1,
+              },
+              '',
+              mobileUrl.toString()
             );
             setIsMobileDetailOpen(true);
             document.body.style.overflow = 'hidden';
@@ -156,65 +327,94 @@ const MainApp: React.FC = () => {
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       const isMobile = window.innerWidth < 768;
+      const state = event.state as AppNavigationState | null;
+      const url = new URL(window.location.href);
 
-      if (isMobile) {
-        // --- MOBILE POPSTATE INTERCEPTION (< md) ---
-        // If chat modal is open on mobile, close chat modal first
-        if (isChatModalOpenRef.current) {
-          setIsChatModalOpen(false);
-          return;
-        }
+      // Track the internal sequence index
+      if (typeof state?.internalIndex === 'number') {
+        currentInternalIndexRef.current = state.internalIndex;
+      }
 
-        // When user presses phone physical back or gesture swipes back:
+      // Close chat modal if it was open
+      if (isChatModalOpenRef.current) {
+        setIsChatModalOpen(false);
+      }
+
+      // Handle mobile detail sheet closing
+      if (isMobileDetailOpenRef.current) {
         setIsMobileDetailOpen(false);
         setSelectedProperty(null);
         document.body.style.overflow = '';
-
-        // Clean query parameter from URL without navigating away
-        const url = new URL(window.location.href);
-        if (url.searchParams.has('room') || url.searchParams.has('roomId')) {
-          url.searchParams.delete('room');
-          url.searchParams.delete('roomId');
-          window.history.replaceState({ view: currentViewRef.current }, '', url.toString());
-        }
-        return;
       }
 
-      // --- DESKTOP POPSTATE (>= md) ---
-      const url = new URL(window.location.href);
-      const roomId = url.searchParams.get('roomId') || url.searchParams.get('room');
+      // Extract target state from popstate or URL
+      const roomId = url.searchParams.get('roomId') || url.searchParams.get('room') || state?.roomId;
+      const viewParam = url.searchParams.get('view')?.toLowerCase();
+      const typeParam = state?.propertyType !== undefined
+        ? state.propertyType
+        : (url.searchParams.get('type') || url.searchParams.get('propertyType') || undefined);
+      const localityParam = state?.locality !== undefined
+        ? state.locality
+        : (url.searchParams.get('locality') || '');
+      const tabParam = state?.subTab !== undefined
+        ? state.subTab
+        : (url.searchParams.get('tab') || undefined);
 
-      if (!roomId) {
-        // User popped back from desktop property detail
-        setSelectedProperty(null);
-        const targetView = event.state?.fromView || event.state?.view || previousViewRef.current || 'home';
-        setCurrentView(targetView);
+      let targetView = state?.view || viewParam || 'home';
 
-        // Restore scroll position
-        const savedScroll = sessionStorage.getItem(`scroll_${targetView}`);
-        if (savedScroll) {
-          setTimeout(() => {
-            window.scrollTo({ top: Number(savedScroll), behavior: 'instant' });
-          }, 30);
-        }
-      } else {
-        // User popped forward to a property detail
-        if (!selectedPropertyRef.current || selectedPropertyRef.current.id !== roomId) {
-          propertyRepository.getPropertyById(roomId).then((p) => {
-            if (p) {
-              setSelectedProperty(p);
-              setCurrentView('property-detail');
-            }
-          });
+      // If popping forward or directly to a room
+      if (roomId) {
+        if (isMobile) {
+          document.body.style.overflow = 'hidden';
+          setIsMobileDetailOpen(true);
+          if (!selectedPropertyRef.current || selectedPropertyRef.current.id !== roomId) {
+            propertyRepository.getPropertyById(roomId, currentUser?.id).then((p) => {
+              if (p) setSelectedProperty(p);
+            });
+          }
+          return;
         } else {
-          setCurrentView('property-detail');
+          targetView = 'property-detail';
+          if (!selectedPropertyRef.current || selectedPropertyRef.current.id !== roomId) {
+            propertyRepository.getPropertyById(roomId, currentUser?.id).then((p) => {
+              if (p) {
+                setSelectedProperty(p);
+                setCurrentView('property-detail');
+              }
+            });
+          } else {
+            setCurrentView('property-detail');
+          }
+          return;
         }
+      }
+
+      // If moving away from property detail
+      setSelectedProperty(null);
+      setIsMobileDetailOpen(false);
+      document.body.style.overflow = '';
+
+      if (targetView === 'property-detail') {
+        targetView = state?.fromView || previousViewRef.current || 'home';
+      }
+
+      setSelectedLocality(localityParam);
+      setSelectedPropertyType(typeParam);
+      setSubTab(tabParam);
+      setCurrentView(targetView);
+
+      // Restore scroll position
+      const savedScroll = sessionStorage.getItem(`scroll_${targetView}`);
+      if (savedScroll) {
+        setTimeout(() => {
+          window.scrollTo({ top: Number(savedScroll), behavior: 'instant' });
+        }, 30);
       }
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [currentUser?.id, setIsChatModalOpen]);
 
   const executePendingAction = (action: PendingAction) => {
     if (action.type === 'property-detail' && (action.property || action.propertyId)) {
@@ -286,137 +486,6 @@ const MainApp: React.FC = () => {
     }
   };
 
-  const handleMobileClose = useCallback(() => {
-    if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      setIsMobileDetailOpen(false);
-      setSelectedProperty(null);
-      document.body.style.overflow = '';
-      const url = new URL(window.location.href);
-      url.searchParams.delete('room');
-      url.searchParams.delete('roomId');
-      window.history.replaceState({ view: currentViewRef.current }, '', url.toString());
-    }
-  }, []);
-
-  const handleBackFromProperty = useCallback(() => {
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('roomId') && window.history.length > 1) {
-      window.history.back();
-    } else {
-      url.searchParams.delete('roomId');
-      const targetView = previousViewRef.current || 'home';
-      window.history.replaceState({ view: targetView }, '', url.toString());
-      setSelectedProperty(null);
-      setCurrentView(targetView);
-      const savedScroll = sessionStorage.getItem(`scroll_${targetView}`);
-      if (savedScroll) {
-        setTimeout(() => {
-          window.scrollTo({ top: Number(savedScroll), behavior: 'instant' });
-        }, 30);
-      }
-    }
-  }, []);
-
-  const handleNavigate = (view: string, param?: any) => {
-    setIsChatModalOpen(false);
-    if (isMobileDetailOpen) {
-      setIsMobileDetailOpen(false);
-      document.body.style.overflow = '';
-    }
-
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('roomId') || url.searchParams.has('room')) {
-      url.searchParams.delete('roomId');
-      url.searchParams.delete('room');
-      window.history.replaceState({ view }, '', url.toString());
-    } else {
-      window.history.replaceState({ view }, '', window.location.href);
-    }
-    setSelectedProperty(null);
-
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    if (view === 'property-detail' && param) {
-      handleSelectProperty(param);
-      return;
-    }
-
-    if (
-      param &&
-      (view === 'student-dashboard' ||
-        view === 'owner-dashboard' ||
-        view === 'member-dashboard' ||
-        view === 'user-dashboard')
-    ) {
-      setSubTab(param);
-    }
-
-    if (
-      view === 'student-dashboard' ||
-      view === 'owner-dashboard' ||
-      view === 'user-dashboard' ||
-      view === 'member-dashboard'
-    ) {
-      if (
-        !requireAuth(
-          'Sign in with Google to view your profile, saved properties, and member dashboard.',
-          { type: 'dashboard', subTab: param }
-        )
-      ) {
-        return;
-      }
-      setCurrentView('member-dashboard');
-      return;
-    }
-
-    if (view === 'owner-add' || view === 'add-property' || view === 'list-room') {
-      if (
-        !requireAuth(
-          'Sign in with Google to create and publish your room or PG listing.',
-          { type: 'add-property' }
-        )
-      ) {
-        return;
-      }
-      setCurrentView('add-property');
-      return;
-    }
-
-    if (view === 'admin-panel') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('view', 'admin-panel');
-      window.history.pushState({ view: 'admin-panel' }, '', url.toString());
-      setCurrentView('admin-panel');
-      return;
-    }
-
-    if (view === 'home' && param === 'areas') {
-      setCurrentView('home');
-      setTimeout(() => {
-        const el = document.getElementById('areas');
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-      return;
-    }
-
-    if (view === 'search') {
-      setSelectedLocality(param !== undefined ? param : '');
-      setCurrentView('search');
-      return;
-    }
-
-    setCurrentView(view);
-  };
-
-  const handleSearchTrigger = (locality: string, propertyType?: string) => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    setSelectedLocality(locality);
-    setSelectedPropertyType(propertyType);
-    setCurrentView('search');
-  };
-
   const handleSelectProperty = useCallback((property: Property) => {
     setSelectedProperty(property);
 
@@ -435,41 +504,238 @@ const MainApp: React.FC = () => {
     }
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const currentIdx = typeof window.history.state?.internalIndex === 'number'
+      ? window.history.state.internalIndex
+      : currentInternalIndexRef.current;
+    const nextIdx = currentIdx + 1;
+    currentInternalIndexRef.current = nextIdx;
 
     if (isMobile) {
       // --- MOBILE FULL-SCREEN SHEET FLOW (< md) ---
       // Lock background body scroll so the listings screen maintains exact scroll position
       document.body.style.overflow = 'hidden';
 
-      // Push history state specifically for mobile modal
-      const url = new URL(window.location.href);
-      url.searchParams.set('room', property.id);
-      window.history.pushState(
-        { isMobileDetailOpen: true, roomId: property.id },
-        '',
-        url.toString()
-      );
+      const targetUrl = buildRouteUrl(currentViewRef.current, {
+        locality: selectedLocalityRef.current,
+        propertyType: selectedPropertyTypeRef.current,
+        roomId: property.id,
+      });
 
+      const nextState: AppNavigationState = {
+        view: currentViewRef.current,
+        locality: selectedLocalityRef.current,
+        propertyType: selectedPropertyTypeRef.current,
+        roomId: property.id,
+        isMobileDetailOpen: true,
+        fromView: currentViewRef.current,
+        internalIndex: nextIdx,
+      };
+
+      window.history.pushState(nextState, '', targetUrl.toString());
       setIsMobileDetailOpen(true);
     } else {
       // --- DESKTOP ROUTE FLOW (>= md) ---
-      setCurrentView((prevView) => {
-        const previousView = prevView !== 'property-detail' ? prevView : 'home';
-        sessionStorage.setItem(`scroll_${previousView}`, String(window.scrollY));
+      const previousView = currentViewRef.current !== 'property-detail' ? currentViewRef.current : 'home';
+      sessionStorage.setItem(`scroll_${previousView}`, String(window.scrollY));
 
-        const url = new URL(window.location.href);
-        url.searchParams.set('roomId', property.id);
-        window.history.pushState(
-          { view: 'property-detail', roomId: property.id, fromView: previousView },
-          '',
-          url.toString()
-        );
-
-        window.scrollTo({ top: 0, behavior: 'instant' });
-        return 'property-detail';
+      const targetUrl = buildRouteUrl('property-detail', {
+        roomId: property.id,
       });
+
+      const nextState: AppNavigationState = {
+        view: 'property-detail',
+        locality: selectedLocalityRef.current,
+        propertyType: selectedPropertyTypeRef.current,
+        roomId: property.id,
+        fromView: previousView,
+        internalIndex: nextIdx,
+      };
+
+      window.history.pushState(nextState, '', targetUrl.toString());
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      setCurrentView('property-detail');
+    }
+  }, [currentUser?.id]);
+
+  const handleNavigate = useCallback((view: string, param?: any, options?: { replace?: boolean }) => {
+    setIsChatModalOpen(false);
+    if (isMobileDetailOpenRef.current) {
+      setIsMobileDetailOpen(false);
+      document.body.style.overflow = '';
+    }
+    setSelectedProperty(null);
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (view === 'property-detail' && param) {
+      handleSelectProperty(param);
+      return;
+    }
+
+    let nextSubTab = subTabRef.current;
+    if (
+      param &&
+      (view === 'student-dashboard' ||
+        view === 'owner-dashboard' ||
+        view === 'member-dashboard' ||
+        view === 'user-dashboard')
+    ) {
+      nextSubTab = param;
+      setSubTab(param);
+    }
+
+    if (
+      view === 'student-dashboard' ||
+      view === 'owner-dashboard' ||
+      view === 'user-dashboard' ||
+      view === 'member-dashboard'
+    ) {
+      if (
+        !requireAuth(
+          'Sign in with Google to view your profile, saved properties, and member dashboard.',
+          { type: 'dashboard', subTab: param }
+        )
+      ) {
+        return;
+      }
+      view = 'member-dashboard';
+    }
+
+    if (view === 'owner-add' || view === 'add-property' || view === 'list-room') {
+      if (
+        !requireAuth(
+          'Sign in with Google to create and publish your room or PG listing.',
+          { type: 'add-property' }
+        )
+      ) {
+        return;
+      }
+      view = 'add-property';
+    }
+
+    if (view === 'home' && param === 'areas') {
+      setCurrentView('home');
+      setTimeout(() => {
+        const el = document.getElementById('areas');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+      return;
+    }
+
+    let nextLocality = selectedLocalityRef.current;
+    if (view === 'search') {
+      nextLocality = param !== undefined ? param : selectedLocalityRef.current;
+      setSelectedLocality(nextLocality);
+    }
+
+    // Save scroll position for previous view before navigating
+    sessionStorage.setItem(`scroll_${currentViewRef.current}`, String(window.scrollY));
+
+    const targetUrl = buildRouteUrl(view, {
+      locality: view === 'search' ? nextLocality : '',
+      propertyType: view === 'search' ? selectedPropertyTypeRef.current : undefined,
+      subTab: nextSubTab,
+    });
+
+    const currentIdx = typeof window.history.state?.internalIndex === 'number'
+      ? window.history.state.internalIndex
+      : currentInternalIndexRef.current;
+    const nextIdx = options?.replace ? currentIdx : currentIdx + 1;
+    currentInternalIndexRef.current = nextIdx;
+
+    const nextState: AppNavigationState = {
+      view,
+      locality: view === 'search' ? nextLocality : '',
+      propertyType: view === 'search' ? selectedPropertyTypeRef.current : undefined,
+      subTab: nextSubTab,
+      roomId: null,
+      internalIndex: nextIdx,
+    };
+
+    if (options?.replace) {
+      window.history.replaceState(nextState, '', targetUrl.toString());
+    } else {
+      window.history.pushState(nextState, '', targetUrl.toString());
+    }
+
+    setCurrentView(view);
+  }, [requireAuth, handleSelectProperty, setIsChatModalOpen]);
+
+  const handleSearchTrigger = useCallback((locality: string, propertyType?: string, options?: { replace?: boolean }) => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setSelectedLocality(locality);
+    setSelectedPropertyType(propertyType);
+    setCurrentView('search');
+
+    // Save scroll position for previous view before navigating
+    sessionStorage.setItem(`scroll_${currentViewRef.current}`, String(window.scrollY));
+
+    const targetUrl = buildRouteUrl('search', {
+      locality,
+      propertyType,
+    });
+
+    const currentIdx = typeof window.history.state?.internalIndex === 'number'
+      ? window.history.state.internalIndex
+      : currentInternalIndexRef.current;
+    const nextIdx = options?.replace ? currentIdx : currentIdx + 1;
+    currentInternalIndexRef.current = nextIdx;
+
+    const nextState: AppNavigationState = {
+      view: 'search',
+      locality,
+      propertyType,
+      subTab: undefined,
+      roomId: null,
+      internalIndex: nextIdx,
+    };
+
+    if (options?.replace) {
+      window.history.replaceState(nextState, '', targetUrl.toString());
+    } else {
+      window.history.pushState(nextState, '', targetUrl.toString());
     }
   }, []);
+
+  const handleMobileClose = useCallback(() => {
+    const hasInternalHistory = Boolean(
+      window.history.state &&
+      typeof window.history.state.internalIndex === 'number' &&
+      window.history.state.internalIndex > 0
+    );
+
+    if (hasInternalHistory) {
+      window.history.back();
+    } else {
+      setIsMobileDetailOpen(false);
+      setSelectedProperty(null);
+      document.body.style.overflow = '';
+      const fallbackView = previousViewRef.current && previousViewRef.current !== 'property-detail'
+        ? previousViewRef.current
+        : (selectedPropertyTypeRef.current || selectedLocalityRef.current ? 'search' : 'home');
+
+      handleNavigate(fallbackView, undefined, { replace: true });
+    }
+  }, [handleNavigate]);
+
+  const handleBackFromProperty = useCallback(() => {
+    const hasInternalHistory = Boolean(
+      window.history.state &&
+      typeof window.history.state.internalIndex === 'number' &&
+      window.history.state.internalIndex > 0
+    );
+
+    if (hasInternalHistory) {
+      window.history.back();
+    } else {
+      setSelectedProperty(null);
+      const fallbackView = previousViewRef.current && previousViewRef.current !== 'property-detail'
+        ? previousViewRef.current
+        : (selectedPropertyTypeRef.current || selectedLocalityRef.current ? 'search' : 'home');
+
+      handleNavigate(fallbackView, undefined, { replace: true });
+    }
+  }, [handleNavigate]);
 
   return (
     <div className="w-full max-w-full overflow-x-hidden relative min-h-screen flex flex-col bg-[#F8FAFC] text-[#111827]">
