@@ -165,8 +165,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setError('Location access was denied. You can enter your location manually.');
         } else {
           setPermissionState('prompt');
-          // Request browser/device GPS permission immediately on open
-          detectCurrentLocation().catch(() => {});
+          // Wait for explicit user action ('Use My Location' button) before requesting GPS
         }
 
         result.onchange = () => {
@@ -182,12 +181,12 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           }
         };
       }).catch(() => {
-        // Fallback for browsers where permissions.query fails
-        detectCurrentLocation().catch(() => {});
+        // Fallback for browsers where permissions.query fails: wait for user action
+        setPermissionState('prompt');
       });
     } else if (typeof window !== 'undefined' && 'geolocation' in navigator) {
-      // iOS Safari and other browsers without permissions.query
-      detectCurrentLocation().catch(() => {});
+      // Browsers without permissions.query: wait for explicit user action
+      setPermissionState('prompt');
     }
   }, [detectCurrentLocation]);
 

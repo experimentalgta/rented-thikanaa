@@ -21,6 +21,8 @@ import { Property, StudentProfile } from '../types';
 import { INDIAN_CITIES } from '../config/locations';
 import { Button } from '../components/common/Button';
 import { BrandName } from '../components/common/BrandName';
+import { FirstLaunchOnboarding } from '../components/pwa/FirstLaunchOnboarding';
+import { NotificationPrompt } from '../components/pwa/NotificationPrompt';
 
 interface HomePageProps {
   featuredProperties: Property[];
@@ -227,6 +229,12 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
         </div>
       </section>
+
+      {/* PWA Onboarding & Value Banners */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full order-1">
+        <FirstLaunchOnboarding onExplore={() => onNavigate('search')} />
+        <NotificationPrompt variant="banner" className="mb-4" />
+      </div>
 
       {/* 2. BROWSE BY PROPERTY TYPE */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 order-2 w-full">

@@ -11,6 +11,10 @@ import { ChatModal } from './components/chat/ChatModal';
 import { MessageNotificationToast } from './components/chat/MessageNotificationToast';
 import { LoginModal } from './components/auth/LoginModal';
 import { AuthCallback } from './components/auth/AuthCallback';
+import { PwaProvider } from './context/PwaContext';
+import { InstallAppButton } from './components/pwa/InstallAppButton';
+import { IosInstallModal } from './components/pwa/IosInstallModal';
+import { OfflineIndicator } from './components/pwa/OfflineIndicator';
 
 import { HomePage } from './pages/HomePage';
 import { SearchPage } from './pages/SearchPage';
@@ -781,6 +785,9 @@ const MainApp: React.FC = () => {
 
   return (
     <div className="w-full max-w-full overflow-x-hidden relative min-h-screen flex flex-col bg-[#F8FAFC] text-[#111827]">
+      {/* Offline Status & Reconnection Indicator */}
+      <OfflineIndicator />
+
       {/* Universal Desktop & Mobile Header */}
       <Header currentView={currentView} onNavigate={handleNavigate} />
 
@@ -880,6 +887,10 @@ const MainApp: React.FC = () => {
       {/* Global Google Authentication Modal */}
       <LoginModal />
 
+      {/* PWA Installation Floating Button & iOS Safari Instructions */}
+      <InstallAppButton />
+      <IosInstallModal />
+
       {/* Mobile-Only Dedicated Bottom Navigation */}
       <MobileNav currentView={currentView} onNavigate={handleNavigate} />
 
@@ -899,7 +910,9 @@ export default function App() {
         <ChatProvider>
           <LocationProvider>
             <NearbyRoomsProvider>
-              <MainApp />
+              <PwaProvider>
+                <MainApp />
+              </PwaProvider>
             </NearbyRoomsProvider>
           </LocationProvider>
         </ChatProvider>

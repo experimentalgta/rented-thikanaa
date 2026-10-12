@@ -1,22 +1,43 @@
 {
-  "name": "Rented Thikanaa",
-  "short_name": "Rented Thikanaa",
-  "description": "Find verified rooms, PGs, hostels, flats, and compatible roommates across India.",
+  "id": "/?source=pwa",
+  "name": "Renter Thikan",
+  "short_name": "Renter Thikan",
+  "description": "Find rooms, student PGs, hostels, shared accommodation, flats, and roommates.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#FFFFFF",
-  "theme_color": "#183661",
+  "theme_color": "#101828",
+  "categories": [
+    "lifestyle",
+    "utilities",
+    "business"
+  ],
   "icons": [
     {
-      "src": "/favicon.png",
-      "sizes": "192x192 512x512",
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable-icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/logo.png",
       "sizes": "1024x1024",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
